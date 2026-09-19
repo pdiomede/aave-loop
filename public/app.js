@@ -7,6 +7,7 @@ import {
   daysBetween,
   todayISO,
   CURRENCIES,
+  isUsdPegged,
 } from '/lib/calc.js';
 
 /* ------------------------------------------------------------- formatters */
@@ -89,6 +90,7 @@ const COIN_ART = {
   USDT: '/usdt.svg',
   DAI: '/dai.svg',
   GHO: '/gho.svg',
+  EURC: '/eurc.svg',
 };
 
 function coin(currency) {
@@ -97,6 +99,31 @@ function coin(currency) {
     ? `<img class="coin coin--art" src="${art}" alt="${esc(currency)}" width="26" height="26" />`
     : `<span class="coin coin--${esc(currency)}">${esc(currency)}</span>`;
 }
+
+/**
+ * A trade in a coin that is not a dollar carries its amount twice: what was
+ * actually borrowed or spent, and what that was worth in dollars on the day.
+ * The rate and the day it was published are stated alongside, because a
+ * converted figure nobody can check against the ECB's own tables is worse than
+ * no figure at all. On a weekend the published day is the Friday before, which
+ * is why it is shown rather than assumed to be the transaction date.
+ */
+function fxNote(usdValue, leg) {
+  if (!isNum(usdValue)) return RATE_MISSING;
+  const at = leg && isNum(leg.rate) ? ` <span class="fx-note__rate">at ${leg.rate.toFixed(4)}${
+    leg.date ? ` on ${fmtDate(leg.date)}` : ''
+  }</span>` : '';
+  return `${usd(usdValue)}${at}`;
+}
+
+function signedFxNote(usdValue, leg) {
+  if (!isNum(usdValue)) return RATE_MISSING;
+  const at = leg && isNum(leg.rate) ? ` <span class="fx-note__rate">at ${leg.rate.toFixed(4)}</span>` : '';
+  return `${signedUsd(usdValue)}${at}`;
+}
+
+const RATE_MISSING =
+  '<span class="chip chip--warn" title="No exchange rate for this date yet. Use Fetch rates on the Summary.">no rate</span>';
 
 const ethMark = `<img class="eth-mark" src="/eth.svg" alt="" width="15" height="15" />`;
 
@@ -303,7 +330,7 @@ function borrowFields(t = {}) {
   return `<div class="grid">
     ${field({ name: 'borrow_date', label: 'Borrow date', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
     ${field({ name: 'borrow_amount', label: 'Amount borrowed', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
-    ${field({ name: 'borrow_currency', label: 'Stablecoin', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
+    ${field({ name: 'borrow_currency', label: 'Currency', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
     ${field({ name: 'borrow_apr', label: 'Borrow APR', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
   </div>`;
 }
@@ -378,18 +405,31 @@ function refreshHints(form, trade, stage) {
   if (stage === 'borrow') {
     const days = daysBetween(merged.borrow_date, todayISO());
     set('borrow_apr', isNum(merged.borrow_amount) && isNum(merged.borrow_apr)
-      ? `About <strong>${usd((merged.borrow_amount * merged.borrow_apr) / 100 / 365, 2)}</strong> of interest per day`
+      ? `About <strong>${money((merged.borrow_amount * merged.borrow_apr) / 100 / 365, c)}</strong> of interest per day`
       : '');
     set('borrow_date', isNum(days) && days > 0 ? `${days} day${days === 1 ? '' : 's'} ago` : '');
   }
 
+  // The preview runs before anything is saved, so a brand new trade in another
+  // currency has no rate on it yet. Rather than convert with a rate invented in
+  // the browser, the preview stays in the coin being spent and says where the
+  // dollar figure comes from. It appears as soon as the stage is saved.
+  const c = unitOf(merged);
+  const previewPrice = (usdValue, nativeValue) =>
+    isNum(usdValue) ? `<strong>${usd(usdValue)}</strong>` : `<strong>${money(nativeValue, c)}</strong>`;
+  const asSaved = isUsdPegged(c) ? '' : ' <span class="muted">(converted on save)</span>';
+
   if (stage === 'buy') {
-    set('buy_eth', isNum(d.buyPrice) ? `ETH price <strong>${usd(d.buyPrice)}</strong>` : '');
+    set('buy_eth', isNum(d.buyPrice)
+      ? `ETH price ${previewPrice(d.buyPriceUsd, d.buyPrice)}${isNum(d.buyPriceUsd) ? '' : asSaved}`
+      : '');
   }
 
   if (stage === 'sell') {
     set('sell_amount', isNum(d.sellPrice)
-      ? `ETH price <strong>${usd(d.sellPrice)}</strong>${isNum(d.grossGain) ? `, gross ${signedUsd(d.grossGain)}` : ''}`
+      ? `ETH price ${previewPrice(d.sellPriceUsd, d.sellPrice)}${
+          isNum(d.grossGain) ? `, gross ${signedMoney(d.grossGain, c)}` : ''
+        }${isNum(d.sellPriceUsd) ? '' : asSaved}`
       : '');
   }
 
@@ -412,16 +452,16 @@ function refreshHints(form, trade, stage) {
 
     set('repay_date', isNum(days)
       ? `${days} day${days === 1 ? '' : 's'} of loan${
-          isNum(after.interestPaid) ? `, interest ${usd(after.interestPaid, 2)}` : ''
+          isNum(after.interestPaid) ? `, interest ${money(after.interestPaid, c)}` : ''
         }`
       : '');
 
     set('repay_amount', isNum(after.netGain)
-      ? `Net gain <strong class="${gainClass(after.netGain)}">${signedUsd(after.netGain)}</strong>${
-          isNum(after.pct) ? `, <strong>${pct(after.pct)}</strong> annualized` : ''
-        }`
+      ? `Net gain <strong class="${gainClass(after.netGain)}">${signedMoney(after.netGain, c)}</strong>${
+          isNum(after.netGainUsd) ? ` (${signedUsd(after.netGainUsd)})` : asSaved
+        }${isNum(after.pct) ? `, <strong>${pct(after.pct)}</strong> annualized` : ''}`
       : isNum(d.suggestedRepay)
-        ? `Suggested ${usd(d.suggestedRepay, 2)} from the APR`
+        ? `Suggested ${money(d.suggestedRepay, c)} from the APR`
         : '');
   }
 }
@@ -439,6 +479,14 @@ function stageSummary(stage, t, d) {
   const row = (label, value, cls = '') =>
     value === '' || value == null ? '' : `<div class="stage__row"><dt>${label}</dt><dd class="${cls}">${value}</dd></div>`;
 
+  // The same row with the dollar equivalent underneath. A dollar coin has no
+  // equivalent to state, so those cards stay exactly as they always were.
+  const row2 = (label, value, sub, cls = '') => {
+    if (value === '' || value == null) return '';
+    const under = d.isUsdPegged || !sub ? '' : `<small class="fx-note">${sub}</small>`;
+    return `<div class="stage__row"><dt>${label}</dt><dd class="${cls}">${value}${under}</dd></div>`;
+  };
+
   // Every card puts the money on the second line, in the coin that was
   // borrowed, so the four cards can be read straight down.
   const c = t.borrow_currency;
@@ -447,37 +495,54 @@ function stageSummary(stage, t, d) {
     case 'borrow':
       return (
         row('Date', fmtDate(t.borrow_date)) +
-        row('Amount', money(t.borrow_amount, c)) +
+        row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow)) +
         row('APR', pct(t.borrow_apr)) +
         row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} days` : '')
       );
     case 'buy':
       return (
         row('Date', fmtDate(t.buy_date)) +
-        row('Spent', money(t.buy_amount, c)) +
+        row2('Spent', money(t.buy_amount, c), fxNote(d.buyUsd, d.fx.buy)) +
         row('Bought', eth(t.buy_eth)) +
-        row('ETH price', usd(d.buyPrice))
+        // ETH is quoted in dollars, so this column is converted. Dividing a
+        // euro amount by a quantity of ETH gives euros per ETH, which this
+        // used to print under a dollar sign.
+        row('ETH price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING)
       );
     case 'sell':
       return (
         row('Date', fmtDate(t.sell_date)) +
-        row('Received', money(t.sell_amount, c)) +
+        row2('Received', money(t.sell_amount, c), fxNote(d.sellUsd, d.fx.sell)) +
         row('Sold', eth(t.sell_eth)) +
-        row('ETH price', usd(d.sellPrice)) +
-        (d.isPartialSale ? row('Cost of ETH sold', money(d.costOfSoldEth, c)) : '') +
+        row('ETH price', isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : RATE_MISSING) +
+        (d.isPartialSale ? row2('Cost of ETH sold', money(d.costOfSoldEth, c), fxNote(d.costOfSoldEthUsd, d.fx.buy)) : '') +
         (d.isPartialSale ? row('Still held', eth(d.retainedEth)) : '') +
-        row('Gross gain', signedMoney(d.grossGain, c), gainClass(d.grossGain))
+        row2('Gross gain', signedMoney(d.grossGain, c), signedFxNote(d.grossGainUsd, d.fx.sell), gainClass(d.grossGain))
       );
     case 'repay':
       // The interest the loan actually cost, which is what the net gain is
       // computed from. Showing the theoretical accrual here meant the card did
       // not add up: gross minus the interest shown missed the net by cents.
+      //
+      // For a loan in another currency the dollar cost is the interest plus
+      // whatever the currency itself did to the principal, so it is labelled
+      // for what it is and the two parts are shown separately.
       return (
         row('Date', fmtDate(t.repay_date)) +
-        row('Repaid', money(t.repay_amount, c)) +
-        row('Interest', money(d.interestPaid ?? d.accruedInterest, c)) +
-        row('Net gain', signedMoney(d.netGain, c), gainClass(d.netGain)) +
-        row('Annualized', pct(d.pct), gainClass(d.netGain))
+        row2('Repaid', money(t.repay_amount, c), fxNote(d.repayUsd, d.fx.repay)) +
+        row2(
+          d.isUsdPegged ? 'Interest' : 'Loan cost',
+          money(d.interestPaid ?? d.accruedInterest, c),
+          isNum(d.loanCostUsd)
+            ? `${usd(d.loanCostUsd)}${
+                isNum(d.principalFxUsd)
+                  ? ` <span class="fx-note__rate">interest ${usd(d.interestPaidUsd)}, currency ${signedUsd(d.principalFxUsd)}</span>`
+                  : ''
+              }`
+            : RATE_MISSING,
+        ) +
+        row2('Net gain', signedMoney(d.netGain, c), signedFxNote(d.netGainUsd, null), gainClass(d.netGain)) +
+        row('Annualized', pct(d.pct), gainClass(d.netGainUsd))
       );
     default:
       return '';
@@ -530,10 +595,12 @@ function tradeRow(t, index) {
   const d = t.derived || derive(t);
   const isOpen = state.openId === t.id;
 
-  const gain = isNum(d.netGain) ? d.netGain : d.projectedNetGain;
+  const gain = isNum(d.netGainUsd) ? d.netGainUsd : d.projectedNetGainUsd;
   const gainCell = isNum(gain)
-    ? `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGain) ? '' : ' <span class="chip">est</span>'}`
-    : '<span class="muted">-</span>';
+    ? `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ' <span class="chip">est</span>'}`
+    : d.fxComplete
+      ? '<span class="muted">-</span>'
+      : RATE_MISSING;
 
   return `
   <tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0">
@@ -542,8 +609,12 @@ function tradeRow(t, index) {
         <span class="caret"></span>
         ${coin(t.borrow_currency)}
         <span class="row__stack">
-          <span>${usd(t.borrow_amount)}</span>
-          <small>${fmtDate(t.borrow_date)}</small>
+          <span>${isNum(d.borrowUsd) ? usd(d.borrowUsd) : RATE_MISSING}</span>
+          <small>${
+            d.isUsdPegged
+              ? fmtDate(t.borrow_date)
+              : `${money(t.borrow_amount, t.borrow_currency)} &middot; ${fmtDate(t.borrow_date)}`
+          }</small>
         </span>
       </div>
     </td>
@@ -552,11 +623,11 @@ function tradeRow(t, index) {
         ? `<span class="eth-cell">${ethMark}${ethQty(t.buy_eth)}</span>`
         : '<span class="muted">-</span>'
     }</td>
-    <td data-label="Buy price" class="num">${isNum(d.buyPrice) ? usd(d.buyPrice) : '<span class="muted">-</span>'}</td>
-    <td data-label="Sell price" class="num">${isNum(d.sellPrice) ? usd(d.sellPrice) : '<span class="muted">-</span>'}</td>
+    <td data-label="Buy price" class="num">${isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : '<span class="muted">-</span>'}</td>
+    <td data-label="Sell price" class="num">${isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : '<span class="muted">-</span>'}</td>
     <td data-label="Days" class="num">${isNum(d.days) ? d.days : ''}</td>
     <td data-label="Net gain" class="num">${gainCell}</td>
-    <td data-label="Annualized" class="num">${isNum(d.pct) ? `<span class="${gainClass(d.netGain)}">${pct(d.pct)}</span>` : '<span class="muted">-</span>'}</td>
+    <td data-label="Annualized" class="num">${isNum(d.pct) ? `<span class="${gainClass(d.netGainUsd)}">${pct(d.pct)}</span>` : '<span class="muted">-</span>'}</td>
     <td data-label="Status"><span class="pill pill--${d.status}">${d.status}</span></td>
   </tr>
   ${
@@ -659,18 +730,31 @@ function summaryCard(title, body, note = '') {
 
 function currencyTable(rows) {
   if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
+  // Borrowed is shown in dollars so the rows can be compared, with the native
+  // total beneath it: unlike the totals above, a native figure means something
+  // here, because the table is grouped by the currency it is denominated in.
   return `<table class="table table--flush">
     <thead>
-      <tr><th>Stablecoin</th><th>Closed</th><th>Open</th><th>Borrowed</th><th>Net gain</th><th>Avg annualized</th></tr>
+      <tr><th>Currency</th><th>Closed</th><th>Open</th><th>Borrowed</th><th>Net gain</th><th>Avg annualized</th></tr>
     </thead>
     <tbody>
       ${rows
         .map(
           (r) => `<tr>
-        <td data-label="Stablecoin"><span class="row__asset">${coin(r.currency)}<span>${esc(r.currency)}</span></span></td>
+        <td data-label="Currency"><span class="row__asset">${coin(r.currency)}<span>${esc(r.currency)}</span>${
+          r.missingFx ? ` ${RATE_MISSING}` : ''
+        }</span></td>
         <td data-label="Closed" class="num">${r.closed}</td>
         <td data-label="Open" class="num">${r.open || dash}</td>
-        <td data-label="Borrowed" class="num">${r.borrowed ? usd(r.borrowed) : dash}</td>
+        <td data-label="Borrowed" class="num">${
+          isNum(r.borrowed)
+            ? `${usd(r.borrowed)}${
+                isNum(r.borrowedNative) && !isUsdPegged(r.currency)
+                  ? `<small class="fx-note">${money(r.borrowedNative, r.currency)}</small>`
+                  : ''
+              }`
+            : dash
+        }</td>
         <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain) || dash}</td>
         <td data-label="Avg annualized" class="num ${gainClass(r.netGain)}">${pct(r.avgPct) || dash}</td>
       </tr>`,
@@ -716,6 +800,25 @@ function extremeCard(label, entry) {
   </div>`;
 }
 
+/**
+ * Says so out loud when some trades have no exchange rate yet, rather than
+ * quietly leaving them out of the totals. The button asks the server to go and
+ * look the missing rates up, which is the other half of letting a trade save
+ * with the network unplugged.
+ */
+function fxBanner(count) {
+  if (!count) return '';
+  const noun = count === 1 ? 'trade has' : 'trades have';
+  return `<section class="card card--warn">
+    <div class="card__body fx-banner">
+      <span>${count} ${noun} no exchange rate yet, so ${
+        count === 1 ? 'it is' : 'they are'
+      } left out of the totals below.</span>
+      <button class="btn btn--sm btn--primary" type="button" id="fetch-rates">Fetch rates</button>
+    </div>
+  </section>`;
+}
+
 function renderSummary() {
   const mount = document.getElementById('summary-mount');
 
@@ -728,28 +831,39 @@ function renderSummary() {
   }
 
   const r = summaryReport(state.trades);
-  const closedAny = r.closedCount > 0;
+  const valuedAny = r.valuedCount > 0;
 
   mount.innerHTML = `
+    ${fxBanner(r.missingFx)}
     ${summaryCard(
       'Performance',
       `<div class="kv-grid">
         ${statRow('Realized net gain', signedUsd(r.netGain), gainClass(r.netGain))}
         ${statRow('Average annualized', pct(r.avgPct), gainClass(r.avgPct))}
-        ${statRow('Interest paid', closedAny ? usd(r.interestPaid) : '')}
+        ${statRow('Interest paid', valuedAny ? usd(r.interestPaid) : '')}
+        ${
+          isNum(r.currencyEffect) && Math.abs(r.currencyEffect) >= 0.005
+            ? statRow('Of which currency', signedUsd(r.currencyEffect), gainClass(r.currencyEffect))
+            : ''
+        }
         ${statRow(
           'Win rate',
-          closedAny ? `${pct(r.winRate, 0)} <span class="muted">(${r.wins} up, ${r.losses} down)</span>` : '',
+          valuedAny ? `${pct(r.winRate, 0)} <span class="muted">(${r.wins} up, ${r.losses} down)</span>` : '',
         )}
-        ${statRow('Total borrowed', closedAny ? usd(r.totalBorrowed) : '')}
+        ${statRow('Total borrowed', valuedAny ? usd(r.totalBorrowed) : '')}
         ${statRow('Average hold', r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`)}
         ${extremeCard('Best trade', r.best)}
         ${extremeCard('Worst trade', r.worst)}
       </div>`,
-      closedAny ? `${r.closedCount} closed of ${r.tradeCount}` : 'no closed trades yet',
+      valuedAny ? `${r.closedCount} closed of ${r.tradeCount}` : 'no closed trades yet',
     )}
-    ${summaryCard('By stablecoin', currencyTable(r.byCurrency))}
+    ${summaryCard('By currency', currencyTable(r.byCurrency))}
     ${summaryCard('By month closed', monthTable(r.byMonth))}
+    <p class="summary__foot muted">
+      Every figure is in US dollars. Amounts in a currency other than the dollar are
+      converted at the European Central Bank reference rate published for the day of
+      each transaction, so a loan taken and repaid months apart is converted twice.
+    </p>
   `;
 }
 
@@ -984,6 +1098,22 @@ function wire() {
       state.editing = null;
       render();
       state.draft = null;
+      return;
+    }
+
+    if (e.target.closest('#fetch-rates')) {
+      const btn = e.target.closest('#fetch-rates');
+      btn.disabled = true;
+      btn.textContent = 'Fetching...';
+      api('/api/fx/backfill', { method: 'POST', body: JSON.stringify({ refresh: false }) })
+        .then(async (out) => {
+          await loadTrades();
+          render();
+          if (out.filled > 0) toast(`Filled in ${out.filled} exchange rate${out.filled === 1 ? '' : 's'}.`);
+          else if (out.offline) toast('Rate lookups are switched off.');
+          else toast(out.lastError || 'No rates could be fetched just now.');
+        })
+        .catch((err) => toast(err.message));
       return;
     }
 

@@ -3,6 +3,27 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.6] - 2026-09-19
+
+### Added
+
+- EURC as a fifth borrowable currency, converted to US dollars at the European Central Bank euro reference rate published for the day of each transaction. Each of the four stages is converted at its own date, so the euro's movement over the life of a loan lands in the dollar result rather than disappearing.
+- The Repaid card splits the cost of a loan in another currency into the interest and what the currency itself did to the principal, so a loan that got cheaper in dollars reads as an explanation rather than a mistake.
+- Rates are cached in the database and looked up once. A trade always saves whether or not a rate could be fetched; one without a rate is marked, left out of the totals, and filled in later by **Fetch rates** on the Summary.
+- `GET /api/fx/rate`, `GET /api/fx/status` and `POST /api/fx/backfill`. All three answer 200 when the network cannot be reached, since that is a result to show rather than a server fault.
+
+### Fixed
+
+- Every cross-currency total summed raw amounts as though one token were always one dollar. Harmless while every supported coin was a dollar, it would have reported a 50,000 EURC borrow as $50,000. The totals now convert, and the average annualized return is weighted by the dollar size of each loan rather than the native one.
+- The ETH buy and sell price divided the amount spent by the ETH bought and labelled the result dollars. On a trade in another currency that is a euros-per-ETH figure under a dollar sign.
+- Best and worst trade ranked native amounts against each other, which is not a comparison.
+
+### Changed
+
+- The database gains nine nullable columns and a rate cache table, added on first open. An existing ledger opens unchanged, with no migration to run by hand.
+- Exchange rates are resolved by the server and rejected if submitted, so no request can move the dollar figures without touching an amount.
+- "Stablecoin" reads "Currency" in the form and the summary table.
+
 ## [0.0.5] - 2026-09-19
 
 ### Added

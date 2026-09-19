@@ -691,6 +691,46 @@ h3 {
   font-weight: 600;
 }
 
+/* A figure that is missing its exchange rate, rather than one that is zero. */
+.chip--warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+/* The dollar equivalent under an amount in another currency, and the rate it
+   was converted at. Only ever rendered for a coin that is not a dollar. */
+.fx-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.fx-note__rate {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.card--warn {
+  border-color: var(--warn);
+}
+
+.fx-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary__foot {
+  margin: 14px 2px 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  max-width: 68ch;
+}
+
 .caret {
   display: inline-block;
   width: 7px;

@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { db, prepare, closeDb, FIELDS } from './db.js';
-import { derive, summaryReport, parseDate, CURRENCIES } from './lib/calc.js';
+import { db, prepare, closeDb, FIELDS, FX_COLUMNS } from './db.js';
+import { derive, summaryReport, parseDate, CURRENCIES, FX_STAGES } from './lib/calc.js';
+import { fillFxColumns, staleFxColumns, backfillRates, resolveRate, fxStatus } from './fx.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -106,7 +107,7 @@ function normalise(body, { requireBorrow }) {
   numericField('borrow_apr', 'Borrow APR', { allowZero: true });
   if (has('borrow_currency')) {
     const c = String(body.borrow_currency || '').toUpperCase();
-    if (!CURRENCIES.includes(c)) throw new BadRequest('Pick a supported stablecoin.', 'borrow_currency');
+    if (!CURRENCIES.includes(c)) throw new BadRequest('Pick a supported currency.', 'borrow_currency');
     out.borrow_currency = c;
   }
 
@@ -122,6 +123,16 @@ function normalise(body, { requireBorrow }) {
   numericField('repay_amount', 'Repaid amount');
 
   if (has('notes')) out.notes = isBlank(body.notes) ? null : String(body.notes).slice(0, 2000);
+
+  // Exchange rates are resolved here from a published source, never accepted
+  // from the caller. A request that could set its own rate could move every
+  // dollar figure in the ledger without touching a single amount.
+  for (const stage of FX_STAGES) {
+    for (const key of [`${stage}_fx`, `${stage}_fx_date`]) {
+      if (has(key)) throw new BadRequest('Exchange rates are looked up, not submitted.', key);
+    }
+  }
+  if (has('fx_source')) throw new BadRequest('Exchange rates are looked up, not submitted.', 'fx_source');
 
   for (const [key, label] of REQUIRED_BORROW) {
     // On create the field has to be there. On update it may be absent, but if
@@ -213,14 +224,17 @@ app.get('/api/summary', (_req, res) => {
   res.json(summaryReport(selectAll.all()));
 });
 
-app.post('/api/trades', (req, res, next) => {
+app.post('/api/trades', async (req, res, next) => {
   try {
     const patch = normalise(req.body || {}, { requireBorrow: true });
-    const row = Object.fromEntries(FIELDS.map((f) => [f, patch[f] ?? null]));
+    // Built over both lists before the INSERT names them, or better-sqlite3
+    // refuses the statement for a parameter it was never handed.
+    const row = Object.fromEntries([...FIELDS, ...FX_COLUMNS].map((f) => [f, patch[f] ?? null]));
     checkChronology(row);
+    Object.assign(row, await fillFxColumns(row));
 
     const now = new Date().toISOString();
-    const cols = [...FIELDS, 'created_at', 'updated_at'];
+    const cols = [...FIELDS, ...FX_COLUMNS, 'created_at', 'updated_at'];
     const stmt = prepare(
       `INSERT INTO trades (${cols.join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`,
     );
@@ -231,22 +245,78 @@ app.post('/api/trades', (req, res, next) => {
   }
 });
 
-app.patch('/api/trades/:id', (req, res, next) => {
+app.patch('/api/trades/:id', async (req, res, next) => {
   try {
     const current = selectOne.get(Number(req.params.id));
     if (!current) return res.status(404).json({ error: 'Trade not found.' });
 
     const patch = normalise(req.body || {}, { requireBorrow: false });
-    const keys = Object.keys(patch);
-    if (keys.length === 0) return res.json(withDerived(current));
+    if (Object.keys(patch).length === 0) return res.json(withDerived(current));
 
-    checkChronology({ ...current, ...patch });
+    const merged = { ...current, ...patch };
+    checkChronology(merged);
+
+    // An edit can invalidate a rate that was right when it was stored. Clear
+    // those first, then look up replacements, so the write carries the change
+    // and its consequences in one statement rather than two.
+    const stale = staleFxColumns(current, patch);
+    Object.assign(merged, stale);
+    const fresh = await fillFxColumns(merged);
+
+    const write = { ...patch, ...stale, ...fresh };
+    const keys = Object.keys(write);
 
     prepare(
       `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE id = @id`,
-    ).run({ ...patch, updated_at: new Date().toISOString(), id: current.id });
+    ).run({ ...write, updated_at: new Date().toISOString(), id: current.id });
 
     res.json(withDerived(selectOne.get(current.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/*
+ * The rate endpoints answer 200 even when they could not reach anything. Being
+ * unable to look a rate up is a result the interface is built to show, not a
+ * server fault, and the browser's api() helper throws on any status that is not
+ * ok, which would turn "no rate yet" into an error toast.
+ */
+
+app.get('/api/fx/rate', async (req, res) => {
+  const currency = String(req.query.currency || '').toUpperCase();
+  const date = String(req.query.date || '').trim();
+  if (!CURRENCIES.includes(currency) || parseDate(date) === null) {
+    return res.json({ currency, date, rate: null, reason: 'That is not a currency and date I can look up.' });
+  }
+  const hit = await resolveRate(currency, date);
+  if (!hit) {
+    const status = fxStatus();
+    return res.json({
+      currency, date, rate: null,
+      reason: status.offline
+        ? 'Rate lookups are switched off.'
+        : status.lastError || 'No rate has been published for that date yet.',
+    });
+  }
+  res.json({ currency, date, rate: hit.rate, rateDate: hit.rateDate, source: hit.source });
+});
+
+app.get('/api/fx/status', (_req, res) => {
+  const trades = selectAll.all().map(withDerived);
+  const missing = trades.filter((t) => !t.derived.fxComplete);
+  res.json({
+    ...fxStatus(),
+    missing: {
+      count: missing.length,
+      tradeIds: missing.map((t) => t.id),
+    },
+  });
+});
+
+app.post('/api/fx/backfill', async (req, res, next) => {
+  try {
+    res.json(await backfillRates({ refresh: req.body?.refresh === true }));
   } catch (err) {
     next(err);
   }
