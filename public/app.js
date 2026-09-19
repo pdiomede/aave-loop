@@ -755,9 +755,9 @@ function renderTable() {
 
 const dash = '<span class="muted">-</span>';
 
-function statRow(label, value, cls = '') {
+function statRow(label, value, cls = '', hint = '') {
   return `<div class="kv">
-    <dt>${label}</dt>
+    <dt>${label}${hint ? ` <span class="kv__hint" title="${esc(hint)}">?</span>` : ''}</dt>
     <dd class="${cls}">${value || dash}</dd>
   </div>`;
 }
@@ -832,13 +832,21 @@ function monthTable(rows) {
   </table>`;
 }
 
-function extremeCard(label, entry) {
+/**
+ * Best and worst are ranked on the money made, not on the annualized rate: a
+ * two day trade can post 800% on a small gain and would otherwise always win.
+ * The label says so, because showing the rate on the same line made it look
+ * like the rate was what the ranking was on.
+ *
+ * When every trade made money "worst" is misleading too, so it says smallest.
+ */
+function extremeCard(label, entry, hint = '') {
   if (!entry) return statRow(label, '');
   return `<div class="kv">
-    <dt>${label}</dt>
+    <dt>${label}${hint ? ` <span class="kv__hint" title="${esc(hint)}">?</span>` : ''}</dt>
     <dd>
       <span class="${gainClass(entry.netGain)}">${signedUsd(entry.netGain)}</span>
-      <span class="muted">${esc(entry.currency)}, ${fmtDate(entry.date)}, ${pct(entry.pct)}</span>
+      <span class="muted">${esc(entry.currency)}, ${fmtDate(entry.date)} &middot; ${pct(entry.pct)} annualized</span>
     </dd>
   </div>`;
 }
@@ -882,7 +890,14 @@ function renderSummary() {
       'Performance',
       `<div class="kv-grid">
         ${statRow('Realized net gain', signedUsd(r.netGain), gainClass(r.netGain))}
-        ${statRow('Average annualized', pct(r.avgPct), gainClass(r.avgPct))}
+        ${statRow(
+          'Blended annualized',
+          pct(r.avgPct),
+          gainClass(r.avgPct),
+          'The return on the capital actually deployed, weighted by how much and for how long. ' +
+            'Not the average of the percentages in the table: a one day flip would otherwise ' +
+            'count as heavily as a trade held for months.',
+        )}
         ${statRow('Interest paid', valuedAny ? usd(r.interestPaid) : '')}
         ${
           isNum(r.currencyEffect) && Math.abs(r.currencyEffect) >= 0.005
@@ -895,8 +910,12 @@ function renderSummary() {
         )}
         ${statRow('Total borrowed', valuedAny ? usd(r.totalBorrowed) : '')}
         ${statRow('Average hold', r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`)}
-        ${extremeCard('Best trade', r.best)}
-        ${extremeCard('Worst trade', r.worst)}
+        ${extremeCard('Biggest gain', r.best, 'Ranked by dollars made, not by the annualized rate.')}
+        ${extremeCard(
+          r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss',
+          r.worst,
+          'Ranked by dollars, not by the annualized rate.',
+        )}
       </div>`,
       valuedAny
         ? `${r.closedCount} closed of ${r.tradeCount}`
@@ -925,7 +944,7 @@ function renderStats() {
       value: isNum(s.netGain) ? signedUsd(s.netGain) : s.missingFx ? RATE_MISSING : '-',
       cls: gainClass(s.netGain),
     },
-    { label: 'Average annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: gainClass(s.avgPct) },
+    { label: 'Blended annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: gainClass(s.avgPct) },
     { label: 'Closed trades', value: String(s.closedCount) },
     { label: 'Open positions', value: s.openCount ? `${s.openCount} (${usd(s.deployed)})` : '0' },
   ];

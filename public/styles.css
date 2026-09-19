@@ -154,6 +154,29 @@ h3 {
   letter-spacing: -0.03em;
 }
 
+/* The brand is a link back to the public page, so it must not look like body
+   copy that happens to be underlined. */
+a.brand {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* A figure that needs a sentence to be read correctly carries it here rather
+   than in a longer label that would wrap the row. */
+.kv__hint {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+  vertical-align: 1px;
+}
+
 .brand__mark {
   width: 24px;
   height: 24px;

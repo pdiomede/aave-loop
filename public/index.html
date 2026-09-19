@@ -12,7 +12,11 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/styles.css" />
-    <link rel="icon" href="/aaveLogo.png" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#9896ff" />
+    <!-- Behind basic auth, so nothing should try to index or preview it. -->
+    <meta name="robots" content="noindex, nofollow" />
     <script>
       // Applied before first paint so a dark session never flashes white.
       try {
@@ -24,10 +28,10 @@
   <body>
     <header class="header">
       <div class="shell header__inner">
-        <span class="brand">
+        <a class="brand" href="/">
           <img class="brand__mark" src="/aaveLogo.png" alt="" width="24" height="24" />
           <span class="brand__name">Aave Loop Ledger</span>
-        </span>
+        </a>
         <nav class="nav">
           <a class="nav__link is-active" href="#trades" data-view="trades">Trades</a>
           <a class="nav__link" href="#summary" data-view="summary">Summary</a>
@@ -91,7 +95,7 @@
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v0.0.14</span> - Built by
+          &copy; 2026 &middot; <span id="version">v0.0.15</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>

@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.15] - 2026-09-19
+
+### Fixed
+
+- "Total borrowed" counted only closed, convertible trades while the by-currency table beneath it counted every trade. On a ledger with capital still out, the headline was smaller than the column under it. Both now mean the same thing.
+- "Average hold" was measured over every closed trade while every money figure in the same card is measured over the convertible ones. Two correct numbers describing different populations is a quiet way to look inconsistent.
+
+### Changed
+
+- **"Average annualized" is now "Blended annualized".** The figure was right and the word was wrong. It is the return on the capital actually deployed, weighted by how much and for how long, not the mean of the percentages in the table. Next to a column of 500% rows a correct 84% looked broken. A note on the row explains it.
+- **"Best trade" and "Worst trade" are now "Biggest gain" and "Biggest loss"**, and say they are ranked by dollars. They always were, but showing the annualized rate on the same line made the rate look like the ranking key, and a two day trade can post 800% on a small gain. When every trade made money the second reads "Smallest gain", because calling a profit the worst trade is misleading.
+- The wordmark in the app header links back to the public page.
+
+### Added
+
+- `PROMPTS.md`, with the bug-hunting prompt used on this codebase: the money, the database, security, the interface, and error handling. It says explicitly not to invent findings to reach a number, and lists the deliberate decisions an auditor keeps re-reporting as bugs.
+- Social preview cards. Open Graph and Twitter tags on the landing page, with a 1200x630 image at `landing/og.png`, so a link shared on X, LinkedIn, Slack or Discord unfurls with the mark, the headline and the coins it supports rather than a bare URL. The image URL is absolute, because a scraper has no page to resolve a relative one against.
+- A real `favicon.ico` alongside the existing SVG, plus an apple-touch icon for a phone home screen. The app carries `noindex`, since it sits behind a password and nothing should try to preview it.
+
 ## [0.0.14] - 2026-09-19
 
 ### Fixed
