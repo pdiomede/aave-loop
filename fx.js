@@ -195,7 +195,11 @@ export async function resolveRange(currency, fromISO, toISO) {
     return out;
   }
 
-  const days = Object.keys(published).sort();
+  // The single day path runs every answer through `validate`; this one did not,
+  // so whatever the service sent was stored as fact. A rate of -999999 was
+  // accepted, and the day key is written into the trade and rendered in the
+  // interface, so it has to be a real date and nothing else.
+  const days = Object.keys(published).filter((d) => parseDate(d) !== null).sort();
   if (days.length === 0) return out;
 
   // Walk the span day by day, carrying the last published rate forward.
@@ -205,16 +209,19 @@ export async function resolveRange(currency, fromISO, toISO) {
     const iso = new Date(ts).toISOString().slice(0, 10);
     while (cursor < days.length && days[cursor] <= iso) {
       const rate = published[days[cursor]]?.[QUOTE];
-      if (typeof rate === 'number' && Number.isFinite(rate)) {
+      if (validate(rate, days[cursor], days[cursor]) === null) {
         carried = { rate, rateDate: days[cursor], source: 'ecb' };
       }
       cursor += 1;
     }
-    if (carried) {
-      out.set(iso, carried);
-      cachePut(base, iso, carried);
-    }
+    if (carried) out.set(iso, carried);
   }
+
+  // One transaction for the whole span. A wide span is thousands of days, and
+  // writing each one on its own made that thousands of separate commits.
+  db.transaction(() => {
+    for (const [iso, record] of out) cachePut(base, iso, record);
+  })();
   return out;
 }
 
@@ -348,9 +355,16 @@ export async function backfillRates({ refresh = false } = {}) {
 
   const apply = db.transaction(() => {
     for (const { row, stages } of targets) {
+      // Re-read inside the transaction. The rates above were fetched over the
+      // network, and an edit landing in the meantime can have moved a stage to
+      // another day or changed the currency, which would pin the rate we just
+      // looked up to a transaction it does not belong to.
+      const live = prepare('SELECT * FROM trades WHERE id = ?').get(row.id);
+      if (!live || live.borrow_currency !== row.borrow_currency) continue;
       const patch = {};
       let source = null;
       for (const s of stages) {
+        if (live[`${s}_date`] !== row[`${s}_date`]) continue;
         const hit = resolved.get(`${row.borrow_currency}|${row[`${s}_date`]}`);
         if (!hit) {
           stillMissing += 1;

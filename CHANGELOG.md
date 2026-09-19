@@ -3,6 +3,55 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.7] - 2026-09-19
+
+Twenty-two defects found by an audit of the maths, the database handling, the security surface, the interface and the error paths. No new features.
+
+### Security
+
+- The API answered any `Host` header, so a page on the internet could point its own hostname at `127.0.0.1` and reach the ledger as a same origin, reading and deleting every trade. The loopback bind is the whole of this app's protection, so a request now has to be addressed to loopback as well.
+- The backfill stored whatever the rate service sent. `resolveRange` never ran the check `resolveRate` applies to every single-day answer, so a rate of `-999999` was accepted and written to a trade, and the day key from the response was stored in `*_fx_date` and rendered into the page unescaped. Both paths now validate, and `fmtDate` escapes its result.
+
+### Fixed, crashes and races
+
+- `GET /api/fx/rate` had no error handling. Express does not catch a rejected async handler, so any throw from the rate cache became an unhandled rejection: the request hung with no answer and the server process exited. `/api/fx/backfill` next door already guarded against this.
+- Editing or creating a borrow threw `ReferenceError: Cannot access 'c' before initialization` on every keystroke once an amount and an APR were both present. `c` was read in the borrow branch of `refreshHints` nine lines before its `const`, so the interest-per-day hint never appeared at all.
+- `PATCH` became asynchronous when rate lookups moved into it, so two requests for one trade interleaved across the await: the second read the row before the first had written and answered the browser with a row missing the change just made. Writes are now serialized per trade.
+- A rate backfill could pin a rate to a stage that had moved while it was away on the network. It now re-reads each row inside its transaction and skips any stage whose date or currency changed.
+
+### Fixed, in the dates
+
+- `todayISO()` returned the UTC date, which anywhere east of UTC is yesterday for part of the day. The forms prefilled yesterday and the browser then refused the user's own today as "in the future": in Tokyo from 09:00 local onwards, in Rome between midnight and 02:00. Today is now read from the local calendar on both sides. Spans are unaffected, because `parseDate` still builds UTC midnights, so DST and leap years stay exact.
+- The server let a future date through anyway. Its 36 hour slack was measured from `Date.now()` while a date parses to UTC midnight, so tomorrow always fell inside it and still produced the negative loan span the check exists to prevent.
+
+### Fixed, in the maths
+
+- The Average annualized figure was weighted by loan size alone, so a one day flip that made $50 counted as heavily as a ninety day trade that made $900. Two such trades read 109.5% where the honest figure is 38.1%. The weight is now capital times time.
+- The by-currency table counted only closed trades towards Borrowed, so a currency with 50,000 still outstanding showed a dash, contradicting the Open positions tile on the same page.
+- A trade that came out exactly flat was counted as a loss, reporting a break-even ledger as 0% won. It is now left out of the win rate rather than held against it.
+- A closed trade whose rate had not been fetched made the headline Realized net gain read `+$0.00`. It made a real gain that is simply not known in dollars, and that tile shows on the Trades view too, where the Summary's banner is not there to explain it. The total is now marked unknown rather than stated as zero.
+
+### Fixed, in the numbers people paste
+
+- A European amount was silently gutted. `32.000,00` lost its comma and became 32, recording a 32,000 loan as thirty-two; `32000,50` became 3200050. A pasted amount is now read for what it is. Typing is unchanged, because `1,5` on its way to `1,500` cannot be read as a decimal comma.
+- A half typed `1500.` was rejected as "must be a number" although the server accepted it. The trailing dot of a figure on its way to `1500.75` is now allowed.
+- The form and the server disagreed about exponent notation: `1e5` was 15 in one and 100000 in the other, because the form deleted letters until what was left parsed. Both now use one parser in `lib/calc.js`, which refuses anything that is not a number instead of editing it.
+- An APR sent as a single space was stored as 0%, a silent interest free loan. Whitespace now counts as blank.
+
+### Fixed, in the interface
+
+- An error raised when a field was left refocused that same field, so the value could not be tabbed away from until it was acceptable. An error from leaving a field no longer takes focus back.
+- Neither form disabled its button while a request was in flight, so a double click on Create trade posted the same borrow twice and the duplicate then double counted in every total.
+- Derived figures were a snapshot taken when the page loaded, so a tab left open across midnight kept showing the day count and the accrued interest from load time. The browser now recomputes them from the shared module.
+- A failed **Fetch rates** left the button reading "Fetching..." and disabled for good, because the re-render that would have replaced it never happened.
+
+### Fixed, on the server
+
+- Clearing a stage's amounts through the API left a row still labelled CLOSED whose net gain had become null, so it dropped out of every realized total while being counted as an open position. 0.0.5 closed this for the dates only; stage order now holds on the amounts too.
+- An oversized request body was reported as a 500. It is a 413.
+- A write that lost the lock race to a second instance was reported as a 500 as well, which read as data loss. It is now a 503 saying the ledger is busy and to try again.
+- Caching a span of rates committed once per day in the span. A wide backfill is thousands of days, so it is now one transaction.
+
 ## [0.0.6] - 2026-09-19
 
 ### Added

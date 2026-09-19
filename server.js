@@ -3,7 +3,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { db, prepare, closeDb, FIELDS, FX_COLUMNS } from './db.js';
-import { derive, summaryReport, parseDate, CURRENCIES, FX_STAGES } from './lib/calc.js';
+import {
+  derive,
+  summaryReport,
+  parseDate,
+  parseAmount,
+  stages,
+  todayISO,
+  CURRENCIES,
+  FX_STAGES,
+} from './lib/calc.js';
 import { fillFxColumns, staleFxColumns, backfillRates, resolveRate, fxStatus } from './fx.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -11,6 +20,21 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const PORT = Number(process.env.PORT) || 3000;
 
 const app = express();
+
+// The ledger has no authentication; the loopback bind is the whole of its
+// protection. A request has to be addressed to loopback as well, or a page on
+// the internet can point its own hostname at 127.0.0.1 and reach this API as a
+// same origin, reading and deleting the entire ledger.
+const LOOPBACK_HOSTS = new Set(
+  ['localhost', '127.0.0.1', '[::1]'].flatMap((h) => [h, `${h}:${PORT}`]),
+);
+app.use((req, res, next) => {
+  if (!LOOPBACK_HOSTS.has(String(req.headers.host || '').toLowerCase())) {
+    return res.status(403).type('text/plain').send('This ledger only answers on localhost.');
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Everything here is a small local file, so correctness beats caching. Without
@@ -44,7 +68,11 @@ class BadRequest extends Error {
   }
 }
 
-const isBlank = (v) => v === undefined || v === null || v === '';
+// A value of only whitespace is blank, not zero. Untrimmed, `toNumber(' ')`
+// cleaned it to '' and `Number('')` made it 0, so a mistyped APR was stored as
+// a silent 0% loan.
+const isBlank = (v) =>
+  v === undefined || v === null || (typeof v === 'string' ? v.trim() === '' : v === '');
 
 const REQUIRED_BORROW = [
   ['borrow_date', 'Borrow date'],
@@ -54,8 +82,10 @@ const REQUIRED_BORROW = [
 ];
 
 function toNumber(value, field, label, { allowZero = false } = {}) {
-  const n = typeof value === 'string' ? Number(value.replace(/[,\s$%]/g, '')) : Number(value);
-  if (!Number.isFinite(n)) throw new BadRequest(`${label} must be a number.`, field);
+  // Same parser the browser uses, so the two can no longer disagree about what
+  // a value means: "1e5" was 15 in the form and 100000 here.
+  const n = parseAmount(value);
+  if (n === null) throw new BadRequest(`${label} must be a number.`, field);
   if (allowZero ? n < 0 : n <= 0) {
     throw new BadRequest(
       `${label} must be ${allowZero ? 'zero or more' : 'greater than zero'}.`,
@@ -65,16 +95,15 @@ function toNumber(value, field, label, { allowZero = false } = {}) {
   return n;
 }
 
-// One day of slack, because the client's calendar may be a timezone ahead.
-const FUTURE_SLACK_MS = 36 * 60 * 60 * 1000;
-
 function toDate(value, field, label) {
   const iso = String(value).trim();
   const ts = parseDate(iso);
   if (ts === null) throw new BadRequest(`${label} must be a valid date.`, field);
-  if (ts > Date.now() + FUTURE_SLACK_MS) {
-    // A future date yields a negative loan span, which quietly suppressed the
-    // interest and the annualized return rather than reporting anything.
+  // Compared against the same local calendar date the form uses. The old
+  // 36 hour slack was measured from `Date.now()` while `parseDate` returns UTC
+  // midnight, so tomorrow always fell inside it and still produced the negative
+  // loan span this check exists to prevent.
+  if (iso > todayISO()) {
     throw new BadRequest(`${label} cannot be in the future.`, field);
   }
   if (ts < Date.UTC(2015, 6, 30)) {
@@ -179,6 +208,19 @@ function checkChronology(row) {
     throw new BadRequest('Record the ETH sale before the repayment.', 'repay_date');
   }
 
+  // Those checks only look at the dates. Clearing `buy_amount` or `sell_eth`
+  // through the API left a row still labelled CLOSED whose net gain had become
+  // null, so it silently dropped out of every realized total while being
+  // counted as an open position. A stage counts as filled only when its
+  // amounts are there too.
+  const st = stages(row);
+  if (st.sold && !st.bought) {
+    throw new BadRequest('Record the ETH purchase before the sale.', 'buy_amount');
+  }
+  if (st.repaid && !st.sold) {
+    throw new BadRequest('Record the ETH sale before the repayment.', 'sell_amount');
+  }
+
   if (row.sell_eth != null && row.buy_eth != null && row.sell_eth > row.buy_eth * 1.0001) {
     throw new BadRequest('You cannot sell more ETH than you bought.', 'sell_eth');
   }
@@ -205,6 +247,31 @@ function checkChronology(row) {
 }
 
 const withDerived = (row) => ({ ...row, derived: derive(row) });
+
+/**
+ * One writer at a time per trade.
+ *
+ * PATCH became asynchronous when rate lookups moved into it, so two requests
+ * for the same trade now interleave across the await: the second reads the row
+ * before the first has written, decides which rates are stale from that older
+ * snapshot, and answers the browser with a row missing the change the first one
+ * just made. Two tabs, or a rate backfill overlapping an edit, is enough.
+ */
+const tradeLocks = new Map();
+
+function withTradeLock(id, fn) {
+  const run = (tradeLocks.get(id) ?? Promise.resolve()).then(() => fn());
+  // The next waiter must not inherit this one's rejection.
+  const tail = run.then(
+    () => {},
+    () => {},
+  );
+  tradeLocks.set(id, tail);
+  tail.then(() => {
+    if (tradeLocks.get(id) === tail) tradeLocks.delete(id);
+  });
+  return run;
+}
 
 const selectAll = prepare('SELECT * FROM trades ORDER BY borrow_date DESC, id DESC');
 const selectOne = prepare('SELECT * FROM trades WHERE id = ?');
@@ -247,30 +314,39 @@ app.post('/api/trades', async (req, res, next) => {
 
 app.patch('/api/trades/:id', async (req, res, next) => {
   try {
-    const current = selectOne.get(Number(req.params.id));
-    if (!current) return res.status(404).json({ error: 'Trade not found.' });
-
+    const id = Number(req.params.id);
+    // Validate the body before queueing, so a bad request is refused at once
+    // rather than after waiting behind someone else's rate lookup.
     const patch = normalise(req.body || {}, { requireBorrow: false });
-    if (Object.keys(patch).length === 0) return res.json(withDerived(current));
 
-    const merged = { ...current, ...patch };
-    checkChronology(merged);
+    const row = await withTradeLock(id, async () => {
+      // Read inside the lock: anything queued ahead of us has finished writing.
+      const current = selectOne.get(id);
+      if (!current) return null;
+      if (Object.keys(patch).length === 0) return current;
 
-    // An edit can invalidate a rate that was right when it was stored. Clear
-    // those first, then look up replacements, so the write carries the change
-    // and its consequences in one statement rather than two.
-    const stale = staleFxColumns(current, patch);
-    Object.assign(merged, stale);
-    const fresh = await fillFxColumns(merged);
+      const merged = { ...current, ...patch };
+      checkChronology(merged);
 
-    const write = { ...patch, ...stale, ...fresh };
-    const keys = Object.keys(write);
+      // An edit can invalidate a rate that was right when it was stored. Clear
+      // those first, then look up replacements, so the write carries the change
+      // and its consequences in one statement rather than two.
+      const stale = staleFxColumns(current, patch);
+      Object.assign(merged, stale);
+      const fresh = await fillFxColumns(merged);
 
-    prepare(
-      `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE id = @id`,
-    ).run({ ...write, updated_at: new Date().toISOString(), id: current.id });
+      const write = { ...patch, ...stale, ...fresh };
+      const keys = Object.keys(write);
 
-    res.json(withDerived(selectOne.get(current.id)));
+      prepare(
+        `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE id = @id`,
+      ).run({ ...write, updated_at: new Date().toISOString(), id: current.id });
+
+      return selectOne.get(current.id);
+    });
+
+    if (!row) return res.status(404).json({ error: 'Trade not found.' });
+    res.json(withDerived(row));
   } catch (err) {
     next(err);
   }
@@ -283,7 +359,18 @@ app.patch('/api/trades/:id', async (req, res, next) => {
  * ok, which would turn "no rate yet" into an error toast.
  */
 
-app.get('/api/fx/rate', async (req, res) => {
+app.get('/api/fx/rate', async (req, res, next) => {
+  try {
+    await rateLookup(req, res);
+  } catch (err) {
+    // Express 4 does not catch a rejected async handler. Without this the
+    // rejection became an uncaughtException, the process exited, and the
+    // request was left hanging with no response at all.
+    next(err);
+  }
+});
+
+async function rateLookup(req, res) {
   const currency = String(req.query.currency || '').toUpperCase();
   const date = String(req.query.date || '').trim();
   if (!CURRENCIES.includes(currency) || parseDate(date) === null) {
@@ -300,7 +387,7 @@ app.get('/api/fx/rate', async (req, res) => {
     });
   }
   res.json({ currency, date, rate: hit.rate, rateDate: hit.rateDate, source: hit.source });
-});
+}
 
 app.get('/api/fx/status', (_req, res) => {
   const trades = selectAll.all().map(withDerived);
@@ -335,6 +422,17 @@ app.use((err, _req, res, _next) => {
   // express.json() rejects unparseable bodies with a SyntaxError.
   if (err instanceof SyntaxError && 'body' in err) {
     return res.status(400).json({ error: 'That request body was not valid JSON.' });
+  }
+  // An oversized body is the caller's problem, not a server fault.
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'That request body was too large.' });
+  }
+  // A second instance on the same file held the write lock for longer than the
+  // busy timeout. Reporting that as a 500 read as data loss.
+  if (err && typeof err.code === 'string' && err.code.startsWith('SQLITE_BUSY')) {
+    return res.status(503).json({
+      error: 'The ledger is busy, probably a second copy of the app writing to it. Try again.',
+    });
   }
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on the server.' });

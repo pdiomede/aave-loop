@@ -6,6 +6,8 @@ import {
   annualizedPct,
   daysBetween,
   todayISO,
+  parseAmount,
+  normaliseAmountText,
   CURRENCIES,
   isUsdPegged,
 } from '/lib/calc.js';
@@ -69,7 +71,10 @@ function pct(v, digits = 2) {
 function fmtDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
-  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+  // Escaped, because every caller drops the result straight into innerHTML and
+  // one of the dates it formats is the rate publication day, which arrives
+  // from outside the app.
+  return esc(`${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`);
 }
 
 const esc = (s) =>
@@ -158,8 +163,13 @@ async function api(path, options = {}) {
   return body;
 }
 
+// The server's `derived` block is a snapshot taken when the request was served.
+// A tab left open across midnight kept showing the day count and the accrued
+// interest from page load, so drop it and recompute from the shared module.
+const withoutDerived = ({ derived, ...row }) => row;
+
 async function loadTrades() {
-  state.trades = await api('/api/trades');
+  state.trades = (await api('/api/trades')).map(withoutDerived);
 }
 
 /* ----------------------------------------------------- input and validation */
@@ -168,21 +178,17 @@ async function loadTrades() {
 const EARLIEST_DATE = '2015-07-30';
 
 /**
- * Read a typed amount. Accepts what people actually paste: thousands
- * separators, a currency symbol, a trailing percent, surrounding spaces.
- * Returns null for anything that is not a single finite number.
+ * Strip what can never belong in a number, as the user types.
+ *
+ * A pasted amount arrives complete, so a European decimal comma can be read
+ * for what it is: gutting "32.000,00" down to "32.00000" recorded a 32,000
+ * loan as 32. A comma typed one keystroke at a time cannot be read that way,
+ * because "1,5" on its way to "1,500" would become 1.5, so typing keeps the
+ * old behaviour of dropping the separator.
  */
-function parseAmount(text) {
-  const cleaned = String(text ?? '').replace(/[,\s$%]/g, '').replace(/[A-Za-z]/g, '');
-  if (cleaned === '') return null;
-  if (!/^-?\d*\.?\d+$/.test(cleaned)) return null;
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
-}
-
-/** Strip what can never belong in a number, as the user types. */
-function sanitizeNumeric(text) {
-  let out = String(text ?? '').replace(/[^0-9.]/g, '');
+function sanitizeNumeric(text, { pasted = false } = {}) {
+  const start = pasted ? normaliseAmountText(String(text ?? '')) : String(text ?? '');
+  let out = start.replace(/[^0-9.]/g, '');
   const firstDot = out.indexOf('.');
   if (firstDot !== -1) {
     out = out.slice(0, firstDot + 1) + out.slice(firstDot + 1).replace(/\./g, '');
@@ -384,16 +390,13 @@ function refreshHints(form, trade, stage) {
   const data = Object.fromEntries(new FormData(form).entries());
   // An empty field means "not filled in". A typed 0 is a real value: a 0% APR
   // borrow is accepted, and treating it as absent hid the preview entirely.
-  const n = (v) => {
-    const text = String(v ?? '').replace(/[,\s$%]/g, '').trim();
-    if (text === '') return null;
-    const x = Number(text);
-    return Number.isFinite(x) ? x : null;
-  };
   const merged = {
     ...trade,
     ...Object.fromEntries(
-      Object.entries(data).map(([k, v]) => [k, k.endsWith('_date') || k === 'borrow_currency' ? v || null : n(v)]),
+      Object.entries(data).map(([k, v]) => [
+        k,
+        k.endsWith('_date') || k === 'borrow_currency' ? v || null : parseAmount(v),
+      ]),
     ),
   };
   const d = derive(merged);
@@ -401,6 +404,12 @@ function refreshHints(form, trade, stage) {
     const el = form.querySelector(`[data-hint="${name}"]`);
     if (el) el.innerHTML = html;
   };
+
+  // Declared before the first branch that reads it. The borrow branch below
+  // used `c` while the `const` still sat further down, so every keystroke in a
+  // borrow form with both an amount and an APR threw a ReferenceError and the
+  // interest-per-day hint never appeared at all.
+  const c = unitOf(merged);
 
   if (stage === 'borrow') {
     const days = daysBetween(merged.borrow_date, todayISO());
@@ -414,7 +423,6 @@ function refreshHints(form, trade, stage) {
   // currency has no rate on it yet. Rather than convert with a rate invented in
   // the browser, the preview stays in the coin being spent and says where the
   // dollar figure comes from. It appears as soon as the stage is saved.
-  const c = unitOf(merged);
   const previewPrice = (usdValue, nativeValue) =>
     isNum(usdValue) ? `<strong>${usd(usdValue)}</strong>` : `<strong>${money(nativeValue, c)}</strong>`;
   const asSaved = isUsdPegged(c) ? '' : ' <span class="muted">(converted on save)</span>';
@@ -855,7 +863,11 @@ function renderSummary() {
         ${extremeCard('Best trade', r.best)}
         ${extremeCard('Worst trade', r.worst)}
       </div>`,
-      valuedAny ? `${r.closedCount} closed of ${r.tradeCount}` : 'no closed trades yet',
+      valuedAny
+        ? `${r.closedCount} closed of ${r.tradeCount}`
+        : r.closedCount > 0
+          ? `${r.closedCount} closed of ${r.tradeCount}, none with a rate yet`
+          : 'no closed trades yet',
     )}
     ${summaryCard('By currency', currencyTable(r.byCurrency))}
     ${summaryCard('By month closed', monthTable(r.byMonth))}
@@ -870,7 +882,14 @@ function renderSummary() {
 function renderStats() {
   const s = summarize(state.trades);
   const tiles = [
-    { label: 'Realized net gain', value: signedUsd(s.netGain) || '$0', cls: gainClass(s.netGain) },
+    {
+      // Not "$0" when no closed trade has a rate yet. Those trades made a real
+      // gain that simply is not known in dollars, and this tile shows on the
+      // Trades view too, where the Summary's banner is not there to explain it.
+      label: 'Realized net gain',
+      value: isNum(s.netGain) ? signedUsd(s.netGain) : s.missingFx ? RATE_MISSING : '-',
+      cls: gainClass(s.netGain),
+    },
     { label: 'Average annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: gainClass(s.avgPct) },
     { label: 'Closed trades', value: String(s.closedCount) },
     { label: 'Open positions', value: s.openCount ? `${s.openCount} (${usd(s.deployed)})` : '0' },
@@ -902,7 +921,7 @@ function clearFieldError(form, fieldName) {
   }
 }
 
-function showFormError(form, message, fieldName) {
+function showFormError(form, message, fieldName, { focus = true } = {}) {
   form.querySelectorAll('.field.is-invalid').forEach((f) => {
     f.classList.remove('is-invalid');
     f.querySelector('[data-hint]').textContent = '';
@@ -912,7 +931,9 @@ function showFormError(form, message, fieldName) {
     target.classList.add('is-invalid');
     target.querySelector('[data-hint]').textContent = message;
     form.querySelector('[data-form-error]').textContent = '';
-    target.querySelector('input, select')?.focus();
+    // Not when the error came from leaving the field: refocusing what the user
+    // just tabbed out of traps them there until the value is acceptable.
+    if (focus) target.querySelector('input, select')?.focus();
   } else {
     form.querySelector('[data-form-error]').textContent = message;
   }
@@ -950,17 +971,37 @@ function payloadOf(form) {
   return out;
 }
 
+/**
+ * Neither form disabled its button while a request was in flight, so a double
+ * click on Create trade posted the same borrow twice and the duplicate then
+ * double counted in every total. Returns null when a submit is already running.
+ */
+let submitting = false;
+
+function beginSubmit(form) {
+  if (submitting) return null;
+  submitting = true;
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) btn.disabled = true;
+  return () => {
+    submitting = false;
+    if (btn) btn.disabled = false;
+  };
+}
+
 async function submitStage(form) {
   const id = Number(form.dataset.trade);
   const stage = form.dataset.stageForm;
   const trade = state.trades.find((t) => t.id === id) || {};
   if (!validateForm(form, trade)) return;
+  const done = beginSubmit(form);
+  if (!done) return;
   try {
     const updated = await api(`/api/trades/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payloadOf(form)),
     });
-    state.trades = state.trades.map((t) => (t.id === id ? updated : t));
+    state.trades = state.trades.map((t) => (t.id === id ? withoutDerived(updated) : t));
     state.editing = null;
     state.draft = null;
     render();
@@ -968,11 +1009,15 @@ async function submitStage(form) {
     toast(`${STAGES.find((s) => s.key === stage).name} saved.`);
   } catch (err) {
     showFormError(form, err.message, err.field);
+  } finally {
+    done();
   }
 }
 
 async function submitBorrow(form) {
   if (!validateForm(form)) return;
+  const done = beginSubmit(form);
+  if (!done) return;
   try {
     const created = await api('/api/trades', {
       method: 'POST',
@@ -987,6 +1032,8 @@ async function submitBorrow(form) {
     toast('Trade created. Add the ETH purchase next.');
   } catch (err) {
     showFormError(form, err.message, err.field);
+  } finally {
+    done();
   }
 }
 
@@ -1113,7 +1160,13 @@ function wire() {
           else if (out.offline) toast('Rate lookups are switched off.');
           else toast(out.lastError || 'No rates could be fetched just now.');
         })
-        .catch((err) => toast(err.message));
+        .catch((err) => {
+          // The re-render that would have replaced this button never happened,
+          // so put it back rather than leaving it disabled for good.
+          btn.disabled = false;
+          btn.textContent = 'Fetch rates';
+          toast(err.message || 'Could not reach the server.');
+        });
       return;
     }
 
@@ -1162,7 +1215,7 @@ function wire() {
     // Keep a typed amount to digits and a single decimal point, preserving the
     // caret. Pasting "12,000" now leaves "12000" rather than an empty field.
     if (input.dataset.numeric === '1') {
-      const cleaned = sanitizeNumeric(input.value);
+      const cleaned = sanitizeNumeric(input.value, { pasted: e.inputType === 'insertFromPaste' });
       if (cleaned !== input.value) {
         const caret = input.selectionStart - (input.value.length - cleaned.length);
         input.value = cleaned;
@@ -1211,7 +1264,7 @@ function wire() {
         ? state.trades.find((t) => t.id === Number(stageForm.dataset.trade)) || {}
         : {};
       const error = validateField(input.name, input.value, trade);
-      if (error) showFormError(form, error, input.name);
+      if (error) showFormError(form, error, input.name, { focus: false });
     },
     true,
   );
