@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.17] - 2026-09-19
+
+Eight bugs in the exchange rate lookup, found by auditing the path a euro trade's rate takes from the ECB to the dollar totals. No figure on a trade whose rate was already correct changes.
+
+### Fixed
+
+- 0.0.11 stopped every weekend trade being queued as a replaceable stand-in forever by requiring a business day, but the ECB does not publish on its own holidays either. Christmas Day, Boxing Day, New Year's Day, Good Friday, Easter Monday and May Day are all weekdays, so a trade on any of them was re-fetched on every refresh and counted as still missing each time, permanently. The test is no longer which weekday it was: a rate published before the day it converts is worth asking about again only while the real rate could still arrive, which is a few days. After that the day simply has no rate of its own, whatever the reason, and nothing here needs the ECB's holiday calendar to know it.
+- A stand-in cached under a date was served from the cache forever. The ECB publishes in the afternoon, so a trade saved in the morning was converted at the day before's rate and cached under today. Every later save for the same day was then answered from that cache entry and never asked again, so the real rate published that afternoon never reached the ledger. A cached rate published before the day it converts is now re-asked while that day is recent, and kept as the answer if asking gets nothing.
+- Nothing in the interface ever asked for a refresh. **Fetch rates** posted `refresh: false`, so `tradesWithSubstitutedFx` and the whole replacement path behind it were unreachable and a stand-in was permanent however many times the button was pressed. It posts `refresh: true` now.
+- That button only appeared when a trade had no rate at all, which is the one case a refresh is not for. A ledger whose rates were all present but some provisional had nothing to press. The banner now also offers itself, without the warning colour, when a recent trade is converted at the day before's rate.
+- `refresh` disabled both the cache and the single day fallback for every date in the run, not just the dates being replaced. That made a refresh worse at filling in a rate that was simply missing, which is most of what a run has to do. The cache is stepped past only for the dates whose stand-in is the thing being replaced.
+- A refresh reported work it had not done and gaps that were not gaps: `filled` counted every rate written back, including the ones rewritten unchanged, and `stillMissing` counted stages that already had a perfectly good rate. A run that reached the service and found nothing to change also reported itself as a failure, because no rate filled in was read as no rate fetched.
+- Span requests used the 2.5 second timeout meant for a single day. A span is one rate per business day in it, which for a wide backfill is a much larger answer and legitimately slower, so a healthy service could time out; that recorded a network failure and put every remaining lookup in the run to sleep for a minute. Spans get fifteen seconds.
+- A backfill grouped the days it needed by coin rather than by peg, so a second euro coin would have fetched the identical span a second time. Latent today, since EURC is the only one, and contrary to what the currency table in `lib/calc.js` says it does.
+
 ## [0.0.16] - 2026-09-19
 
 ### Added

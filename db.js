@@ -182,34 +182,35 @@ export function tradesMissingFx() {
 }
 
 /**
- * Rows whose rate came from a day other than the day of the transaction. The
- * ECB had not published yet when these were entered, so asking again later can
+ * Rows whose rate came from a day earlier than the day of the transaction, and
+ * whose day is recent enough that the real rate could still arrive. The ECB
+ * had not published yet when these were entered, so asking again later can
  * replace a stand-in with the real thing.
  *
- * Only for a transaction on a business day. The ECB never publishes on a
- * Saturday or a Sunday, so a weekend transaction is converted at Friday's rate
- * permanently and correctly. Matching on the dates alone put every weekend
- * trade in this list forever, to be re-fetched on every refresh and counted as
- * still missing each time.
+ * The cutoff is what makes the list finite. A transaction on a day the ECB
+ * never publishes on is converted at the business day before it, permanently
+ * and correctly. This used to be decided by asking whether the day was a
+ * weekday, which is true of Christmas Day and every other ECB holiday, so
+ * those rows sat in this list forever, re-fetched on every refresh and counted
+ * as still missing each time. Nothing here needs the ECB's holiday calendar:
+ * a day whose real rate has not appeared within a few days is a day that has
+ * no rate of its own.
  */
-const IS_BUSINESS_DAY = (col) => `CAST(strftime('%w', ${col}) AS INTEGER) BETWEEN 1 AND 5`;
+const IS_REPLACEABLE = (fx, fxDate, date) =>
+  `(${fx} IS NOT NULL AND ${fxDate} IS NOT NULL AND ${fxDate} < ${date} AND ${date} >= @since)`;
 
-export function tradesWithSubstitutedFx() {
+export function tradesWithSubstitutedFx(sinceISO) {
   return prepare(`
     SELECT * FROM trades
     WHERE borrow_currency NOT IN (${PEGGED_SQL})
       AND (
-        (borrow_fx IS NOT NULL AND borrow_fx_date IS NOT borrow_date
-           AND ${IS_BUSINESS_DAY('borrow_date')}) OR
-        (buy_fx    IS NOT NULL AND buy_fx_date    IS NOT buy_date
-           AND ${IS_BUSINESS_DAY('buy_date')})    OR
-        (sell_fx   IS NOT NULL AND sell_fx_date   IS NOT sell_date
-           AND ${IS_BUSINESS_DAY('sell_date')})   OR
-        (repay_fx  IS NOT NULL AND repay_fx_date  IS NOT repay_date
-           AND ${IS_BUSINESS_DAY('repay_date')})
+        ${IS_REPLACEABLE('borrow_fx', 'borrow_fx_date', 'borrow_date')} OR
+        ${IS_REPLACEABLE('buy_fx', 'buy_fx_date', 'buy_date')} OR
+        ${IS_REPLACEABLE('sell_fx', 'sell_fx_date', 'sell_date')} OR
+        ${IS_REPLACEABLE('repay_fx', 'repay_fx_date', 'repay_date')}
       )
     ORDER BY borrow_date DESC, id DESC
-  `).all();
+  `).all({ since: sinceISO });
 }
 
 let closed = false;

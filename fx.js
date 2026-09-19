@@ -15,7 +15,15 @@
  * an account, which matters for something meant to run on a laptop forever.
  */
 import { db, prepare, tradesMissingFx, tradesWithSubstitutedFx } from './db.js';
-import { pegOf, isUsdPegged, FX_STAGES, parseDate } from './lib/calc.js';
+import {
+  pegOf,
+  isUsdPegged,
+  isProvisionalFx,
+  FX_STAGES,
+  FX_PROVISIONAL_DAYS,
+  parseDate,
+  todayISO,
+} from './lib/calc.js';
 
 const DAY_MS = 86400000;
 
@@ -26,6 +34,13 @@ const QUOTE = 'USD';
 // A lookup has to lose to a stalled network quickly. Four stages on one trade
 // would otherwise hold the request open for four full timeouts.
 const TIMEOUT_MS = 2500;
+
+// A span is a different request. One day is a single number; several years is
+// one per business day in them, which is a much larger answer and legitimately
+// slower to produce. Holding every span to the single day timeout meant a
+// healthy service timing out on a wide backfill, which recorded a failure and
+// put every remaining lookup in that run to sleep for a minute.
+const RANGE_TIMEOUT_MS = 15_000;
 
 /**
  * With no network at all, every save would sit through a fresh timeout for
@@ -121,10 +136,10 @@ function validate(rate, rateDate, wanted) {
   return null;
 }
 
-async function getJson(path) {
+async function getJson(path, timeoutMs = TIMEOUT_MS) {
   const res = await fetch(`${FX_URL}${path}`, {
     headers: { Accept: 'application/json' },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`The rate service answered ${res.status}.`);
   return res.json();
@@ -141,9 +156,17 @@ export async function resolveRate(currency, isoDate) {
 
   const base = pegOf(currency);
   const hit = cacheGet(base, isoDate);
-  if (hit) return hit;
 
-  if (networkIsOut()) return null;
+  // A cached stand-in is an answer, but not the final one. Saving a trade in
+  // the morning cached the day before's rate under today, and every later
+  // save for the same day was then served that stand-in from the cache and
+  // never asked again, so the afternoon's real rate never reached the ledger.
+  // While the day is recent enough for the real rate to still arrive, go past
+  // the cache; the stand-in is kept as the answer if asking gets us nothing.
+  const provisional = hit !== null && isProvisionalFx(isoDate, hit.rateDate);
+  if (hit && !provisional) return hit;
+
+  if (networkIsOut()) return hit;
 
   try {
     const body = await getJson(`/${isoDate}?from=${base}&to=${QUOTE}`);
@@ -152,7 +175,7 @@ export async function resolveRate(currency, isoDate) {
     const problem = validate(rate, rateDate, isoDate);
     if (problem) {
       recordFailure(problem);
-      return null;
+      return hit;
     }
     recordSuccess();
     const resolved = { rate, rateDate, source: 'ecb' };
@@ -160,7 +183,7 @@ export async function resolveRate(currency, isoDate) {
     return resolved;
   } catch (err) {
     recordFailure(err.name === 'TimeoutError' ? 'The rate service did not answer in time.' : err.message);
-    return null;
+    return hit;
   }
 }
 
@@ -188,7 +211,7 @@ export async function resolveRange(currency, fromISO, toISO) {
   const base = pegOf(currency);
   let published;
   try {
-    const body = await getJson(`/${fromISO}..${toISO}?from=${base}&to=${QUOTE}`);
+    const body = await getJson(`/${fromISO}..${toISO}?from=${base}&to=${QUOTE}`, RANGE_TIMEOUT_MS);
     published = body?.rates;
     if (!published || typeof published !== 'object') throw new Error('The rate service returned no rates.');
     recordSuccess();
@@ -359,8 +382,12 @@ const writeFx = (columns) =>
  * ECB had published, where a stand-in was used and the real rate exists now.
  */
 export async function backfillRates({ refresh = false } = {}) {
+  // The window the substituted list is bounded by has to be the same one
+  // `isProvisionalFx` applies, or the two disagree about which rows are worth
+  // asking about again.
+  const since = shiftDays(todayISO(), -FX_PROVISIONAL_DAYS);
   const rows = refresh
-    ? [...tradesMissingFx(), ...tradesWithSubstitutedFx()]
+    ? [...tradesMissingFx(), ...tradesWithSubstitutedFx(since)]
     : tradesMissingFx();
 
   // The same row can appear in both lists.
@@ -368,25 +395,30 @@ export async function backfillRates({ refresh = false } = {}) {
   const scanned = byId.size;
 
   // Work out every day that has to be looked up, so the whole span can be
-  // fetched at once rather than a request per stage.
-  const wanted = new Map(); // currency -> Set of ISO dates
+  // fetched at once rather than a request per stage. Grouped by the peg rather
+  // than by the coin: the cache is keyed on the peg, so two euro coins in one
+  // ledger want exactly the same days, and grouping on the ticker fetched the
+  // identical span once per coin.
+  const wanted = new Map(); // peg -> { currency, dates }
   const targets = [];
   for (const row of byId.values()) {
     const stages = refresh
       ? FX_STAGES.filter((s) => row[`${s}_date`] != null &&
-          (row[`${s}_fx`] == null || row[`${s}_fx_date`] !== row[`${s}_date`]))
+          (row[`${s}_fx`] == null ||
+            isProvisionalFx(row[`${s}_date`], row[`${s}_fx_date`])))
       : stagesNeedingRate(row);
     if (stages.length === 0) continue;
     targets.push({ row, stages });
-    if (!wanted.has(row.borrow_currency)) wanted.set(row.borrow_currency, new Set());
-    for (const s of stages) wanted.get(row.borrow_currency).add(row[`${s}_date`]);
+    const peg = pegOf(row.borrow_currency);
+    if (!wanted.has(peg)) wanted.set(peg, { currency: row.borrow_currency, dates: new Set() });
+    for (const s of stages) wanted.get(peg).dates.add(row[`${s}_date`]);
   }
 
-  const resolved = new Map(); // `${currency}|${date}` -> rate record
+  const resolved = new Map(); // `${peg}|${date}` -> rate record
   const deadline = Date.now() + BUDGET_MS;
   let timedOut = false;
 
-  for (const [currency, dates] of wanted) {
+  for (const [peg, { currency, dates }] of wanted) {
     const sorted = [...dates].sort();
     if (sorted.length === 0) continue;
 
@@ -400,17 +432,24 @@ export async function backfillRates({ refresh = false } = {}) {
     }
 
     for (const date of sorted) {
-      // The cache is free, so it never spends the budget. On a refresh it would
-      // answer with the stand-in we are trying to replace, so go past it.
-      let hit = span.get(date) ?? (refresh ? null : cachedRate(currency, date));
-      if (!hit && !refresh) {
+      let hit = span.get(date);
+      if (!hit) {
+        // The cache is free, so it never spends the budget. It only has to be
+        // stepped past for the one date it would answer about with the very
+        // stand-in this run is trying to replace. Skipping it for every date
+        // instead meant a refresh could not fill in a rate that was simply
+        // missing, which is most of what a refresh has to do.
+        const cached = cachedRate(currency, date);
+        if (cached && !isProvisionalFx(date, cached.rateDate)) hit = cached;
+      }
+      if (!hit) {
         if (Date.now() > deadline) {
           timedOut = true;
           break;
         }
         hit = await resolveRate(currency, date);
       }
-      if (hit) resolved.set(`${currency}|${date}`, hit);
+      if (hit) resolved.set(`${peg}|${date}`, hit);
     }
     if (timedOut) break;
   }
@@ -429,13 +468,21 @@ export async function backfillRates({ refresh = false } = {}) {
       if (!live || live.borrow_currency !== row.borrow_currency) continue;
       const patch = {};
       let source = null;
+      const peg = pegOf(row.borrow_currency);
       for (const s of stages) {
         if (live[`${s}_date`] !== row[`${s}_date`]) continue;
-        const hit = resolved.get(`${row.borrow_currency}|${row[`${s}_date`]}`);
+        const hit = resolved.get(`${peg}|${row[`${s}_date`]}`);
+        // Only a stage with no rate at all is missing one. A stand-in we asked
+        // about again and could not improve on is still an answer, and counting
+        // it here reported rates as missing that the ledger was already using.
         if (!hit) {
-          stillMissing += 1;
+          if (live[`${s}_fx`] == null) stillMissing += 1;
           continue;
         }
+        // Nothing changed, so nothing was filled in. Reporting a refresh that
+        // rewrote four identical rates as "filled in 4 exchange rates" said
+        // work had been done where there was none to do.
+        if (live[`${s}_fx`] === hit.rate && live[`${s}_fx_date`] === hit.rateDate) continue;
         patch[`${s}_fx`] = hit.rate;
         patch[`${s}_fx_date`] = hit.rateDate;
         source = hit.source;

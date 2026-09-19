@@ -1076,15 +1076,26 @@ function extremeCard(label, entry, hint = '') {
  * quietly leaving them out of the totals. The button asks the server to go and
  * look the missing rates up, which is the other half of letting a trade save
  * with the network unplugged.
+ *
+ * It also offers itself for a trade saved before the ECB had published, whose
+ * rate is the day before's standing in until the real one is asked for. That
+ * is not an omission from the totals, so it is said quietly and only while the
+ * real rate could still arrive, but the button was the only thing that asks
+ * and it used to appear only when something was missing outright.
  */
-function fxBanner(count) {
-  if (!count) return '';
+function fxBanner(count, provisional = 0) {
+  if (!count && !provisional) return '';
   const noun = count === 1 ? 'trade has' : 'trades have';
-  return `<section class="card card--warn">
-    <div class="card__body fx-banner">
-      <span>${count} ${noun} no exchange rate yet, so ${
+  const message = count
+    ? `${count} ${noun} no exchange rate yet, so ${
         count === 1 ? 'it is' : 'they are'
-      } left out of the totals below.</span>
+      } left out of the totals below.`
+    : `${provisional} recent ${
+        provisional === 1 ? 'trade is' : 'trades are'
+      } converted at the rate published the day before. The ECB may have published since.`;
+  return `<section class="card ${count ? 'card--warn' : ''}">
+    <div class="card__body fx-banner">
+      <span>${message}</span>
       <button class="btn btn--sm btn--primary" type="button" id="fetch-rates">Fetch rates</button>
     </div>
   </section>`;
@@ -1105,7 +1116,7 @@ function renderSummary() {
   const valuedAny = r.valuedCount > 0;
 
   mount.innerHTML = `
-    ${fxBanner(r.missingFx)}
+    ${fxBanner(r.missingFx, r.provisionalFx)}
     ${summaryCard(
       'Performance',
       `<div class="kv-grid">
@@ -1455,7 +1466,11 @@ function wire() {
       const btn = e.target.closest('#fetch-rates');
       btn.disabled = true;
       btn.textContent = 'Fetching...';
-      api('/api/fx/backfill', { method: 'POST', body: JSON.stringify({ refresh: false }) })
+      // With `refresh` the run also asks again about a rate that stood in for
+      // one the ECB had not published yet. Nothing in the interface ever sent
+      // it, so a stand-in was permanent however many times this was pressed,
+      // and the server's whole replacement path was unreachable.
+      api('/api/fx/backfill', { method: 'POST', body: JSON.stringify({ refresh: true }) })
         .then(async (out) => {
           await loadTrades();
           render();
@@ -1465,7 +1480,12 @@ function wire() {
           if (out.filled > 0) {
             toast(`Filled in ${out.filled} exchange rate${out.filled === 1 ? '' : 's'}.${more}`);
           } else if (out.offline) toast('Rate lookups are switched off.');
-          else toast((out.lastError || 'No rates could be fetched just now.') + more);
+          else if (out.lastError) toast(out.lastError + more);
+          // A run that reached the service and found nothing to change is not a
+          // failure. It used to report one, because no rate filled in was read
+          // as no rate fetched.
+          else if (out.stillMissing > 0) toast(`No rate has been published yet for ${out.stillMissing === 1 ? 'that date' : 'those dates'}.`);
+          else toast('Every rate is up to date.');
         })
         .catch((err) => {
           // The re-render that would have replaced this button never happened,
