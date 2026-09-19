@@ -1,6 +1,7 @@
 import {
   derive,
   summarize,
+  summaryReport,
   accruedInterest,
   annualizedPct,
   daysBetween,
@@ -87,6 +88,7 @@ const ethMark = `<img class="eth-mark" src="/eth.svg" alt="" width="15" height="
 /* ------------------------------------------------------------------ state */
 
 const state = {
+  view: 'trades',
   trades: [],
   openId: null,
   editing: null, // { id, stage }
@@ -98,6 +100,9 @@ const state = {
 async function api(path, options = {}) {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },
+    // These are live figures. Never let the browser answer from its cache, or
+    // the ledger can show numbers that were already superseded.
+    cache: 'no-store',
     ...options,
   });
   if (res.status === 204) return null;
@@ -460,6 +465,122 @@ function renderTable() {
   }
 }
 
+/* ---------------------------------------------------------------- summary */
+
+const dash = '<span class="muted">-</span>';
+
+function statRow(label, value, cls = '') {
+  return `<div class="kv">
+    <dt>${label}</dt>
+    <dd class="${cls}">${value || dash}</dd>
+  </div>`;
+}
+
+function summaryCard(title, body, note = '') {
+  return `<section class="card">
+    <div class="card__head"><h3 class="card__title">${title}</h3>${
+      note ? `<span class="muted">${note}</span>` : ''
+    }</div>
+    <div class="card__body">${body}</div>
+  </section>`;
+}
+
+function currencyTable(rows) {
+  if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
+  return `<table class="table table--flush">
+    <thead>
+      <tr><th>Stablecoin</th><th>Closed</th><th>Open</th><th>Borrowed</th><th>Net gain</th><th>Avg annualized</th></tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (r) => `<tr>
+        <td data-label="Stablecoin"><span class="row__asset">${coin(r.currency)}<span>${esc(r.currency)}</span></span></td>
+        <td data-label="Closed" class="num">${r.closed}</td>
+        <td data-label="Open" class="num">${r.open || dash}</td>
+        <td data-label="Borrowed" class="num">${r.borrowed ? usd(r.borrowed) : dash}</td>
+        <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain) || dash}</td>
+        <td data-label="Avg annualized" class="num ${gainClass(r.netGain)}">${pct(r.avgPct) || dash}</td>
+      </tr>`,
+        )
+        .join('')}
+    </tbody>
+  </table>`;
+}
+
+function monthTable(rows) {
+  if (rows.length === 0) return `<p class="muted">No trades have been closed yet.</p>`;
+  const peak = Math.max(...rows.map((r) => Math.abs(r.netGain)), 1);
+  return `<table class="table table--flush">
+    <thead>
+      <tr><th>Month</th><th>Trades</th><th>Net gain</th><th class="bar-col">Share</th></tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (r) => `<tr>
+        <td data-label="Month">${r.label}</td>
+        <td data-label="Trades" class="num">${r.trades}</td>
+        <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain)}</td>
+        <td data-label="Share" class="bar-col">
+          <span class="bar"><span class="bar__fill ${r.netGain >= 0 ? 'bar__fill--pos' : 'bar__fill--neg'}"
+            style="width:${Math.max((Math.abs(r.netGain) / peak) * 100, 2)}%"></span></span>
+        </td>
+      </tr>`,
+        )
+        .join('')}
+    </tbody>
+  </table>`;
+}
+
+function extremeCard(label, entry) {
+  if (!entry) return statRow(label, '');
+  return `<div class="kv">
+    <dt>${label}</dt>
+    <dd>
+      <span class="${gainClass(entry.netGain)}">${signedUsd(entry.netGain)}</span>
+      <span class="muted">${esc(entry.currency)}, ${fmtDate(entry.date)}, ${pct(entry.pct)}</span>
+    </dd>
+  </div>`;
+}
+
+function renderSummary() {
+  const mount = document.getElementById('summary-mount');
+
+  if (state.trades.length === 0) {
+    mount.innerHTML = `<section class="card"><div class="empty">
+      <h3>Nothing to summarize yet</h3>
+      <p>Add a trade and the totals will build up here.</p>
+    </div></section>`;
+    return;
+  }
+
+  const r = summaryReport(state.trades);
+  const closedAny = r.closedCount > 0;
+
+  mount.innerHTML = `
+    ${summaryCard(
+      'Performance',
+      `<div class="kv-grid">
+        ${statRow('Realized net gain', signedUsd(r.netGain), gainClass(r.netGain))}
+        ${statRow('Average annualized', pct(r.avgPct), gainClass(r.avgPct))}
+        ${statRow('Interest paid', closedAny ? usd(r.interestPaid) : '')}
+        ${statRow(
+          'Win rate',
+          closedAny ? `${pct(r.winRate, 0)} <span class="muted">(${r.wins} up, ${r.losses} down)</span>` : '',
+        )}
+        ${statRow('Total borrowed', closedAny ? usd(r.totalBorrowed) : '')}
+        ${statRow('Average hold', r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`)}
+        ${extremeCard('Best trade', r.best)}
+        ${extremeCard('Worst trade', r.worst)}
+      </div>`,
+      closedAny ? `${r.closedCount} closed of ${r.tradeCount}` : 'no closed trades yet',
+    )}
+    ${summaryCard('By stablecoin', currencyTable(r.byCurrency))}
+    ${summaryCard('By month closed', monthTable(r.byMonth))}
+  `;
+}
+
 function renderStats() {
   const s = summarize(state.trades);
   const tiles = [
@@ -480,7 +601,8 @@ function renderStats() {
 
 function render() {
   renderStats();
-  renderTable();
+  if (state.view === 'summary') renderSummary();
+  else renderTable();
 }
 
 /* ------------------------------------------------------------- form submit */
@@ -549,6 +671,36 @@ function toast(message) {
   toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2600);
 }
 
+/* ------------------------------------------------------------------ views */
+
+const VIEWS = ['trades', 'summary'];
+
+function viewFromHash() {
+  const name = (location.hash || '').replace(/^#/, '');
+  return VIEWS.includes(name) ? name : 'trades';
+}
+
+/**
+ * Swap the visible view and move the nav underline with it. The hero band of
+ * tiles belongs to both views, so only the panels below it change.
+ */
+function setView(view, { updateHash = true } = {}) {
+  state.view = VIEWS.includes(view) ? view : 'trades';
+
+  for (const name of VIEWS) {
+    document.getElementById(`view-${name}`).hidden = name !== state.view;
+  }
+  for (const link of document.querySelectorAll('.nav__link')) {
+    link.classList.toggle('is-active', link.dataset.view === state.view);
+  }
+
+  if (updateHash && viewFromHash() !== state.view) {
+    history.replaceState(null, '', `#${state.view}`);
+  }
+
+  render();
+}
+
 /* ------------------------------------------------------------------ theme */
 
 const SUN = `<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>`;
@@ -567,6 +719,14 @@ function applyTheme(theme) {
 /* ------------------------------------------------------------------ events */
 
 function wire() {
+  for (const link of document.querySelectorAll('.nav__link')) {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      setView(link.dataset.view);
+    });
+  }
+  window.addEventListener('hashchange', () => setView(viewFromHash(), { updateHash: false }));
+
   document.getElementById('theme-toggle').addEventListener('click', () => {
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   });
@@ -686,7 +846,7 @@ async function boot() {
     renderStats();
     return;
   }
-  render();
+  setView(viewFromHash(), { updateHash: false });
 }
 
 boot();

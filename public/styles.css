@@ -525,7 +525,7 @@ h3 {
 .grid {
   display: grid;
   gap: 14px 16px;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
 }
 
 .form__actions {
@@ -717,6 +717,90 @@ h3 {
   margin-bottom: 6px;
 }
 
+/* --------------------------------------------------------------- summary */
+
+.kv-grid {
+  display: grid;
+  /* No row gap, so the hairlines under each pair line up into clean rules.
+     A generous column gap keeps one pair's value from reading as though it
+     belonged to the next pair's label. */
+  gap: 0 40px;
+  grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
+}
+
+.kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
+
+.kv dt {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.kv dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.kv dd .muted {
+  display: block;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+/* A summary table sits flush inside its card, which already has the padding. */
+.table--flush {
+  margin: -4px 0;
+}
+
+.table--flush thead th:first-child,
+.table--flush tbody td:first-child {
+  padding-left: 0;
+}
+
+.table--flush thead th:last-child,
+.table--flush tbody td:last-child {
+  padding-right: 0;
+}
+
+.table--flush tbody tr:last-child td {
+  box-shadow: none;
+}
+
+.bar-col {
+  width: 30%;
+  min-width: 90px;
+}
+
+.bar {
+  display: block;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  overflow: hidden;
+}
+
+.bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+}
+
+.bar__fill--pos {
+  background: var(--positive);
+}
+
+.bar__fill--neg {
+  background: var(--negative);
+}
+
 /* -------------------------------------------------------------- expanded */
 
 .detail td {
@@ -728,7 +812,7 @@ h3 {
 .stages {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
   padding-top: 4px;
 }
 
@@ -921,12 +1005,43 @@ h3 {
     padding: 0 16px;
   }
 
-  .nav {
-    display: none;
+  /* The nav drops to its own row rather than being hidden. It used to be
+     display:none, which was harmless while the links did nothing but would
+     now leave the Summary view unreachable on a phone. */
+  .header__inner {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 0;
   }
 
   .brand {
     margin-right: auto;
+  }
+
+  .nav {
+    order: 3;
+    width: 100%;
+    gap: 6px;
+    padding: 2px;
+    border-radius: var(--radius-btn);
+    background: var(--surface-sunken);
+  }
+
+  .nav__link {
+    flex: 1;
+    text-align: center;
+    padding: 8px 10px;
+  }
+
+  /* A segmented control reads better than an underline on a wrapped header. */
+  .nav__link.is-active {
+    background: var(--surface);
+    box-shadow: var(--ring);
+  }
+
+  .nav__link.is-active::after {
+    content: none;
   }
 
   .hero__title {
@@ -980,5 +1095,37 @@ h3 {
 
   .detail td::before {
     content: none;
+  }
+
+  .table--flush tbody tr {
+    display: block;
+    padding: 8px 0;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+
+  .table--flush tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0;
+    box-shadow: none;
+    text-align: right;
+  }
+
+  .table--flush tbody td::before {
+    content: attr(data-label);
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .bar-col {
+    width: auto;
+  }
+
+  .bar {
+    width: 55%;
   }
 }

@@ -25,6 +25,12 @@ A trade is created with the borrow alone, then each stage is added as it happens
 | Sell ETH | date, ETH sold, amount received | `SOLD` |
 | Repay | date, amount repaid | `CLOSED` |
 
+## Views
+
+**Trades** is the history table. Expand any row to see its four stages and edit them.
+
+**Summary** reports performance by stablecoin, net gain by month closed, best and worst trade, interest paid, win rate, total borrowed and average hold. Only closed trades count towards realized figures.
+
 ## The math
 
 | Figure | Formula |

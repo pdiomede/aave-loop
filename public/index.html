@@ -26,11 +26,11 @@
       <div class="shell header__inner">
         <span class="brand">
           <img class="brand__mark" src="/aaveLogo.png" alt="" width="24" height="24" />
-          Aave Loop Ledger
+          <span class="brand__name">Aave Loop Ledger</span>
         </span>
         <nav class="nav">
-          <a class="nav__link is-active" href="#trades">Trades</a>
-          <a class="nav__link" href="#summary">Summary</a>
+          <a class="nav__link is-active" href="#trades" data-view="trades">Trades</a>
+          <a class="nav__link" href="#summary" data-view="summary">Summary</a>
         </nav>
         <button class="btn btn--icon" id="theme-toggle" type="button" title="Switch theme">
           <span class="sr-only">Switch theme</span>
@@ -39,7 +39,7 @@
       </div>
     </header>
 
-    <section class="hero" id="summary">
+    <section class="hero">
       <div class="shell hero__inner">
         <div>
           <h1 class="hero__title">Leverage trades</h1>
@@ -52,8 +52,9 @@
       </div>
     </section>
 
-    <main class="main" id="trades">
+    <main class="main">
       <div class="shell">
+        <section id="view-trades">
         <div class="toolbar">
           <h2 class="toolbar__title">History</h2>
           <button class="btn btn--primary" id="new-trade" type="button">
@@ -76,13 +77,21 @@
         <section class="card">
           <div id="table-mount"></div>
         </section>
+        </section>
+
+        <section id="view-summary" hidden>
+          <div class="toolbar">
+            <h2 class="toolbar__title">Summary</h2>
+          </div>
+          <div id="summary-mount"></div>
+        </section>
       </div>
     </main>
 
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v0.0.3</span> - Built by
+          &copy; 2026 &middot; <span id="version">v0.0.4</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>

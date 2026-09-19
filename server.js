@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { db, prepare, closeDb, FIELDS } from './db.js';
-import { derive, summarize, parseDate, CURRENCIES } from './lib/calc.js';
+import { derive, summaryReport, parseDate, CURRENCIES } from './lib/calc.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -11,8 +11,28 @@ const PORT = Number(process.env.PORT) || 3000;
 
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(root, 'public')));
-app.use('/lib', express.static(path.join(root, 'lib')));
+
+// Everything here is a small local file, so correctness beats caching. Without
+// this the browser can keep serving a stale stylesheet or script from memory
+// after an edit, leaving the page looking unchanged.
+const staticOptions = {
+  etag: true,
+  maxAge: 0,
+  setHeaders(res) {
+    res.setHeader('Cache-Control', 'no-cache');
+  },
+};
+
+app.use(express.static(path.join(root, 'public'), staticOptions));
+app.use('/lib', express.static(path.join(root, 'lib'), staticOptions));
+
+// API responses carried an ETag but no Cache-Control, which let the browser
+// heuristically cache them and show a stale ledger after a change. These are
+// live figures, so they must never be reused from cache.
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -150,6 +170,9 @@ const selectOne = prepare('SELECT * FROM trades WHERE id = ?');
 
 /* ------------------------------------------------------------------ routes */
 
+// Browsers ask for this even when the page names its icon explicitly.
+app.get('/favicon.ico', (_req, res) => res.redirect(301, '/aaveLogo.png'));
+
 app.get('/api/version', (_req, res) => res.json({ version: pkg.version }));
 
 app.get('/api/trades', (_req, res) => {
@@ -157,7 +180,7 @@ app.get('/api/trades', (_req, res) => {
 });
 
 app.get('/api/summary', (_req, res) => {
-  res.json(summarize(selectAll.all()));
+  res.json(summaryReport(selectAll.all()));
 });
 
 app.post('/api/trades', (req, res, next) => {
