@@ -21,6 +21,31 @@ const PORT = Number(process.env.PORT) || 3000;
 
 const app = express();
 
+// Says nothing about the stack to anyone who asks.
+app.disable('x-powered-by');
+
+/**
+ * How this page may be embedded, and what a browser may assume about it.
+ *
+ * The ledger used to be reachable only from the machine running it, where
+ * framing was moot. Behind a proxy it is not: without this an attacker's page
+ * can frame the app against a logged in session and land a click on Delete
+ * trade. `frame-ancestors` is the modern form and X-Frame-Options the one
+ * older browsers read, so both are sent.
+ *
+ * It stops at framing on purpose. A script-src policy would need
+ * 'unsafe-inline' for the theme script that runs before first paint and for
+ * the bar widths in the summary, and a CSP that allows inline script is most
+ * of the way back to no CSP at all. Tightening it means removing those first.
+ */
+app.use((_req, res, next) => {
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
 // The ledger has no authentication; the loopback bind is the whole of its
 // protection. A request has to be addressed to loopback as well, or a page on
 // the internet can point its own hostname at 127.0.0.1 and reach this API as a

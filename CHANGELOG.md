@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.13] - 2026-09-19
+
+### Security
+
+- The app sent no framing policy, so an attacker's page could embed the ledger against a logged in session and place a click on **Delete trade**. That was moot while it answered only on loopback; behind a proxy it is not. `frame-ancestors 'none'` and `X-Frame-Options: DENY` are both sent, along with `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. It stops at framing on purpose: a `script-src` policy would need `'unsafe-inline'` for the theme script that runs before first paint and for the bar widths on the Summary, and a policy that allows inline script is most of the way back to no policy at all.
+- `X-Powered-By: Express` is no longer advertised.
+
 ## [0.0.12] - 2026-09-19
 
 ### Changed
