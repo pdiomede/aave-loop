@@ -977,6 +977,14 @@ th[aria-sort="ascending"] .th-sort__caret {
   grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
 }
 
+/* The best and worst trade read as a pair, so the second one is pinned to the
+   last column and drops under the first rather than starting a fresh column on
+   the left. Negative line numbers count back from the end, so this still means
+   "the only column" once the grid has collapsed to one. */
+.kv--tail {
+  grid-column: -2 / -1;
+}
+
 .kv {
   /* Also the anchor for this row's tooltip, which is what stops the bubble
      being wider than the row it explains. */

@@ -253,7 +253,7 @@ const SORT_KEYS = {
 };
 
 const SORT_LABELS = {
-  trade: 'Trade',
+  trade: 'Trade date',
   eth: 'ETH',
   buy: 'Buy price',
   sell: 'Sell price',
@@ -940,7 +940,7 @@ function tradeRow(t, index, total) {
 
   return `
   <tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0">
-    <td data-label="Trade">
+    <td data-label="Trade date">
       <div class="row__asset">
         <span class="caret"></span>
         ${coin(t.borrow_currency)}
@@ -1152,9 +1152,10 @@ function monthTable(rows) {
  *
  * When every trade made money "worst" is misleading too, so it says smallest.
  */
-function extremeCard(label, entry, hint = '') {
-  if (!entry) return statRow(label, '');
-  return `<div class="kv">
+function extremeCard(label, entry, hint = '', cls = '') {
+  const kv = `kv${cls ? ` ${cls}` : ''}`;
+  if (!entry) return `<div class="${kv}"><dt>${label}</dt><dd>${dash}</dd></div>`;
+  return `<div class="${kv}">
     <dt>${label}${hintMark(hint)}</dt>
     <dd>
       <span class="${gainClass(entry.netGain)}">${signedUsd(entry.netGain)}</span>
@@ -1238,7 +1239,12 @@ function renderSummary() {
           TIPS.avgHold,
         )}
         ${extremeCard('Biggest gain', r.best, TIPS.best)}
-        ${extremeCard(r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss', r.worst, TIPS.worst)}
+        ${extremeCard(
+          r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss',
+          r.worst,
+          TIPS.worst,
+          'kv--tail',
+        )}
       </div>`,
       valuedAny
         ? `${r.closedCount} closed of ${r.tradeCount}`
