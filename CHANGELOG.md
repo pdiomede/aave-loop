@@ -3,6 +3,37 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.5] - 2026-09-19
+
+### Added
+
+- `resetDatabase.sh`, which empties the ledger. It asks twice, refuses to run while a server holds the file open, and keeps a timestamped backup unless told not to.
+
+### Changed
+
+- The four stage cards now put the money on the second line and state it in the coin that was borrowed, so "32,000.00 USDT" reads in one go. The Sold ETH card leads with Received and then Sold. ETH prices stay in dollars.
+- Amount fields carry the stablecoin ticker instead of a dollar sign, and the ticker follows the dropdown while a new trade is being entered.
+
+### Fixed, in the maths
+
+- The Repaid card showed the theoretical accrued interest while the net gain was computed from the interest actually paid, so the card did not add up: gross 2,824.00 less the 304.10 shown missed the 2,519.87 stated. It now shows the interest the loan really cost.
+- The live preview under the repayment field ran its own `proceeds - repaid` formula instead of the shared one. On a partial sale it read -4,028.77 where the saved result was +971.23.
+- A repayment below the principal made the implied interest negative, which the net gain then counted as profit. Repaying 20,000 on a 32,000 loan reported a 14,824 gain. Such a repayment is now rejected.
+- A trade could be recorded as repaid without ever having been sold, a state the maths has no answer for. Stages must now be filled in order, as the interface already required.
+- `summarize` called every repaid trade closed while `summaryReport` required a net gain, so the two disagreed about the same row. Both now use one definition of a realized trade.
+- The by-stablecoin sort compared two nulls as `-Infinity - -Infinity`, giving NaN and an undefined order.
+- A typed `0` was treated as an empty field, so a 0% borrow previewed nothing even though it is accepted.
+- A future dated trade produced a negative loan span, which quietly suppressed the interest and the annualized return instead of reporting anything. Future dates are now refused.
+
+### Fixed, in the interface
+
+- Pasting an amount such as `12,000` or `$12000` left the field silently empty, because a number input discards what it cannot parse. Amounts are now collected as text and tidied as they are typed.
+- Negative amounts, a negative APR, an APR above 100 and future dates were all accepted by the form and only refused by the server, one round trip later.
+- A blank form submitted blanks rather than saying what was missing. Every field is now checked before anything is sent, and again when a field is left.
+- An error stayed on screen and the field stayed red even after the value was corrected.
+- Edits in progress were silently discarded when the view changed, reverting the field to its stored value.
+- The stage forms are validated against their siblings, so selling more ETH than was bought, or dating a sale before its purchase, is caught as it is entered.
+
 ## [0.0.4] - 2026-09-19
 
 ### Added

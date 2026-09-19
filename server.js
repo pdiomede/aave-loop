@@ -64,11 +64,22 @@ function toNumber(value, field, label, { allowZero = false } = {}) {
   return n;
 }
 
+// One day of slack, because the client's calendar may be a timezone ahead.
+const FUTURE_SLACK_MS = 36 * 60 * 60 * 1000;
+
 function toDate(value, field, label) {
-  if (parseDate(String(value)) === null) {
-    throw new BadRequest(`${label} must be a valid date.`, field);
+  const iso = String(value).trim();
+  const ts = parseDate(iso);
+  if (ts === null) throw new BadRequest(`${label} must be a valid date.`, field);
+  if (ts > Date.now() + FUTURE_SLACK_MS) {
+    // A future date yields a negative loan span, which quietly suppressed the
+    // interest and the annualized return rather than reporting anything.
+    throw new BadRequest(`${label} cannot be in the future.`, field);
   }
-  return String(value).trim();
+  if (ts < Date.UTC(2015, 6, 30)) {
+    throw new BadRequest(`${label} is before Ethereum existed. Check the year.`, field);
+  }
+  return iso;
 }
 
 /**
@@ -147,16 +158,35 @@ function checkChronology(row) {
   if (row.repay_date && row.sell_date && parseDate(row.repay_date) < parseDate(row.sell_date)) {
     throw new BadRequest('The repayment cannot be dated before the sale.', 'repay_date');
   }
+  // The interface only opens a stage once the previous one is filled in. The
+  // API enforces the same order, otherwise a trade can reach states the maths
+  // has no answer for, such as repaid without ever having been sold.
+  if (row.sell_date != null && row.buy_date == null) {
+    throw new BadRequest('Record the ETH purchase before the sale.', 'sell_date');
+  }
+  if (row.repay_date != null && row.sell_date == null) {
+    throw new BadRequest('Record the ETH sale before the repayment.', 'repay_date');
+  }
+
   if (row.sell_eth != null && row.buy_eth != null && row.sell_eth > row.buy_eth * 1.0001) {
     throw new BadRequest('You cannot sell more ETH than you bought.', 'sell_eth');
   }
 
-  // Interest can never move the repayment far from the principal, so a figure
-  // well outside that band is a slipped digit rather than a real number.
   if (row.repay_amount != null && row.borrow_amount != null) {
-    if (row.repay_amount > row.borrow_amount * 2 || row.repay_amount < row.borrow_amount * 0.5) {
+    // Repaying less than the principal made the implied interest negative,
+    // which the net gain then counted as profit. A $20,000 repayment on a
+    // $32,000 loan reported a $12,000 gain out of nowhere.
+    if (row.repay_amount < row.borrow_amount - 0.005) {
       throw new BadRequest(
-        `That is a long way from the ${row.borrow_amount.toLocaleString('en-US')} borrowed. Check the figure.`,
+        `A repayment cannot be less than the ${row.borrow_amount.toLocaleString('en-US')} borrowed.`,
+        'repay_amount',
+      );
+    }
+    // Interest can never double a loan over the spans this tracks, so a figure
+    // that far out is a slipped digit rather than a real number.
+    if (row.repay_amount > row.borrow_amount * 2) {
+      throw new BadRequest(
+        `That is a long way above the ${row.borrow_amount.toLocaleString('en-US')} borrowed. Check the figure.`,
         'repay_amount',
       );
     }

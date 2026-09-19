@@ -14,6 +14,14 @@ Opens on http://localhost:3000, bound to loopback only. The script checks Node, 
 
 Requires Node 18 or newer.
 
+To empty the ledger and start over:
+
+```bash
+./resetDatabase.sh
+```
+
+It asks twice, refuses to run while a server has the file open, and keeps a timestamped backup under `data/backups`.
+
 ## How a trade works
 
 A trade is created with the borrow alone, then each stage is added as it happens.

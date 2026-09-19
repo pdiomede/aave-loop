@@ -37,6 +37,21 @@ function signedUsd(v) {
   return `${v >= 0 ? '+' : '-'}$${amount(v, USD_DP)}`;
 }
 
+/**
+ * A stablecoin amount carries its own ticker instead of a dollar sign. The
+ * cards are all denominated in the coin that was borrowed, so "32,000.00 USDT"
+ * reads in one line. Prices stay in dollars, since ETH is quoted in dollars.
+ */
+function money(v, currency) {
+  if (!isNum(v)) return '';
+  return `${v < 0 ? '-' : ''}${amount(v, USD_DP)} ${currency}`;
+}
+
+function signedMoney(v, currency) {
+  if (!isNum(v)) return '';
+  return `${v >= 0 ? '+' : '-'}${amount(v, USD_DP)} ${currency}`;
+}
+
 function ethQty(v) {
   return isNum(v) ? amount(v, ETH_DP) : '';
 }
@@ -89,6 +104,7 @@ const ethMark = `<img class="eth-mark" src="/eth.svg" alt="" width="15" height="
 
 const state = {
   view: 'trades',
+  draft: null,
   trades: [],
   openId: null,
   editing: null, // { id, stage }
@@ -117,6 +133,98 @@ async function api(path, options = {}) {
 
 async function loadTrades() {
   state.trades = await api('/api/trades');
+}
+
+/* ----------------------------------------------------- input and validation */
+
+// Ethereum's genesis block. Nothing in this ledger can predate it.
+const EARLIEST_DATE = '2015-07-30';
+
+/**
+ * Read a typed amount. Accepts what people actually paste: thousands
+ * separators, a currency symbol, a trailing percent, surrounding spaces.
+ * Returns null for anything that is not a single finite number.
+ */
+function parseAmount(text) {
+  const cleaned = String(text ?? '').replace(/[,\s$%]/g, '').replace(/[A-Za-z]/g, '');
+  if (cleaned === '') return null;
+  if (!/^-?\d*\.?\d+$/.test(cleaned)) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Strip what can never belong in a number, as the user types. */
+function sanitizeNumeric(text) {
+  let out = String(text ?? '').replace(/[^0-9.]/g, '');
+  const firstDot = out.indexOf('.');
+  if (firstDot !== -1) {
+    out = out.slice(0, firstDot + 1) + out.slice(firstDot + 1).replace(/\./g, '');
+  }
+  return out;
+}
+
+const FIELD_LABELS = {
+  borrow_date: 'Borrow date',
+  borrow_amount: 'Amount borrowed',
+  borrow_apr: 'Borrow APR',
+  buy_date: 'Purchase date',
+  buy_amount: 'Amount spent',
+  buy_eth: 'ETH purchased',
+  sell_date: 'Sale date',
+  sell_eth: 'ETH sold',
+  sell_amount: 'Amount received',
+  repay_date: 'Repayment date',
+  repay_amount: 'Amount repaid',
+};
+
+const AMOUNT_FIELDS = ['borrow_amount', 'buy_amount', 'sell_amount', 'repay_amount', 'buy_eth', 'sell_eth'];
+
+/**
+ * Check one field in the context of the trade it belongs to.
+ * Returns an error string, or null when the value is acceptable.
+ */
+function validateField(name, raw, trade = {}) {
+  const label = FIELD_LABELS[name] || name;
+  const text = String(raw ?? '').trim();
+
+  if (text === '') return `${label} is required.`;
+
+  if (name.endsWith('_date')) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return `${label} must be a valid date.`;
+    if (text > todayISO()) return `${label} cannot be in the future.`;
+    if (text < EARLIEST_DATE) return `${label} is before Ethereum existed. Check the year.`;
+
+    const after = (other, otherLabel) =>
+      trade[other] && text < trade[other] ? `${label} cannot be before the ${otherLabel}.` : null;
+    if (name === 'buy_date') return after('borrow_date', 'borrow');
+    if (name === 'sell_date') return after('buy_date', 'purchase') || after('borrow_date', 'borrow');
+    if (name === 'repay_date') return after('sell_date', 'sale') || after('borrow_date', 'borrow');
+    return null;
+  }
+
+  const value = parseAmount(text);
+  if (value === null) return `${label} must be a number.`;
+
+  if (name === 'borrow_apr') {
+    if (value < 0) return 'APR cannot be negative.';
+    if (value > 100) return 'APR looks too high. Enter it as a percent, for example 4.27.';
+    return null;
+  }
+
+  if (value <= 0) return `${label} must be greater than zero.`;
+
+  if (name === 'sell_eth' && isNum(trade.buy_eth) && value > trade.buy_eth * 1.0001) {
+    return `You only bought ${ethQty(trade.buy_eth)} ETH.`;
+  }
+  if (name === 'repay_amount' && isNum(trade.borrow_amount)) {
+    if (value < trade.borrow_amount - 0.005) {
+      return `A repayment cannot be less than the ${amount(trade.borrow_amount, USD_DP)} borrowed.`;
+    }
+    if (value > trade.borrow_amount * 2) {
+      return `That is a long way above the ${amount(trade.borrow_amount, USD_DP)} borrowed.`;
+    }
+  }
+  return null;
 }
 
 /* -------------------------------------------------------- field rendering */
@@ -151,12 +259,22 @@ function field({
     const cls = ['control', prefix && 'control--prefix', suffix && 'control--suffix']
       .filter(Boolean)
       .join(' ');
+
+    // Numbers are collected as text with a decimal keypad rather than
+    // type="number". A number input silently throws away anything it cannot
+    // parse, so pasting "12,000" or "$12000" straight out of a wallet left the
+    // field blank with no explanation. As text we keep what was typed, tidy it
+    // up, and say what is wrong.
+    const isNumeric = type === 'number';
+    const attrs = isNumeric
+      ? `type="text" inputmode="decimal" data-numeric="1"`
+      : `type="${type}"${type === 'date' ? ` min="${EARLIEST_DATE}" max="${todayISO()}"` : ''}`;
+
     control = `<div class="${cls}">
       ${prefix ? `<span class="control__prefix">${esc(prefix)}</span>` : ''}
-      <input id="${id}" name="${name}" type="${type}" value="${esc(value)}"
-        ${type === 'number' ? `step="${step}" inputmode="decimal"` : ''}
+      <input id="${id}" name="${name}" ${attrs} value="${esc(value)}"
         placeholder="${esc(placeholder)}" ${autofocus ? 'autofocus' : ''}
-        ${auto ? 'data-auto="1"' : ''} autocomplete="off" />
+        ${auto ? 'data-auto="1"' : ''} autocomplete="off" spellcheck="false" />
       ${suffix ? `<span class="control__suffix">${esc(suffix)}</span>` : ''}
     </div>`;
   }
@@ -177,10 +295,14 @@ const actions = (submitLabel, cancelAttr) => `
 
 /* ------------------------------------------------------------- stage forms */
 
+// Amounts on a trade are denominated in the coin that was borrowed, so the
+// fields carry that ticker rather than a dollar sign.
+const unitOf = (t) => t.borrow_currency || 'USDC';
+
 function borrowFields(t = {}) {
   return `<div class="grid">
     ${field({ name: 'borrow_date', label: 'Borrow date', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
-    ${field({ name: 'borrow_amount', label: 'Amount borrowed', type: 'number', value: t.borrow_amount ?? '', prefix: '$', placeholder: '25000' })}
+    ${field({ name: 'borrow_amount', label: 'Amount borrowed', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
     ${field({ name: 'borrow_currency', label: 'Stablecoin', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
     ${field({ name: 'borrow_apr', label: 'Borrow APR', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
   </div>`;
@@ -189,7 +311,7 @@ function borrowFields(t = {}) {
 function buyFields(t) {
   return `<div class="grid">
     ${field({ name: 'buy_date', label: 'Purchase date', type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
-    ${field({ name: 'buy_amount', label: 'Amount spent', type: 'number', value: t.buy_amount ?? t.borrow_amount, prefix: '$' })}
+    ${field({ name: 'buy_amount', label: 'Amount spent', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
     ${field({ name: 'buy_eth', label: 'ETH purchased', type: 'number', value: t.buy_eth ?? '', suffix: 'ETH', placeholder: '8.0773' })}
   </div>`;
 }
@@ -197,8 +319,8 @@ function buyFields(t) {
 function sellFields(t) {
   return `<div class="grid">
     ${field({ name: 'sell_date', label: 'Sale date', type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
+    ${field({ name: 'sell_amount', label: 'Amount received', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
     ${field({ name: 'sell_eth', label: 'ETH sold', type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: 'ETH' })}
-    ${field({ name: 'sell_amount', label: 'Amount received', type: 'number', value: t.sell_amount ?? '', prefix: '$', placeholder: '26811' })}
   </div>`;
 }
 
@@ -218,7 +340,7 @@ function repayFields(t) {
       label: 'Amount repaid',
       type: 'number',
       value: amount,
-      prefix: '$',
+      suffix: unitOf(t),
       // Stays in step with the date until the user types their own figure.
       auto: t.repay_amount == null,
     })}
@@ -233,9 +355,13 @@ function repayFields(t) {
  */
 function refreshHints(form, trade, stage) {
   const data = Object.fromEntries(new FormData(form).entries());
+  // An empty field means "not filled in". A typed 0 is a real value: a 0% APR
+  // borrow is accepted, and treating it as absent hid the preview entirely.
   const n = (v) => {
-    const x = Number(String(v ?? '').replace(/[,\s$%]/g, ''));
-    return Number.isFinite(x) && x !== 0 ? x : null;
+    const text = String(v ?? '').replace(/[,\s$%]/g, '').trim();
+    if (text === '') return null;
+    const x = Number(text);
+    return Number.isFinite(x) ? x : null;
   };
   const merged = {
     ...trade,
@@ -277,18 +403,23 @@ function refreshHints(form, trade, stage) {
       }
     }
 
-    const days = daysBetween(merged.borrow_date, merged.repay_date);
-    const interest = accruedInterest(merged.borrow_amount, merged.borrow_apr, days);
+    // Recompute from the shared module rather than re-deriving here. A local
+    // `sell_amount - repay_amount` disagreed with what the server stored: on a
+    // partial sale the preview read -4,028.77 where the saved result was
+    // +971.23.
+    const after = derive({ ...merged, repay_date: merged.repay_date, repay_amount: merged.repay_amount });
+    const days = after.days;
+
     set('repay_date', isNum(days)
-      ? `${days} day${days === 1 ? '' : 's'} of loan${isNum(interest) ? `, interest ${usd(interest, 2)}` : ''}`
+      ? `${days} day${days === 1 ? '' : 's'} of loan${
+          isNum(after.interestPaid) ? `, interest ${usd(after.interestPaid, 2)}` : ''
+        }`
       : '');
 
-    const net = isNum(merged.sell_amount) && isNum(merged.repay_amount)
-      ? merged.sell_amount - merged.repay_amount
-      : null;
-    const p = annualizedPct(net, merged.borrow_amount, days);
-    set('repay_amount', isNum(net)
-      ? `Net gain <strong class="${gainClass(net)}">${signedUsd(net)}</strong>${isNum(p) ? `, <strong>${pct(p)}</strong> annualized` : ''}`
+    set('repay_amount', isNum(after.netGain)
+      ? `Net gain <strong class="${gainClass(after.netGain)}">${signedUsd(after.netGain)}</strong>${
+          isNum(after.pct) ? `, <strong>${pct(after.pct)}</strong> annualized` : ''
+        }`
       : isNum(d.suggestedRepay)
         ? `Suggested ${usd(d.suggestedRepay, 2)} from the APR`
         : '');
@@ -308,37 +439,44 @@ function stageSummary(stage, t, d) {
   const row = (label, value, cls = '') =>
     value === '' || value == null ? '' : `<div class="stage__row"><dt>${label}</dt><dd class="${cls}">${value}</dd></div>`;
 
+  // Every card puts the money on the second line, in the coin that was
+  // borrowed, so the four cards can be read straight down.
+  const c = t.borrow_currency;
+
   switch (stage) {
     case 'borrow':
       return (
         row('Date', fmtDate(t.borrow_date)) +
-        row('Amount', `${usd(t.borrow_amount)} ${t.borrow_currency}`) +
+        row('Amount', money(t.borrow_amount, c)) +
         row('APR', pct(t.borrow_apr)) +
         row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} days` : '')
       );
     case 'buy':
       return (
         row('Date', fmtDate(t.buy_date)) +
-        row('Spent', usd(t.buy_amount)) +
+        row('Spent', money(t.buy_amount, c)) +
         row('Bought', eth(t.buy_eth)) +
         row('ETH price', usd(d.buyPrice))
       );
     case 'sell':
       return (
         row('Date', fmtDate(t.sell_date)) +
+        row('Received', money(t.sell_amount, c)) +
         row('Sold', eth(t.sell_eth)) +
-        row('Received', usd(t.sell_amount)) +
         row('ETH price', usd(d.sellPrice)) +
-        (d.isPartialSale ? row('Cost of ETH sold', usd(d.costOfSoldEth)) : '') +
+        (d.isPartialSale ? row('Cost of ETH sold', money(d.costOfSoldEth, c)) : '') +
         (d.isPartialSale ? row('Still held', eth(d.retainedEth)) : '') +
-        row('Gross gain', signedUsd(d.grossGain), gainClass(d.grossGain))
+        row('Gross gain', signedMoney(d.grossGain, c), gainClass(d.grossGain))
       );
     case 'repay':
+      // The interest the loan actually cost, which is what the net gain is
+      // computed from. Showing the theoretical accrual here meant the card did
+      // not add up: gross minus the interest shown missed the net by cents.
       return (
         row('Date', fmtDate(t.repay_date)) +
-        row('Repaid', usd(t.repay_amount, 2)) +
-        row('Interest', usd(d.accruedInterest, 2)) +
-        row('Net gain', signedUsd(d.netGain), gainClass(d.netGain)) +
+        row('Repaid', money(t.repay_amount, c)) +
+        row('Interest', money(d.interestPaid ?? d.accruedInterest, c)) +
+        row('Net gain', signedMoney(d.netGain, c), gainClass(d.netGain)) +
         row('Annualized', pct(d.pct), gainClass(d.netGain))
       );
     default:
@@ -434,6 +572,36 @@ function tradeRow(t, index) {
   }`;
 }
 
+/**
+ * Capture what is typed into the open stage form so a re-render does not throw
+ * it away. Switching to Summary and back used to silently reset the fields to
+ * the stored values.
+ */
+function captureDraft() {
+  const form = document.querySelector('[data-stage-form]');
+  if (!form) return null;
+  return {
+    id: Number(form.dataset.trade),
+    stage: form.dataset.stageForm,
+    values: payloadOf(form),
+    auto: !!form.querySelector('input[name="repay_amount"][data-auto="1"]'),
+  };
+}
+
+function restoreDraft(draft) {
+  if (!draft) return;
+  const form = document.querySelector('[data-stage-form]');
+  if (!form || Number(form.dataset.trade) !== draft.id || form.dataset.stageForm !== draft.stage) {
+    return;
+  }
+  for (const [name, value] of Object.entries(draft.values)) {
+    const input = form.elements[name];
+    if (input && input.value !== value) input.value = value;
+  }
+  const repay = form.querySelector('input[name="repay_amount"]');
+  if (repay && !draft.auto) delete repay.dataset.auto;
+}
+
 function renderTable() {
   const mount = document.getElementById('table-mount');
 
@@ -459,10 +627,14 @@ function renderTable() {
 
   const openForm = mount.querySelector('[data-stage-form]');
   if (openForm) {
+    restoreDraft(state.draft);
     const trade = state.trades.find((t) => t.id === Number(openForm.dataset.trade));
     refreshHints(openForm, trade, openForm.dataset.stageForm);
-    openForm.querySelector('input, select')?.focus();
+    // Only take focus when the form has just been opened. Stealing it on every
+    // re-render pulls the caret away from whatever else is being typed in.
+    if (!state.draft) openForm.querySelector('input, select')?.focus();
   }
+  state.draft = null;
 }
 
 /* ---------------------------------------------------------------- summary */
@@ -600,6 +772,7 @@ function renderStats() {
 }
 
 function render() {
+  state.draft = captureDraft();
   renderStats();
   if (state.view === 'summary') renderSummary();
   else renderTable();
@@ -607,16 +780,54 @@ function render() {
 
 /* ------------------------------------------------------------- form submit */
 
+function clearFieldError(form, fieldName) {
+  const wrap = form.querySelector(`[data-field="${fieldName}"]`);
+  if (wrap && wrap.classList.contains('is-invalid')) {
+    wrap.classList.remove('is-invalid');
+    wrap.querySelector('[data-hint]').textContent = '';
+  }
+}
+
 function showFormError(form, message, fieldName) {
-  form.querySelectorAll('.field.is-invalid').forEach((f) => f.classList.remove('is-invalid'));
+  form.querySelectorAll('.field.is-invalid').forEach((f) => {
+    f.classList.remove('is-invalid');
+    f.querySelector('[data-hint]').textContent = '';
+  });
   const target = fieldName && form.querySelector(`[data-field="${fieldName}"]`);
   if (target) {
     target.classList.add('is-invalid');
     target.querySelector('[data-hint]').textContent = message;
     form.querySelector('[data-form-error]').textContent = '';
+    target.querySelector('input, select')?.focus();
   } else {
     form.querySelector('[data-form-error]').textContent = message;
   }
+}
+
+/**
+ * Check every field before anything is sent. Without this the only validation
+ * was the server's, so a blank form made a round trip just to be told the
+ * first thing it disliked.
+ */
+function validateForm(form, trade = {}) {
+  const data = payloadOf(form);
+  for (const [name, raw] of Object.entries(data)) {
+    if (name === 'borrow_currency' || name === 'notes') continue;
+    // The merged trade lets a field be judged against its siblings, such as a
+    // sale that cannot exceed the ETH bought.
+    const context = { ...trade, ...Object.fromEntries(
+      Object.entries(data)
+        .filter(([k]) => k !== name)
+        .map(([k, v]) => [k, k.endsWith('_date') ? v : parseAmount(v)]),
+    ) };
+    const error = validateField(name, raw, context);
+    if (error) {
+      showFormError(form, error, name);
+      return false;
+    }
+  }
+  form.querySelector('[data-form-error]').textContent = '';
+  return true;
 }
 
 function payloadOf(form) {
@@ -628,6 +839,8 @@ function payloadOf(form) {
 async function submitStage(form) {
   const id = Number(form.dataset.trade);
   const stage = form.dataset.stageForm;
+  const trade = state.trades.find((t) => t.id === id) || {};
+  if (!validateForm(form, trade)) return;
   try {
     const updated = await api(`/api/trades/${id}`, {
       method: 'PATCH',
@@ -635,7 +848,9 @@ async function submitStage(form) {
     });
     state.trades = state.trades.map((t) => (t.id === id ? updated : t));
     state.editing = null;
+    state.draft = null;
     render();
+    state.draft = null;
     toast(`${STAGES.find((s) => s.key === stage).name} saved.`);
   } catch (err) {
     showFormError(form, err.message, err.field);
@@ -643,6 +858,7 @@ async function submitStage(form) {
 }
 
 async function submitBorrow(form) {
+  if (!validateForm(form)) return;
   try {
     const created = await api('/api/trades', {
       method: 'POST',
@@ -744,7 +960,6 @@ function wire() {
     }
   });
 
-  borrowForm.addEventListener('input', () => refreshHints(borrowForm, {}, 'borrow'));
   borrowForm.addEventListener('submit', (e) => {
     e.preventDefault();
     submitBorrow(borrowForm);
@@ -768,6 +983,7 @@ function wire() {
     if (e.target.closest('[data-cancel-stage]')) {
       state.editing = null;
       render();
+      state.draft = null;
       return;
     }
 
@@ -808,14 +1024,67 @@ function wire() {
     }
   });
 
-  // Stage forms are recreated on every render, so listen at the document level.
+  // Runs for every field in every form, including the new trade card.
   document.body.addEventListener('input', (e) => {
-    const form = e.target.closest('[data-stage-form]');
+    const input = e.target;
+    if (!input.matches('input, select')) return;
+
+    // Keep a typed amount to digits and a single decimal point, preserving the
+    // caret. Pasting "12,000" now leaves "12000" rather than an empty field.
+    if (input.dataset.numeric === '1') {
+      const cleaned = sanitizeNumeric(input.value);
+      if (cleaned !== input.value) {
+        const caret = input.selectionStart - (input.value.length - cleaned.length);
+        input.value = cleaned;
+        try {
+          input.setSelectionRange(Math.max(caret, 0), Math.max(caret, 0));
+        } catch (err) {
+          /* a detached or non text input has no selection to restore */
+        }
+      }
+    }
+
+    const form = input.closest('form');
     if (!form) return;
-    if (e.target.name === 'repay_amount' && e.isTrusted) delete e.target.dataset.auto;
-    const trade = state.trades.find((t) => t.id === Number(form.dataset.trade));
-    refreshHints(form, trade, form.dataset.stageForm);
+
+    // An error that has been addressed should stop shouting immediately. This
+    // has to happen before the hints are recomputed, because clearing an error
+    // empties the same slot the hint is written into.
+    if (input.name) clearFieldError(form, input.name);
+    form.querySelector('[data-form-error]').textContent = '';
+
+    if (input.name === 'borrow_currency') {
+      const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');
+      if (unit) unit.textContent = input.value;
+    }
+
+    const stageForm = input.closest('[data-stage-form]');
+    if (!stageForm) {
+      if (form.id === 'borrow-form') refreshHints(form, {}, 'borrow');
+      return;
+    }
+    if (input.name === 'repay_amount' && e.isTrusted) delete input.dataset.auto;
+    const trade = state.trades.find((t) => t.id === Number(stageForm.dataset.trade));
+    refreshHints(stageForm, trade, stageForm.dataset.stageForm);
   });
+
+  // Flag a bad value as soon as the user leaves the field, rather than at submit.
+  document.body.addEventListener(
+    'blur',
+    (e) => {
+      const input = e.target;
+      if (!input.matches('input[name]')) return;
+      const form = input.closest('form');
+      if (!form || input.value.trim() === '') return;
+      const stageForm = input.closest('[data-stage-form]');
+      const trade = stageForm
+        ? state.trades.find((t) => t.id === Number(stageForm.dataset.trade)) || {}
+        : {};
+      const error = validateField(input.name, input.value, trade);
+      if (error) showFormError(form, error, input.name);
+    },
+    true,
+  );
 
   document.body.addEventListener('submit', (e) => {
     const form = e.target.closest('[data-stage-form]');
