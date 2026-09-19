@@ -534,6 +534,41 @@ p {
   font-size: 16.5px;
 }
 
+/* ------------------------------------------------------------------- 404 */
+
+/* The error page reuses .cta, which is already a centred panel on the hero
+   gradient. The section grows to fill whatever is left between the header and
+   the footer, so the gradient runs to the bottom rather than stopping short and
+   leaving a band of dead white above the footer. */
+.main--error {
+  display: flex;
+  flex-direction: column;
+}
+
+.error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+/* Large enough to say what happened at a glance, quiet enough not to be the
+   loudest thing on a page whose job is to point somewhere else. */
+.error__code {
+  margin: 0 0 6px;
+  color: var(--text-muted);
+  font-size: clamp(56px, 11vw, 104px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  opacity: 0.32;
+}
+
+.error .hero__actions {
+  margin-top: 30px;
+}
+
 /* ---------------------------------------------------------------- footer */
 
 .footer {

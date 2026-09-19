@@ -25,12 +25,32 @@ const app = express();
 // protection. A request has to be addressed to loopback as well, or a page on
 // the internet can point its own hostname at 127.0.0.1 and reach this API as a
 // same origin, reading and deleting the entire ledger.
-const LOOPBACK_HOSTS = new Set(
-  ['localhost', '127.0.0.1', '[::1]'].flatMap((h) => [h, `${h}:${PORT}`]),
-);
+//
+// Running behind a reverse proxy is a legitimate deployment, and there the Host
+// is the public name rather than loopback, so the proxy's hostname has to be
+// named. Naming it explicitly is what keeps the protection above intact: a page
+// on the internet that points its own hostname at 127.0.0.1 still fails this
+// check, because its name is not on the list. Left unset, this is exactly the
+// loopback-only ledger it has always been.
+const EXTRA_HOSTS = (process.env.MYAAVE_ALLOWED_HOSTS || '')
+  .split(',')
+  .map((h) => h.trim().toLowerCase())
+  .filter(Boolean);
+
+const ALLOWED_HOSTS = new Set([
+  ...['localhost', '127.0.0.1', '[::1]'].flatMap((h) => [h, `${h}:${PORT}`]),
+  ...EXTRA_HOSTS,
+]);
+
 app.use((req, res, next) => {
-  if (!LOOPBACK_HOSTS.has(String(req.headers.host || '').toLowerCase())) {
-    return res.status(403).type('text/plain').send('This ledger only answers on localhost.');
+  if (!ALLOWED_HOSTS.has(String(req.headers.host || '').toLowerCase())) {
+    return res
+      .status(403)
+      .type('text/plain')
+      .send(
+        'This ledger only answers on localhost. Behind a proxy, name the host in ' +
+          'MYAAVE_ALLOWED_HOSTS.',
+      );
   }
   next();
 });
@@ -50,6 +70,10 @@ const staticOptions = {
 
 app.use(express.static(path.join(root, 'public'), staticOptions));
 app.use('/lib', express.static(path.join(root, 'lib'), staticOptions));
+// In production nginx serves landing/ itself and requests never arrive here.
+// This is for running without a proxy, where the 404 page below would otherwise
+// be handed to a browser that cannot fetch the stylesheet it asks for.
+app.use('/landing', express.static(path.join(root, 'landing'), staticOptions));
 
 // API responses carried an ETag but no Cache-Control, which let the browser
 // heuristically cache them and show a stale ledger after a change. These are
@@ -413,6 +437,30 @@ app.delete('/api/trades/:id', (req, res) => {
   const info = prepare('DELETE FROM trades WHERE id = ?').run(Number(req.params.id));
   if (info.changes === 0) return res.status(404).json({ error: 'Trade not found.' });
   res.status(204).end();
+});
+
+/**
+ * Anything reaching here matched no route and no file on disk.
+ *
+ * An API caller gets JSON, because every other answer from /api is JSON and
+ * handing a client an HTML page is a confusing way to say "no such path". A
+ * browser gets the same page nginx serves for a missing public file, so the two
+ * layers agree on what a missing page looks like.
+ *
+ * This sits after every route and before the error handler below on purpose.
+ * Earlier and it would answer for the static mounts before they could; after
+ * the error handler and it would never run at all, since Express dispatches a
+ * four argument handler only when something has thrown.
+ */
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'No such endpoint.' });
+  }
+  res.status(404).sendFile(path.join(root, 'landing', '404.html'), (err) => {
+    // The page is part of the repo, so a failure here means a broken checkout
+    // rather than a bad request. Fall back to something rather than hanging.
+    if (err) next(err);
+  });
 });
 
 app.use((err, _req, res, _next) => {

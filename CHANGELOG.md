@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.10] - 2026-09-19
+
+### Fixed
+
+- The ledger answered every proxied request with `This ledger only answers on localhost.` The Host allow-list added in 0.0.7 is right to exist, but it assumed the app is only ever addressed on loopback, which stopped being true once nginx sat in front of it sending the public hostname. `MYAAVE_ALLOWED_HOSTS` now names the hosts a proxy may present. Unset, behaviour is exactly as before; set, any hostname not on the list is still refused, so the protection is intact.
+- An unknown path under `/api` fell through to Express's default handler and answered with an HTML error page, where every other API response is JSON. A client that mistyped an endpoint failed to parse the reply rather than reading the error.
+
+### Added
+
+- A 404 page for aaveloop.com at `landing/404.html`, in the landing page's own design, served by nginx for a missing public file and by the app for an unknown path. The shared `/var/www/errors/404.html` that the other sites on the host use is untouched.
+- The nginx 404 handler needs `auth_basic off`. Without it the internal redirect re-runs auth and a missing file reports as a 401, which is what made a missing `landing/` directory look like a credentials problem.
+
+### Changed
+
+- The landing page drops the self-hosting card and the line about running on your own server, and the closing call to action gains an **Ask for Access** button.
+
 ## [0.0.9] - 2026-09-19
 
 ### Changed

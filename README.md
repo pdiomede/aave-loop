@@ -125,6 +125,26 @@ The theme toggle shares the `myaave-theme` localStorage key with the app, so the
 carries between the two pages. The version in the footer is hard coded, since
 `/api/version` is behind auth, and needs bumping by hand with the others.
 
+`landing/404.html` is served by both nginx and the app: nginx points `error_page 404` at
+it for a missing public file, and the app returns it for an unknown path. An unknown path
+under `/api` gets JSON instead, because every other API answer is JSON. The 404 carries no
+version number, so it is not a third place to remember to bump.
+
+## Running behind a proxy
+
+The ledger binds to loopback and checks the `Host` header, because it has no login of its
+own and a page on the internet can otherwise point its own hostname at `127.0.0.1` and
+reach the API as a same origin. Behind a reverse proxy the Host is the public name, so
+name it:
+
+```
+MYAAVE_ALLOWED_HOSTS=aaveloop.com,www.aaveloop.com
+```
+
+Unset, nothing changes: only `localhost`, `127.0.0.1` and `[::1]` are accepted. Set, those
+still work and the named hosts are added. Any other hostname is still refused, which is
+the whole point of the check.
+
 ## License
 
 MIT. See [LICENSE.md](LICENSE.md).
