@@ -1,0 +1,204 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import { db, FIELDS } from './db.js';
+import { derive, summarize, parseDate, CURRENCIES } from './lib/calc.js';
+
+const root = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const PORT = Number(process.env.PORT) || 3000;
+
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(root, 'public')));
+app.use('/lib', express.static(path.join(root, 'lib')));
+
+/* ---------------------------------------------------------------- helpers */
+
+class BadRequest extends Error {
+  constructor(message, field) {
+    super(message);
+    this.field = field;
+  }
+}
+
+const isBlank = (v) => v === undefined || v === null || v === '';
+
+function toNumber(value, field, label) {
+  const n = typeof value === 'string' ? Number(value.replace(/[,\s$%]/g, '')) : Number(value);
+  if (!Number.isFinite(n)) throw new BadRequest(`${label} must be a number.`, field);
+  if (n <= 0) throw new BadRequest(`${label} must be greater than zero.`, field);
+  return n;
+}
+
+function toDate(value, field, label) {
+  if (parseDate(String(value)) === null) {
+    throw new BadRequest(`${label} must be a valid date.`, field);
+  }
+  return String(value).trim();
+}
+
+/**
+ * Normalise an incoming payload into database columns.
+ * Only keys actually present are returned, so PATCH can send one stage.
+ * A key sent as null or '' clears that column, which is how a stage is undone.
+ */
+function normalise(body, { requireBorrow }) {
+  const out = {};
+  const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
+
+  const numericField = (key, label) => {
+    if (!has(key)) return;
+    out[key] = isBlank(body[key]) ? null : toNumber(body[key], key, label);
+  };
+  const dateField = (key, label) => {
+    if (!has(key)) return;
+    out[key] = isBlank(body[key]) ? null : toDate(body[key], key, label);
+  };
+
+  dateField('borrow_date', 'Borrow date');
+  numericField('borrow_amount', 'Borrow amount');
+  numericField('borrow_apr', 'Borrow APR');
+  if (has('borrow_currency')) {
+    const c = String(body.borrow_currency || '').toUpperCase();
+    if (!CURRENCIES.includes(c)) throw new BadRequest('Pick a supported stablecoin.', 'borrow_currency');
+    out.borrow_currency = c;
+  }
+
+  dateField('buy_date', 'Purchase date');
+  numericField('buy_amount', 'Purchase amount');
+  numericField('buy_eth', 'ETH purchased');
+
+  dateField('sell_date', 'Sale date');
+  numericField('sell_amount', 'Sale amount');
+  numericField('sell_eth', 'ETH sold');
+
+  dateField('repay_date', 'Repayment date');
+  numericField('repay_amount', 'Repaid amount');
+
+  if (has('notes')) out.notes = isBlank(body.notes) ? null : String(body.notes).slice(0, 2000);
+
+  if (requireBorrow) {
+    for (const [key, label] of [
+      ['borrow_date', 'Borrow date'],
+      ['borrow_amount', 'Borrow amount'],
+      ['borrow_currency', 'Currency'],
+      ['borrow_apr', 'Borrow APR'],
+    ]) {
+      if (isBlank(out[key])) throw new BadRequest(`${label} is required.`, key);
+    }
+  }
+
+  // APR is a percentage, not a fraction. Reject an obviously wrong magnitude.
+  if (out.borrow_apr != null && out.borrow_apr > 100) {
+    throw new BadRequest('APR looks too high. Enter it as a percent, for example 4.27.', 'borrow_apr');
+  }
+
+  return out;
+}
+
+/** A stage cannot be dated before the loan that funded it. */
+function checkChronology(row) {
+  const order = [
+    ['buy_date', 'The purchase'],
+    ['sell_date', 'The sale'],
+    ['repay_date', 'The repayment'],
+  ];
+  for (const [key, label] of order) {
+    if (row[key] && parseDate(row[key]) < parseDate(row.borrow_date)) {
+      throw new BadRequest(`${label} cannot be dated before the borrow.`, key);
+    }
+  }
+  if (row.sell_date && row.buy_date && parseDate(row.sell_date) < parseDate(row.buy_date)) {
+    throw new BadRequest('The sale cannot be dated before the purchase.', 'sell_date');
+  }
+  if (row.sell_eth != null && row.buy_eth != null && row.sell_eth > row.buy_eth * 1.0001) {
+    throw new BadRequest('You cannot sell more ETH than you bought.', 'sell_eth');
+  }
+
+  // Interest can never move the repayment far from the principal, so a figure
+  // well outside that band is a slipped digit rather than a real number.
+  if (row.repay_amount != null && row.borrow_amount != null) {
+    if (row.repay_amount > row.borrow_amount * 2 || row.repay_amount < row.borrow_amount * 0.5) {
+      throw new BadRequest(
+        `That is a long way from the ${row.borrow_amount.toLocaleString('en-US')} borrowed. Check the figure.`,
+        'repay_amount',
+      );
+    }
+  }
+}
+
+const withDerived = (row) => ({ ...row, derived: derive(row) });
+
+const selectAll = db.prepare('SELECT * FROM trades ORDER BY borrow_date DESC, id DESC');
+const selectOne = db.prepare('SELECT * FROM trades WHERE id = ?');
+
+/* ------------------------------------------------------------------ routes */
+
+app.get('/api/version', (_req, res) => res.json({ version: pkg.version }));
+
+app.get('/api/trades', (_req, res) => {
+  res.json(selectAll.all().map(withDerived));
+});
+
+app.get('/api/summary', (_req, res) => {
+  res.json(summarize(selectAll.all()));
+});
+
+app.post('/api/trades', (req, res, next) => {
+  try {
+    const patch = normalise(req.body || {}, { requireBorrow: true });
+    const row = Object.fromEntries(FIELDS.map((f) => [f, patch[f] ?? null]));
+    checkChronology(row);
+
+    const now = new Date().toISOString();
+    const cols = [...FIELDS, 'created_at', 'updated_at'];
+    const stmt = db.prepare(
+      `INSERT INTO trades (${cols.join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`,
+    );
+    const info = stmt.run({ ...row, created_at: now, updated_at: now });
+    res.status(201).json(withDerived(selectOne.get(info.lastInsertRowid)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.patch('/api/trades/:id', (req, res, next) => {
+  try {
+    const current = selectOne.get(Number(req.params.id));
+    if (!current) return res.status(404).json({ error: 'Trade not found.' });
+
+    const patch = normalise(req.body || {}, { requireBorrow: false });
+    const keys = Object.keys(patch);
+    if (keys.length === 0) return res.json(withDerived(current));
+
+    checkChronology({ ...current, ...patch });
+
+    db.prepare(
+      `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE id = @id`,
+    ).run({ ...patch, updated_at: new Date().toISOString(), id: current.id });
+
+    res.json(withDerived(selectOne.get(current.id)));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/trades/:id', (req, res) => {
+  const info = db.prepare('DELETE FROM trades WHERE id = ?').run(Number(req.params.id));
+  if (info.changes === 0) return res.status(404).json({ error: 'Trade not found.' });
+  res.status(204).end();
+});
+
+app.use((err, _req, res, _next) => {
+  if (err instanceof BadRequest) {
+    return res.status(400).json({ error: err.message, field: err.field });
+  }
+  console.error(err);
+  res.status(500).json({ error: 'Something went wrong on the server.' });
+});
+
+app.listen(PORT, () => {
+  console.log(`myAave v${pkg.version} running at http://localhost:${PORT}`);
+});

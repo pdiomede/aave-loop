@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.npm/
+
+# local database
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# environment
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+npm-debug.log*
+yarn-error.log*
+logs/
+
+# build and coverage
+dist/
+build/
+coverage/
+.nyc_output/
+
+# editors and os
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# claude code
+.claude/

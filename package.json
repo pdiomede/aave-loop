@@ -1,0 +1,19 @@
+{
+  "name": "myaave",
+  "version": "0.0.1",
+  "description": "Track Aave stablecoin borrow, ETH buy and sell, and repay cycles.",
+  "type": "module",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.21.2"
+  }
+}

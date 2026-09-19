@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>myAave</title>
+    <meta name="description" content="Track Aave stablecoin borrow, ETH buy and sell, and repay cycles." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="/aaveLogo.png" />
+    <script>
+      // Applied before first paint so a dark session never flashes white.
+      try {
+        const saved = localStorage.getItem('myaave-theme');
+        if (saved) document.documentElement.dataset.theme = saved;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <header class="header">
+      <div class="shell header__inner">
+        <span class="brand">
+          <img class="brand__mark" src="/aaveLogo.png" alt="" width="24" height="24" />
+          myAave
+        </span>
+        <nav class="nav">
+          <a class="nav__link is-active" href="#trades">Trades</a>
+          <a class="nav__link" href="#summary">Summary</a>
+        </nav>
+        <button class="btn btn--icon" id="theme-toggle" type="button" title="Switch theme">
+          <span class="sr-only">Switch theme</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true" id="theme-icon"></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="hero" id="summary">
+      <div class="shell hero__inner">
+        <div>
+          <h1 class="hero__title">Leverage trades</h1>
+          <p class="hero__sub">
+            Borrow a stablecoin, buy ETH, sell it, repay the loan. Every cycle and its return, kept
+            in one place.
+          </p>
+        </div>
+        <div class="stats" id="stats"></div>
+      </div>
+    </section>
+
+    <main class="main" id="trades">
+      <div class="shell">
+        <div class="toolbar">
+          <h2 class="toolbar__title">History</h2>
+          <button class="btn btn--primary" id="new-trade" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New trade
+          </button>
+        </div>
+
+        <section class="card" id="new-trade-card" hidden>
+          <div class="card__head">
+            <h3 class="card__title">New trade: borrow</h3>
+          </div>
+          <div class="card__body">
+            <form id="borrow-form" novalidate></form>
+          </div>
+        </section>
+
+        <section class="card">
+          <div id="table-mount"></div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="shell footer__inner">
+        <span>myAave</span>
+        <span class="muted">Local tracker for Aave borrow to ETH trade cycles.</span>
+        <a href="https://github.com/pdiomede/myAave" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/pdiomede/myAave/blob/main/LICENSE.md" target="_blank" rel="noopener">MIT License</a>
+        <span class="footer__version" id="version">v0.0.1</span>
+      </div>
+    </footer>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
