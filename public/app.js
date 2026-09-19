@@ -158,7 +158,8 @@ const TIPS = {
     'result is known. A trade that came out exactly flat counts as neither a win nor a loss.',
   totalBorrowed:
     'Everything ever borrowed, open trades included, each loan valued at the rate on its own ' +
-    'borrow date. A running total, not the amount currently at risk.',
+    'borrow date. A running total, not the amount currently at risk. A trade still waiting on ' +
+    'a rate is left out, the same as everywhere else on this card.',
   avgHold:
     'Mean days from borrowing to repaying, over the same closed trades the figures above are ' +
     'built from.',
@@ -488,8 +489,30 @@ async function api(path, options = {}) {
 // interest from page load, so drop it and recompute from the shared module.
 const withoutDerived = ({ derived, ...row }) => row;
 
+/**
+ * Reload the ledger, discarding a reply that is already out of date.
+ *
+ * Two of these can be in flight at once, and one of them can be older than
+ * what is on screen: **Fetch rates** reloads the whole ledger, and a stage
+ * saved while that is away answers first and writes itself into `state.trades`
+ * directly. The reload was issued against the ledger as it stood before that
+ * save, so letting it land put the row back the way it was and left it there
+ * until the page was reloaded, with no error and nothing to suggest the save
+ * had not taken. The server had it right the whole time.
+ *
+ * `loadSeq` drops a reply a newer load has overtaken; `writeSeq` drops one
+ * that a write superseded while it was on the wire.
+ */
+let loadSeq = 0;
+let writeSeq = 0;
+
 async function loadTrades() {
-  state.trades = (await api('/api/trades')).map(withoutDerived);
+  const seq = ++loadSeq;
+  const wroteAt = writeSeq;
+  const rows = (await api('/api/trades')).map(withoutDerived);
+  if (seq !== loadSeq || wroteAt !== writeSeq) return false;
+  state.trades = rows;
+  return true;
 }
 
 /* ----------------------------------------------------- input and validation */
@@ -515,6 +538,15 @@ function sanitizeNumeric(text, { pasted = false } = {}) {
   }
   return out;
 }
+
+/**
+ * Input types that deliver a complete value rather than one more keystroke.
+ * A drop and an autofill are as whole as a paste, and only a value arriving a
+ * character at a time has to keep the old behaviour, because "1,5" on its way
+ * to "1,500" cannot be read as a decimal comma. Dropping "32.000,00" into an
+ * amount used to record a 32,000 loan as 32.
+ */
+const WHOLE_VALUE_INPUT = new Set(['insertFromPaste', 'insertFromDrop', 'insertReplacementText']);
 
 const FIELD_LABELS = {
   borrow_date: 'Borrow date',
@@ -549,8 +581,24 @@ function validateField(name, raw, trade = {}) {
 
     const after = (other, otherLabel) =>
       trade[other] && text < trade[other] ? `${label} cannot be before the ${otherLabel}.` : null;
-    if (name === 'buy_date') return after('borrow_date', 'borrow');
-    if (name === 'sell_date') return after('buy_date', 'purchase') || after('borrow_date', 'borrow');
+    // The mirror of `after`. Moving an early stage forward past a later one is
+    // exactly as wrong as dragging a late stage back, but only the server
+    // caught it, and its message names the stage it collided with rather than
+    // the one being edited. That field is not in the form on screen, so the
+    // message fell through to the form's error line with no field marked.
+    const before = (other, otherLabel) =>
+      trade[other] && text > trade[other] ? `${label} cannot be after the ${otherLabel}.` : null;
+    if (name === 'borrow_date') {
+      return before('buy_date', 'purchase') || before('sell_date', 'sale') || before('repay_date', 'repayment');
+    }
+    if (name === 'buy_date') {
+      return after('borrow_date', 'borrow') || before('sell_date', 'sale') || before('repay_date', 'repayment');
+    }
+    if (name === 'sell_date') {
+      return (
+        after('buy_date', 'purchase') || after('borrow_date', 'borrow') || before('repay_date', 'repayment')
+      );
+    }
     if (name === 'repay_date') return after('sell_date', 'sale') || after('borrow_date', 'borrow');
     return null;
   }
@@ -568,6 +616,19 @@ function validateField(name, raw, trade = {}) {
 
   if (name === 'sell_eth' && isNum(trade.buy_eth) && value > trade.buy_eth * 1.0001) {
     return `You only bought ${ethQty(trade.buy_eth)} ETH.`;
+  }
+  // The same pair from the other side: cutting the purchase below what has
+  // already been sold, or the loan below what has already been repaid.
+  if (name === 'buy_eth' && isNum(trade.sell_eth) && value * 1.0001 < trade.sell_eth) {
+    return `You already sold ${ethQty(trade.sell_eth)} ETH.`;
+  }
+  if (name === 'borrow_amount' && isNum(trade.repay_amount)) {
+    if (trade.repay_amount < value - 0.005) {
+      return `You repaid ${amount(trade.repay_amount, USD_DP)}, which is less than this.`;
+    }
+    if (trade.repay_amount > value * 2) {
+      return `You repaid ${amount(trade.repay_amount, USD_DP)}, more than double this.`;
+    }
   }
   if (name === 'repay_amount' && isNum(trade.borrow_amount)) {
     if (value < trade.borrow_amount - 0.005) {
@@ -1320,7 +1381,14 @@ function renderStats() {
     },
     { label: 'Blended annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: gainClass(s.avgPct) },
     { label: 'Closed trades', value: String(s.closedCount) },
-    { label: 'Open positions', value: s.openCount ? `${s.openCount} (${usd(s.deployed)})` : '0' },
+    {
+      label: 'Open positions',
+      // The chip, not a quietly short total: the count includes every open
+      // trade while the dollars can only include the ones with a rate.
+      value: s.openCount
+        ? `${s.openCount} (${usd(s.deployed)})${s.deployedMissingFx ? ` ${RATE_MISSING}` : ''}`
+        : '0',
+    },
   ];
   document.getElementById('stats').innerHTML = tiles
     .map(
@@ -1430,6 +1498,7 @@ async function submitStage(form) {
       body: JSON.stringify(payloadOf(form)),
     });
     state.trades = state.trades.map((t) => (t.id === id ? withoutDerived(updated) : t));
+    writeSeq += 1;
     state.editing = null;
     state.draft = null;
     render();
@@ -1647,6 +1716,7 @@ function wire() {
       api(`/api/trades/${id}`, { method: 'DELETE' })
         .then(() => {
           state.trades = state.trades.filter((t) => t.id !== id);
+          writeSeq += 1;
           state.openId = null;
           state.editing = null;
           render();
@@ -1698,7 +1768,7 @@ function wire() {
     // Keep a typed amount to digits and a single decimal point, preserving the
     // caret. Pasting "12,000" now leaves "12000" rather than an empty field.
     if (input.dataset.numeric === '1') {
-      const cleaned = sanitizeNumeric(input.value, { pasted: e.inputType === 'insertFromPaste' });
+      const cleaned = sanitizeNumeric(input.value, { pasted: WHOLE_VALUE_INPUT.has(e.inputType) });
       if (cleaned !== input.value) {
         const caret = input.selectionStart - (input.value.length - cleaned.length);
         input.value = cleaned;

@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.20] - 2026-09-20
+
+The four items 0.0.19 knowingly left open. One of them turned out to lose a save from the screen; the other three are smaller.
+
+### Fixed
+
+- **A save could be silently undone on screen.** **Fetch rates** reloads the whole ledger, and a stage saved while that reload was still on the wire wrote itself straight into the table. The reload had been issued against the ledger as it stood *before* that save, so when it landed it put the row back: a trade saved as CLOSED reverted to SOLD and stayed that way until the page was reloaded, with no error and nothing to suggest the save had not taken. The server had it right throughout. `loadTrades` now discards a reply that a newer load has overtaken, or that a write superseded while it was in flight. Reproduced by holding the `GET /api/trades` response back, and confirmed fixed against the same test.
+- **A cross-stage error named the wrong field, so no field was marked.** Moving an early stage past a later one — a purchase dated after its sale, a loan cut below what was already repaid, a purchase cut below the ETH already sold — passed the form and was caught only by the server, whose message names the stage it *collided with* rather than the one being edited. That field is not in the open form, so the message fell through to the form's error line with nothing highlighted. The form now checks each of these from both sides and flags the field the user is actually editing. Same-day stages, which are legitimate, are still allowed.
+- **A dropped amount was read as if it had been typed.** `sanitizeNumeric` only treated `insertFromPaste` as a complete value, so text dropped into an amount, or filled in by autofill, took the keystroke-by-keystroke path: `32.000,00` recorded a 32,000 loan as 32, the same failure 0.0.7 fixed for pasting. A drop and an autofill arrive as whole as a paste and are now read that way. Typing is unchanged, because `1,5` on its way to `1,500` still cannot be read as a decimal comma.
+
+### Changed
+
+- **"Open positions" says when its total is incomplete.** The count includes every open trade while the dollar figure can only include the ones whose rate is known, so on a ledger with an unrated open loan the two quietly disagreed. The tile now carries the same `no rate` chip the rest of the app uses, rather than printing a total that is short without saying so.
+- "Total borrowed" states that a trade still waiting on a rate is left out, which it always was, in step with every other figure on that card.
+
+### Notes
+
+- Verified by execution, and the whole 0.0.19 suite re-run unchanged: both FX invariants across 40,000 generated trades and 200 portfolios, aggregate reconciliation, the server bounds matrix, and no layout overflow at 1440px or 390px in either theme with the new chip in place.
+
 ## [0.0.19] - 2026-09-20
 
 Five bugs from an audit of the money path, the date path and the forms. No figure on a trade whose rates are all present changes, except the *Borrowed* pair in the currency table, which now describes the trades it always claimed to.
