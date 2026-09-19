@@ -100,6 +100,7 @@ The percentage is annualized, so a 3 day trade netting 7% shows as roughly 877%.
 ## Layout
 
 ```
+landing/       public marketing page, served by nginx rather than by the app
 server.js      Express API and static host
 db.js          SQLite connection and schema
 fx.js          exchange rate lookup and cache, server only
@@ -107,6 +108,22 @@ lib/calc.js    all formulas, shared by the server and the browser
 public/        interface
 data/          SQLite file, not committed
 ```
+
+## Landing page
+
+`landing/` is a static page for people who have not logged in. nginx serves it at `/`
+and keeps everything else on the host behind basic auth, so the ledger itself sits at
+`/app` and the Node process has no publicly reachable route at all.
+
+It is deliberately self contained. It must not link `/styles.css`, because that path is
+behind auth and a public visitor would get a 401 and an unstyled page, so the design
+tokens are copied into `landing/styles.css` instead. Brand images are not copied: nginx
+serves `aaveLogo.png` and the coin marks straight from `public/`, so there is one copy
+of each in the repo.
+
+The theme toggle shares the `myaave-theme` localStorage key with the app, so the choice
+carries between the two pages. The version in the footer is hard coded, since
+`/api/version` is behind auth, and needs bumping by hand with the others.
 
 ## License
 

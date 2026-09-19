@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aave Loop Ledger</title>
+    <meta
+      name="description"
+      content="Track leveraged trade cycles on Aave: borrow a stablecoin, buy ETH, sell it, repay the loan, and see what the round trip actually earned."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/landing/styles.css" />
+    <link rel="icon" href="/landing/favicon.svg" type="image/svg+xml" />
+    <script>
+      // Applied before first paint so a dark session never flashes white. Same
+      // key the ledger uses, so the choice carries between the two pages.
+      try {
+        const saved = localStorage.getItem('myaave-theme');
+        if (saved) document.documentElement.dataset.theme = saved;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <header class="header">
+      <div class="shell header__inner">
+        <a class="brand" href="/">
+          <img class="brand__mark" src="/aaveLogo.png" alt="" width="24" height="24" />
+          <span>Aave Loop Ledger</span>
+        </a>
+        <nav class="nav">
+          <a class="nav__link" href="#what">What it does</a>
+          <a class="nav__link" href="#how">How it works</a>
+        </nav>
+        <button class="btn btn--icon" id="theme-toggle" type="button" title="Switch theme">
+          <span class="sr-only">Switch theme</span>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true" id="theme-icon"></svg>
+        </button>
+        <a class="btn btn--ink btn--sm" href="/app">Use Aave Loop</a>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div class="shell">
+        <span class="hero__tile">
+          <span class="hero__glyph">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 0 1 15.5-6.2M21 12a9 9 0 0 1-15.5 6.2" />
+              <path d="M18 3v3.2h-3.2M6 21v-3.2h3.2" />
+            </svg>
+          </span>
+          Aave Loop Ledger
+        </span>
+
+        <h1 class="hero__title">Every loop, measured.</h1>
+        <p class="hero__sub">
+          Borrow a stablecoin, buy ETH, sell it, repay the loan. This keeps every cycle in
+          one place and tells you what the round trip actually earned, after what it cost
+          to borrow.
+        </p>
+
+        <div class="hero__actions">
+          <a class="btn btn--violet" href="/app">Use Aave Loop</a>
+          <a class="btn btn--soft" href="#how">How it works</a>
+        </div>
+
+        <p class="hero__note">Runs on your own server. No wallet connection, no account.</p>
+      </div>
+    </section>
+
+    <main class="main">
+      <section class="section" id="what">
+        <div class="shell">
+          <div class="section__head">
+            <span class="section__eyebrow">What it does</span>
+            <h2 class="section__title">A trade is four moves. This tracks all four.</h2>
+            <p class="section__sub">
+              A spreadsheet will hold the numbers. It will not tell you whether the loop
+              was worth doing once the interest is counted.
+            </p>
+          </div>
+
+          <div class="cards">
+            <article class="card">
+              <span class="card__glyph">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 7h16M4 12h16M4 17h10" />
+                </svg>
+              </span>
+              <h3 class="card__title">Every loop, start to finish</h3>
+              <p class="card__body">
+                Each stage dated and priced as it happens, with the position moving from
+                open, to holding, to sold, to closed. Nothing half recorded.
+              </p>
+            </article>
+
+            <article class="card">
+              <span class="card__glyph">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 18 9.5 12l3.5 3.5L20 8" />
+                  <path d="M15 8h5v5" />
+                </svg>
+              </span>
+              <h3 class="card__title">The return after what it cost</h3>
+              <p class="card__body">
+                Net gain counts the interest you actually paid, not just the price move,
+                and annualizes it so a three day trade and a three month one compare.
+              </p>
+            </article>
+
+            <article class="card">
+              <span class="card__glyph">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z" />
+                </svg>
+              </span>
+              <h3 class="card__title">Dollars, whatever you borrow</h3>
+              <p class="card__body">
+                Euro amounts convert at the European Central Bank rate for each
+                transaction's own date, so the euro's own movement lands in the result
+                rather than vanishing.
+              </p>
+            </article>
+
+            <article class="card">
+              <span class="card__glyph">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="4" y="10" width="16" height="10" rx="2" />
+                  <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+                </svg>
+              </span>
+              <h3 class="card__title">Nobody else's business</h3>
+              <p class="card__body">
+                Self hosted, stored in a single SQLite file on your own server. No wallet
+                connection, and no third party holding your position history.
+              </p>
+            </article>
+          </div>
+
+          <div class="coins">
+            <span class="coins__label">Borrow in any of</span>
+            <img src="/usdc.svg" alt="USDC" width="30" height="30" />
+            <img src="/usdt.svg" alt="USDT" width="30" height="30" />
+            <img src="/dai.svg" alt="DAI" width="30" height="30" />
+            <img src="/gho.svg" alt="GHO" width="30" height="30" />
+            <img src="/eurc.svg" alt="EURC" width="30" height="30" />
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--wash" id="how">
+        <div class="shell">
+          <div class="section__head">
+            <span class="section__eyebrow">How it works</span>
+            <h2 class="section__title">Record each stage as it happens.</h2>
+            <p class="section__sub">
+              A trade starts with the borrow alone. The rest is added as you go, and the
+              status moves along with it.
+            </p>
+          </div>
+
+          <div class="steps">
+            <article class="step">
+              <span class="step__n">1</span>
+              <h3 class="step__title">Borrow</h3>
+              <p class="step__body">
+                The amount, the coin and the rate you are paying for it.
+              </p>
+              <span class="status">OPEN</span>
+            </article>
+
+            <article class="step">
+              <span class="step__n">2</span>
+              <h3 class="step__title">Buy ETH</h3>
+              <p class="step__body">
+                What you spent and how much ETH it bought, which gives your entry price.
+              </p>
+              <span class="status">HOLDING</span>
+            </article>
+
+            <article class="step">
+              <span class="step__n">3</span>
+              <h3 class="step__title">Sell ETH</h3>
+              <p class="step__body">
+                All of it or part. A partial exit is measured against the cost of the ETH
+                actually sold, so it is never reported as a loss.
+              </p>
+              <span class="status">SOLD</span>
+            </article>
+
+            <article class="step">
+              <span class="step__n">4</span>
+              <h3 class="step__title">Repay</h3>
+              <p class="step__body">
+                The loan closes and the real number lands: what the loop made, after
+                interest, annualized.
+              </p>
+              <span class="status">CLOSED</span>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div class="shell">
+          <h2 class="cta__title">Open the ledger.</h2>
+          <p class="cta__sub">
+            The app is private and asks for a password.
+          </p>
+          <a class="btn btn--violet" href="/app">Use Aave Loop</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell footer__inner">
+        <span class="footer__disclaimer">
+          An independent personal tool. Not affiliated with, or endorsed by, Aave.
+        </span>
+        <span class="footer__line">
+          &copy; 2026 &middot; v0.0.8 - Built by
+          <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
+        </span>
+      </div>
+    </footer>
+
+    <script>
+      // The ledger's theme toggle, copied rather than imported: public/app.js is
+      // a module that boots the whole app and calls the API on load.
+      (function () {
+        const SUN = '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>';
+        const MOON = '<path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>';
+
+        function applyTheme(theme) {
+          document.documentElement.dataset.theme = theme;
+          document.getElementById('theme-icon').innerHTML = theme === 'dark' ? SUN : MOON;
+          try {
+            localStorage.setItem('myaave-theme', theme);
+          } catch (e) {
+            /* private browsing, the toggle simply will not persist */
+          }
+        }
+
+        // With no stored choice the stylesheet is already following the system,
+        // so read that back rather than asserting light and fighting it.
+        let current = document.documentElement.getAttribute('data-theme');
+        try {
+          if (!localStorage.getItem('myaave-theme')) {
+            current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+        } catch (e) {}
+
+        document.documentElement.dataset.theme = current || 'light';
+        document.getElementById('theme-icon').innerHTML = current === 'dark' ? SUN : MOON;
+
+        document.getElementById('theme-toggle').addEventListener('click', function () {
+          applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+        });
+      })();
+    </script>
+  </body>
+</html>

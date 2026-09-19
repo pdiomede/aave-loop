@@ -1,0 +1,643 @@
+/*
+ * Aave Loop Ledger - landing page.
+ *
+ * Deliberately self contained. The app's stylesheet lives at /styles.css, which
+ * nginx keeps behind basic auth, so a public visitor asking for it gets a 401
+ * and an unstyled page. The tokens below are copied from public/styles.css so
+ * the two stay in step; the violet is the one the app already uses in its dark
+ * theme, which is also the colour Aave brands with.
+ */
+
+:root {
+  --violet: #9896ff;
+  --violet-strong: #6b66ff;
+  --violet-soft: #edecfe;
+  /* Text only, and darker than the fill violet on purpose: #9896ff is 3.6:1 on
+     the soft violet behind the badges, which fails for small bold type. This
+     clears 4.9:1 there and 5.7:1 on white while staying the same hue. */
+  --violet-ink: #584fe6;
+
+  --ink: #1b1b1d;
+  --ink-fg: #ffffff;
+
+  --text: #37373c;
+  --text-muted: #6f6f77;
+
+  --bg: #ffffff;
+  --bg-wash: #f3f1fe;
+  --surface: #ffffff;
+  --surface-sunken: #f7f6fd;
+
+  --hairline: rgba(0, 0, 0, 0.08);
+  --hairline-strong: rgba(0, 0, 0, 0.14);
+  --ring: 0 2px 4px rgba(0, 0, 0, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.06);
+
+  --radius-btn: 8px;
+  --radius-card: 14px;
+  --radius-pill: 999px;
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  --shell: 1180px;
+
+  color-scheme: light;
+}
+
+/* Values lifted from the app's dark theme, so a visitor who chose dark in the
+   ledger does not get flashed by the landing page on the way back out. */
+:root[data-theme="dark"] {
+  --violet: #9896ff;
+  --violet-strong: #b9b8ff;
+  --violet-soft: rgba(152, 150, 255, 0.18);
+  --violet-ink: #b9b8ff;
+
+  --ink: #f1f1f3;
+  --ink-fg: #15161d;
+
+  --text: #f1f1f3;
+  --text-muted: #a5a8b6;
+
+  --bg: #1b2030;
+  --bg-wash: #23263a;
+  --surface: #2b2d3e;
+  --surface-sunken: #23263a;
+
+  --hairline: rgba(255, 255, 255, 0.1);
+  --hairline-strong: rgba(255, 255, 255, 0.2);
+  --ring: 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.08);
+
+  color-scheme: dark;
+}
+
+/* A first time visitor has no stored preference, so follow the system. The app
+   itself does not do this; here it matters more, because this is the page
+   somebody lands on at night without ever having opened the ledger. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --violet-strong: #b9b8ff;
+    --violet-soft: rgba(152, 150, 255, 0.18);
+    --violet-ink: #b9b8ff;
+    --ink: #f1f1f3;
+    --ink-fg: #15161d;
+    --text: #f1f1f3;
+    --text-muted: #a5a8b6;
+    --bg: #1b2030;
+    --bg-wash: #23263a;
+    --surface: #2b2d3e;
+    --surface-sunken: #23263a;
+    --hairline: rgba(255, 255, 255, 0.1);
+    --hairline-strong: rgba(255, 255, 255, 0.2);
+    --ring: 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+
+p {
+  margin: 0;
+}
+
+/* The same centred column the app uses, so the header and footer line up
+   exactly with the ledger's when you move between them. */
+.shell {
+  width: 100%;
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- header */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--surface);
+  box-shadow: inset 0 -1px 0 var(--hairline);
+  backdrop-filter: saturate(180%) blur(6px);
+}
+
+.header__inner {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 58px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.brand__mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.nav__link {
+  padding: 6px 10px;
+  border-radius: var(--radius-btn);
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.14s ease, background-color 0.14s ease;
+}
+
+.nav__link:hover {
+  color: var(--text);
+  background: var(--surface-sunken);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--ring);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--hairline), 0 0 0 4px var(--violet-soft);
+}
+
+/* The dark pill in the top right, which is the one that leads to the ledger
+   and therefore to the password prompt. */
+.btn--ink {
+  background: var(--ink);
+  color: var(--ink-fg);
+  box-shadow: none;
+}
+
+.btn--ink:hover {
+  opacity: 0.86;
+}
+
+.btn--violet {
+  background: var(--violet);
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.btn--violet:hover {
+  opacity: 0.88;
+}
+
+.btn--soft {
+  background: var(--violet-soft);
+  color: var(--violet-ink);
+  box-shadow: none;
+}
+
+.btn--soft:hover {
+  opacity: 0.82;
+}
+
+.btn--sm {
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+.btn--icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  flex: none;
+  border-radius: var(--radius-btn);
+}
+
+/* ------------------------------------------------------------------- hero */
+
+.hero {
+  position: relative;
+  padding: 92px 0 104px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg) 38%, var(--bg-wash) 100%);
+}
+
+.hero__tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 26px;
+  color: var(--text-muted);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.hero__glyph {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--violet);
+  color: #ffffff;
+}
+
+.hero__title {
+  font-size: clamp(38px, 7vw, 82px);
+  line-height: 1.02;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  max-width: 15ch;
+  margin: 0 auto;
+}
+
+.hero__sub {
+  margin: 22px auto 0;
+  max-width: 58ch;
+  color: var(--text-muted);
+  font-size: clamp(16px, 1.7vw, 19px);
+}
+
+.hero__actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 36px;
+}
+
+.hero__note {
+  margin-top: 20px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+/* ------------------------------------------------------------------ main */
+
+.main {
+  flex: 1;
+  background: var(--bg);
+}
+
+.section {
+  padding: 76px 0;
+}
+
+.section--wash {
+  background: var(--bg-wash);
+  box-shadow: inset 0 1px 0 var(--hairline), inset 0 -1px 0 var(--hairline);
+}
+
+.section__head {
+  max-width: 62ch;
+  margin: 0 auto 44px;
+  text-align: center;
+}
+
+.section__eyebrow {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--violet-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.section__title {
+  font-size: clamp(26px, 3.4vw, 38px);
+  font-weight: 700;
+}
+
+.section__sub {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 16.5px;
+}
+
+/* --------------------------------------------------------------- features */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
+  gap: 18px;
+}
+
+.card {
+  padding: 26px 24px 28px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+
+.card__glyph {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 18px;
+  border-radius: 11px;
+  background: var(--violet-soft);
+  color: var(--violet-ink);
+}
+
+.card__title {
+  font-size: 16.5px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.card__body {
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 14.5px;
+}
+
+/* The coin marks are the app's own files, served straight from disk by nginx
+   rather than copied here, so there is only ever one of each in the repo. */
+.coins {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 40px;
+}
+
+.coins__label {
+  width: 100%;
+  text-align: center;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+}
+
+.coins img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+/* ------------------------------------------------------------------ steps */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 18px;
+  counter-reset: step;
+}
+
+.step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 22px 26px;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+
+.step__n {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 16px;
+  border-radius: 50%;
+  background: var(--violet);
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.step__title {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.step__body {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 14.5px;
+}
+
+/* Reuses the app's status badge shape, so the four states read the same here
+   as they do in the ledger's table. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 0;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--violet-soft);
+  color: var(--violet-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+/* The body copy needs breathing room above the pinned badge. */
+.step__body {
+  margin-bottom: 18px;
+}
+
+.status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ------------------------------------------------------------------- cta */
+
+.cta {
+  padding: 74px 0 84px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-wash) 100%);
+}
+
+.cta__title {
+  font-size: clamp(26px, 3.6vw, 40px);
+  font-weight: 700;
+}
+
+.cta__sub {
+  margin: 14px auto 30px;
+  max-width: 52ch;
+  color: var(--text-muted);
+  font-size: 16.5px;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.footer {
+  box-shadow: inset 0 1px 0 var(--hairline);
+  padding: 20px 0;
+  background: var(--surface);
+}
+
+.footer__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.footer__line a {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* This is a personal tool for tracking positions on Aave. It is not Aave, and
+   the page borrows enough of their look that saying so plainly is only fair. */
+.footer__disclaimer {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------ responsive */
+
+@media (max-width: 900px) {
+  .hero {
+    padding: 72px 0 84px;
+  }
+
+  .section {
+    padding: 60px 0;
+  }
+}
+
+/* The app narrows its gutter and wraps its header at this width. Matching it
+   keeps the two pages aligned on a phone. */
+@media (max-width: 760px) {
+  .shell {
+    padding: 0 16px;
+  }
+
+  .header__inner {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 0;
+  }
+
+  .brand {
+    margin-right: auto;
+  }
+
+  .nav {
+    order: 3;
+    width: 100%;
+    gap: 6px;
+    padding: 2px;
+    border-radius: var(--radius-btn);
+    background: var(--surface-sunken);
+  }
+
+  .nav__link {
+    flex: 1;
+    text-align: center;
+    padding: 8px 10px;
+  }
+
+  .hero {
+    padding: 56px 0 68px;
+  }
+
+  .hero__actions .btn {
+    width: 100%;
+  }
+
+  .section {
+    padding: 52px 0;
+  }
+
+  .footer__inner {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

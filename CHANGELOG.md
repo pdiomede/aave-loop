@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.8] - 2026-09-19
+
+### Added
+
+- A public landing page at `/`, in `landing/`. It explains what the ledger does in a screen or two and carries a **Use Aave Loop** button that leads to the app, and therefore to the password prompt. Served by nginx as static files, which leaves the Node process with no publicly reachable route.
+- The page shares the app's `myaave-theme` setting, so a dark session carries across both ways, and it follows the system preference for a first time visitor, which the app does not.
+
+### Notes
+
+- The landing page is intentionally self contained rather than linking the app's stylesheet: `/styles.css` sits behind basic auth, so a public visitor would get a 401 and an unstyled page.
+- Its text colour is a darker violet than the fills. `#9896ff` measures 3.6:1 on the soft violet behind the status badges, which fails contrast for small bold type; the text violet clears 4.9:1 there and 5.7:1 on white.
+- The footer states plainly that this is an independent tool and not affiliated with Aave, since the page borrows enough of their look that the question is worth answering up front.
+
 ## [0.0.7] - 2026-09-19
 
 Twenty-two defects found by an audit of the maths, the database handling, the security surface, the interface and the error paths. No new features.
