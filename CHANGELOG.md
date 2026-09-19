@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.12] - 2026-09-19
+
+### Changed
+
+- The **Ask for Access** button carries an envelope, so it is clear it opens a mail client rather than another page. It is an inline SVG stroked in `currentColor`, not a background image, so it takes the button's colour in both themes without a second rule.
+
+### Fixed
+
+- The landing page footer still read v0.0.10 after the 0.0.11 release. It is hand-maintained, because `/api/version` sits behind auth, so it has to be bumped alongside the others and was missed.
+
 ## [0.0.11] - 2026-09-19
 
 The four low severity items left open by the 0.0.7 audit, all in the rate lookup.
