@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.14] - 2026-09-19
+
+### Fixed
+
+- The exchange-rate lines on a EURC trade's stage cards were clipped mid-word: "$7,117.20 at 1.1862 on 13 Feb 20", "-$38.55 interest $8.25, currency ". The cards sit inside the expanded row's table cell, which inherits the table's `white-space: nowrap` so a column of figures never breaks mid number. Inside a card that is wrong, and the line had nowhere to go. The cell now resets it, and the converted figure and the rate that produced it take a line each. The part being cut was the rate and the date, which is exactly what makes a conversion checkable against the ECB's own tables.
+- The loan cost breakdown is two rows of its own rather than a run-on third line. It matters most when the cost comes out negative, which happens when the currency fell over the life of the loan, and that was the case being cut off hardest: -$38.55 is $8.25 of interest less $46.80 the euro moved. A signed figure in those rows keeps its colour, like every other gain and loss in the app.
+
+### Notes
+
+- Presentation only. `lib/calc.js` is untouched and a dollar-stablecoin trade renders exactly as before: no sub-lines, no extra rows.
+- Verified by asserting that nothing inside the stage cards has `scrollWidth` greater than `clientWidth`, at 1440px and 390px in both themes. Twelve elements failed that before the change; none do now.
+
 ## [0.0.13] - 2026-09-19
 
 ### Security

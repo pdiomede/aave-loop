@@ -113,18 +113,24 @@ function coin(currency) {
  * no figure at all. On a weekend the published day is the Friday before, which
  * is why it is shown rather than assumed to be the transaction date.
  */
+/*
+ * The dollar figure and the rate that produced it are two separate facts, and
+ * on a card a quarter of the page wide they do not fit on one line. Each gets
+ * its own, which also puts the provenance directly under the number it
+ * explains rather than trailing off the edge of the card.
+ */
 function fxNote(usdValue, leg) {
   if (!isNum(usdValue)) return RATE_MISSING;
-  const at = leg && isNum(leg.rate) ? ` <span class="fx-note__rate">at ${leg.rate.toFixed(4)}${
+  const at = leg && isNum(leg.rate) ? `<span class="fx-note__rate">at ${leg.rate.toFixed(4)}${
     leg.date ? ` on ${fmtDate(leg.date)}` : ''
   }</span>` : '';
-  return `${usd(usdValue)}${at}`;
+  return `<span class="fx-note__usd">${usd(usdValue)}</span>${at}`;
 }
 
 function signedFxNote(usdValue, leg) {
   if (!isNum(usdValue)) return RATE_MISSING;
-  const at = leg && isNum(leg.rate) ? ` <span class="fx-note__rate">at ${leg.rate.toFixed(4)}</span>` : '';
-  return `${signedUsd(usdValue)}${at}`;
+  const at = leg && isNum(leg.rate) ? `<span class="fx-note__rate">at ${leg.rate.toFixed(4)}</span>` : '';
+  return `<span class="fx-note__usd">${signedUsd(usdValue)}</span>${at}`;
 }
 
 const RATE_MISSING =
@@ -495,6 +501,14 @@ function stageSummary(stage, t, d) {
     return `<div class="stage__row"><dt>${label}</dt><dd class="${cls}">${value}${under}</dd></div>`;
   };
 
+  // A row with a dollar figure and no native counterpart: the two parts a loan
+  // cost in another currency splits into. They explain the figure above them
+  // rather than standing on their own, so they are set quieter.
+  const rowUsd = (label, value, cls = '') =>
+    value === '' || value == null
+      ? ''
+      : `<div class="stage__row stage__row--sub"><dt>${label}</dt><dd class="${cls}">${value}</dd></div>`;
+
   // Every card puts the money on the second line, in the coin that was
   // borrowed, so the four cards can be read straight down.
   const c = t.borrow_currency;
@@ -541,14 +555,16 @@ function stageSummary(stage, t, d) {
         row2(
           d.isUsdPegged ? 'Interest' : 'Loan cost',
           money(d.interestPaid ?? d.accruedInterest, c),
-          isNum(d.loanCostUsd)
-            ? `${usd(d.loanCostUsd)}${
-                isNum(d.principalFxUsd)
-                  ? ` <span class="fx-note__rate">interest ${usd(d.interestPaidUsd)}, currency ${signedUsd(d.principalFxUsd)}</span>`
-                  : ''
-              }`
-            : RATE_MISSING,
+          fxNote(d.loanCostUsd, null),
         ) +
+        // Only for a loan in another currency, and only once it is repaid. The
+        // dollar cost can come out negative when the currency fell, and these
+        // two rows are the whole explanation of how: crammed onto one line they
+        // ran off the card, which is the one figure a reader most needs to see.
+        (!d.isUsdPegged && isNum(d.principalFxUsd)
+          ? rowUsd('of which interest', usd(d.interestPaidUsd)) +
+            rowUsd('of which currency', signedUsd(d.principalFxUsd), gainClass(d.principalFxUsd))
+          : '') +
         row2('Net gain', signedMoney(d.netGain, c), signedFxNote(d.netGainUsd, null), gainClass(d.netGain)) +
         row('Annualized', pct(d.pct), gainClass(d.netGainUsd))
       );
