@@ -603,6 +603,21 @@ function tradeRow(t, index) {
   const d = t.derived || derive(t);
   const isOpen = state.openId === t.id;
 
+  // A trade has an end date only once the loan is repaid, so that is the only
+  // time a range is shown. While it is still running the borrow date stands
+  // alone rather than being paired with today, which would put a date on the
+  // row that nobody entered and that changes by itself overnight.
+  //
+  // Gated on stages.repaid rather than on repay_date being set: that flag also
+  // requires a repayment amount, and it is what the rest of the app means by
+  // closed, so the range can never appear on a row the table calls OPEN.
+  //
+  // fmtDate escapes its own output, so nothing here is escaped a second time.
+  const dates = d.stages.repaid
+    ? `${fmtDate(t.borrow_date)}<span class="row__arrow" aria-hidden="true">&rarr;</span>` +
+      `<span class="sr-only"> to </span>${fmtDate(t.repay_date)}`
+    : fmtDate(t.borrow_date);
+
   const gain = isNum(d.netGainUsd) ? d.netGainUsd : d.projectedNetGainUsd;
   const gainCell = isNum(gain)
     ? `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ' <span class="chip">est</span>'}`
@@ -618,11 +633,15 @@ function tradeRow(t, index) {
         ${coin(t.borrow_currency)}
         <span class="row__stack">
           <span>${isNum(d.borrowUsd) ? usd(d.borrowUsd) : RATE_MISSING}</span>
-          <small>${
+          ${
+            // Only for a coin that is not a dollar. On a dollar stablecoin the
+            // native amount and the line above it are the same number, and
+            // printing it twice is noise.
             d.isUsdPegged
-              ? fmtDate(t.borrow_date)
-              : `${money(t.borrow_amount, t.borrow_currency)} &middot; ${fmtDate(t.borrow_date)}`
-          }</small>
+              ? ''
+              : `<small class="row__native">${money(t.borrow_amount, t.borrow_currency)}</small>`
+          }
+          <small>${dates}</small>
         </span>
       </div>
     </td>

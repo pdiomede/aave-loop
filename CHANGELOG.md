@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.9] - 2026-09-19
+
+### Changed
+
+- The Trade column states the span of a loop rather than only its start: `10 Jan 2026 - 13 Jan 2026`. The range appears only once a trade is repaid, because that is the only point at which it has a real end date. A trade still running shows its borrow date alone rather than being paired with today, which would put a date on the row that nobody entered and that moves by itself overnight.
+- A trade in a currency other than the dollar now carries its native amount on its own line, above the dates. The two used to share one line joined by a middot, which read as a run-on: the amount borrowed and the days it ran are different kinds of fact. Dollar stablecoins are unchanged at two lines, since there the native amount and the dollar value are the same number.
+- In card mode the Trade label is aligned to the top of its cell, rather than floating in the middle of what is now a three line stack.
+
+### Notes
+
+- Presentation only. `lib/calc.js` is untouched and `/api/trades` and `/api/summary` return byte-identical responses before and after.
+- The first column narrowed slightly rather than widening, because splitting the two figures removed what had been the longest single string in it.
+
 ## [0.0.8] - 2026-09-19
 
 ### Added

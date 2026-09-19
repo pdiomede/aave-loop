@@ -655,6 +655,19 @@ h3 {
   font-size: 12px;
 }
 
+/* The amount a trade was actually taken out in, on its own line above the
+   dates. Slightly heavier than the date line so the two are not read as one
+   line that happened to wrap. */
+.row__native {
+  font-weight: 500;
+}
+
+/* Separates the two dates without competing with them. */
+.row__arrow {
+  padding: 0 5px;
+  color: var(--text-faint);
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -1114,6 +1127,12 @@ h3 {
     padding: 5px 16px;
     box-shadow: none;
     white-space: normal;
+  }
+
+  /* The Trade cell is the only one with a multi line stack, and centring left
+     its label floating in the middle of it. Everything else stays centred. */
+  .row td:first-child {
+    align-items: flex-start;
   }
 
   .row td::before {
