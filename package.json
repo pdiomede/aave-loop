@@ -1,7 +1,7 @@
 {
   "name": "myaave",
-  "version": "0.0.1",
-  "description": "Track Aave stablecoin borrow, ETH buy and sell, and repay cycles.",
+  "version": "0.0.2",
+  "description": "Aave Loop Ledger: track stablecoin borrow, ETH buy and sell, and repay cycles.",
   "type": "module",
   "private": true,
   "main": "server.js",

@@ -14,26 +14,34 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
-function usd(v, digits = 0) {
+// Money is always shown to the cent and ETH always to four places, so that
+// columns line up and a rounded figure never hides a real difference.
+const USD_DP = 2;
+const ETH_DP = 4;
+
+function amount(v, dp) {
+  return Math.abs(v).toLocaleString('en-US', {
+    minimumFractionDigits: dp,
+    maximumFractionDigits: dp,
+  });
+}
+
+function usd(v, digits = USD_DP) {
   if (!isNum(v)) return '';
-  const sign = v < 0 ? '-' : '';
-  return `${sign}$${Math.abs(v).toLocaleString('en-US', {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })}`;
+  return `${v < 0 ? '-' : ''}$${amount(v, digits)}`;
 }
 
 function signedUsd(v) {
   if (!isNum(v)) return '';
-  return `${v >= 0 ? '+' : '-'}$${Math.abs(v).toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}`;
+  return `${v >= 0 ? '+' : '-'}$${amount(v, USD_DP)}`;
+}
+
+function ethQty(v) {
+  return isNum(v) ? amount(v, ETH_DP) : '';
 }
 
 function eth(v) {
-  if (!isNum(v)) return '';
-  return `${v.toLocaleString('en-US', { maximumFractionDigits: 4 })} ETH`;
+  return isNum(v) ? `${ethQty(v)} ETH` : '';
 }
 
 function pct(v, digits = 2) {
@@ -63,6 +71,8 @@ const gainClass = (v) => (!isNum(v) ? '' : v >= 0 ? 'pos' : 'neg');
 const COIN_ART = {
   USDC: '/usdc.svg',
   USDT: '/usdt.svg',
+  DAI: '/dai.svg',
+  GHO: '/gho.svg',
 };
 
 function coin(currency) {
@@ -314,6 +324,8 @@ function stageSummary(stage, t, d) {
         row('Sold', eth(t.sell_eth)) +
         row('Received', usd(t.sell_amount)) +
         row('ETH price', usd(d.sellPrice)) +
+        (d.isPartialSale ? row('Cost of ETH sold', usd(d.costOfSoldEth)) : '') +
+        (d.isPartialSale ? row('Still held', eth(d.retainedEth)) : '') +
         row('Gross gain', signedUsd(d.grossGain), gainClass(d.grossGain))
       );
     case 'repay':
@@ -395,7 +407,7 @@ function tradeRow(t, index) {
     <td data-label="APR" class="num">${pct(t.borrow_apr)}</td>
     <td data-label="ETH" class="num">${
       isNum(t.buy_eth)
-        ? `<span class="eth-cell">${ethMark}${t.buy_eth.toLocaleString('en-US', { maximumFractionDigits: 4 })}</span>`
+        ? `<span class="eth-cell">${ethMark}${ethQty(t.buy_eth)}</span>`
         : '<span class="muted">-</span>'
     }</td>
     <td data-label="Buy price" class="num">${isNum(d.buyPrice) ? usd(d.buyPrice) : '<span class="muted">-</span>'}</td>
@@ -453,7 +465,7 @@ function renderStats() {
   const s = summarize(state.trades);
   const tiles = [
     { label: 'Realized net gain', value: signedUsd(s.netGain) || '$0', cls: gainClass(s.netGain) },
-    { label: 'Average annualized', value: isNum(s.avgPct) ? pct(s.avgPct, 1) : '-', cls: gainClass(s.avgPct) },
+    { label: 'Average annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: gainClass(s.avgPct) },
     { label: 'Closed trades', value: String(s.closedCount) },
     { label: 'Open positions', value: s.openCount ? `${s.openCount} (${usd(s.deployed)})` : '0' },
   ];
@@ -604,13 +616,15 @@ function wire() {
     if (del) {
       const id = Number(del.dataset.delete);
       if (!confirm('Delete this trade and its whole history? This cannot be undone.')) return;
-      api(`/api/trades/${id}`, { method: 'DELETE' }).then(() => {
-        state.trades = state.trades.filter((t) => t.id !== id);
-        state.openId = null;
-        state.editing = null;
-        render();
-        toast('Trade deleted.');
-      });
+      api(`/api/trades/${id}`, { method: 'DELETE' })
+        .then(() => {
+          state.trades = state.trades.filter((t) => t.id !== id);
+          state.openId = null;
+          state.editing = null;
+          render();
+          toast('Trade deleted.');
+        })
+        .catch((err) => toast(err.message || 'Could not delete that trade.'));
       return;
     }
 
@@ -663,7 +677,16 @@ async function boot() {
   } catch (e) {
     /* keep the fallback already in the markup */
   }
-  await loadTrades();
+  try {
+    await loadTrades();
+  } catch (err) {
+    document.getElementById('table-mount').innerHTML = `<div class="empty">
+      <h3>Could not reach the server</h3>
+      <p>Check that it is still running, then reload this page.</p>
+    </div>`;
+    renderStats();
+    return;
+  }
   render();
 }
 

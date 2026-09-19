@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { db, FIELDS } from './db.js';
+import { db, prepare, closeDb, FIELDS } from './db.js';
 import { derive, summarize, parseDate, CURRENCIES } from './lib/calc.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -25,10 +25,22 @@ class BadRequest extends Error {
 
 const isBlank = (v) => v === undefined || v === null || v === '';
 
-function toNumber(value, field, label) {
+const REQUIRED_BORROW = [
+  ['borrow_date', 'Borrow date'],
+  ['borrow_amount', 'Borrow amount'],
+  ['borrow_currency', 'Currency'],
+  ['borrow_apr', 'Borrow APR'],
+];
+
+function toNumber(value, field, label, { allowZero = false } = {}) {
   const n = typeof value === 'string' ? Number(value.replace(/[,\s$%]/g, '')) : Number(value);
   if (!Number.isFinite(n)) throw new BadRequest(`${label} must be a number.`, field);
-  if (n <= 0) throw new BadRequest(`${label} must be greater than zero.`, field);
+  if (allowZero ? n < 0 : n <= 0) {
+    throw new BadRequest(
+      `${label} must be ${allowZero ? 'zero or more' : 'greater than zero'}.`,
+      field,
+    );
+  }
   return n;
 }
 
@@ -48,9 +60,9 @@ function normalise(body, { requireBorrow }) {
   const out = {};
   const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
 
-  const numericField = (key, label) => {
+  const numericField = (key, label, opts) => {
     if (!has(key)) return;
-    out[key] = isBlank(body[key]) ? null : toNumber(body[key], key, label);
+    out[key] = isBlank(body[key]) ? null : toNumber(body[key], key, label, opts);
   };
   const dateField = (key, label) => {
     if (!has(key)) return;
@@ -59,7 +71,8 @@ function normalise(body, { requireBorrow }) {
 
   dateField('borrow_date', 'Borrow date');
   numericField('borrow_amount', 'Borrow amount');
-  numericField('borrow_apr', 'Borrow APR');
+  // A promotional or incentivised borrow really can sit at 0%.
+  numericField('borrow_apr', 'Borrow APR', { allowZero: true });
   if (has('borrow_currency')) {
     const c = String(body.borrow_currency || '').toUpperCase();
     if (!CURRENCIES.includes(c)) throw new BadRequest('Pick a supported stablecoin.', 'borrow_currency');
@@ -79,14 +92,12 @@ function normalise(body, { requireBorrow }) {
 
   if (has('notes')) out.notes = isBlank(body.notes) ? null : String(body.notes).slice(0, 2000);
 
-  if (requireBorrow) {
-    for (const [key, label] of [
-      ['borrow_date', 'Borrow date'],
-      ['borrow_amount', 'Borrow amount'],
-      ['borrow_currency', 'Currency'],
-      ['borrow_apr', 'Borrow APR'],
-    ]) {
-      if (isBlank(out[key])) throw new BadRequest(`${label} is required.`, key);
+  for (const [key, label] of REQUIRED_BORROW) {
+    // On create the field has to be there. On update it may be absent, but if
+    // it was sent it cannot be blanked: the column is NOT NULL, so clearing it
+    // used to fail deep in SQLite as an opaque 500.
+    if (requireBorrow ? isBlank(out[key]) : has(key) && isBlank(out[key])) {
+      throw new BadRequest(`${label} is required.`, key);
     }
   }
 
@@ -113,6 +124,9 @@ function checkChronology(row) {
   if (row.sell_date && row.buy_date && parseDate(row.sell_date) < parseDate(row.buy_date)) {
     throw new BadRequest('The sale cannot be dated before the purchase.', 'sell_date');
   }
+  if (row.repay_date && row.sell_date && parseDate(row.repay_date) < parseDate(row.sell_date)) {
+    throw new BadRequest('The repayment cannot be dated before the sale.', 'repay_date');
+  }
   if (row.sell_eth != null && row.buy_eth != null && row.sell_eth > row.buy_eth * 1.0001) {
     throw new BadRequest('You cannot sell more ETH than you bought.', 'sell_eth');
   }
@@ -131,8 +145,8 @@ function checkChronology(row) {
 
 const withDerived = (row) => ({ ...row, derived: derive(row) });
 
-const selectAll = db.prepare('SELECT * FROM trades ORDER BY borrow_date DESC, id DESC');
-const selectOne = db.prepare('SELECT * FROM trades WHERE id = ?');
+const selectAll = prepare('SELECT * FROM trades ORDER BY borrow_date DESC, id DESC');
+const selectOne = prepare('SELECT * FROM trades WHERE id = ?');
 
 /* ------------------------------------------------------------------ routes */
 
@@ -154,7 +168,7 @@ app.post('/api/trades', (req, res, next) => {
 
     const now = new Date().toISOString();
     const cols = [...FIELDS, 'created_at', 'updated_at'];
-    const stmt = db.prepare(
+    const stmt = prepare(
       `INSERT INTO trades (${cols.join(', ')}) VALUES (${cols.map((c) => `@${c}`).join(', ')})`,
     );
     const info = stmt.run({ ...row, created_at: now, updated_at: now });
@@ -175,7 +189,7 @@ app.patch('/api/trades/:id', (req, res, next) => {
 
     checkChronology({ ...current, ...patch });
 
-    db.prepare(
+    prepare(
       `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE id = @id`,
     ).run({ ...patch, updated_at: new Date().toISOString(), id: current.id });
 
@@ -186,7 +200,7 @@ app.patch('/api/trades/:id', (req, res, next) => {
 });
 
 app.delete('/api/trades/:id', (req, res) => {
-  const info = db.prepare('DELETE FROM trades WHERE id = ?').run(Number(req.params.id));
+  const info = prepare('DELETE FROM trades WHERE id = ?').run(Number(req.params.id));
   if (info.changes === 0) return res.status(404).json({ error: 'Trade not found.' });
   res.status(204).end();
 });
@@ -195,10 +209,49 @@ app.use((err, _req, res, _next) => {
   if (err instanceof BadRequest) {
     return res.status(400).json({ error: err.message, field: err.field });
   }
+  // express.json() rejects unparseable bodies with a SyntaxError.
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: 'That request body was not valid JSON.' });
+  }
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on the server.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`myAave v${pkg.version} running at http://localhost:${PORT}`);
+// Loopback only. This is a personal ledger with no authentication, so it has
+// no business being reachable from the rest of the network.
+const server = app.listen(PORT, '127.0.0.1', () => {
+  console.log(`Aave Loop Ledger v${pkg.version} running at http://localhost:${PORT}`);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Try ./run_myAave.sh, which picks a free one.`);
+  } else {
+    console.error(err);
+  }
+  closeDb();
+  process.exit(1);
+});
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n${signal} received, shutting down.`);
+  server.close(() => {
+    closeDb();
+    process.exit(0);
+  });
+  // Do not let a hung connection hold the database open indefinitely.
+  setTimeout(() => {
+    closeDb();
+    process.exit(0);
+  }, 3000).unref();
+}
+
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => shutdown(signal));
+process.on('uncaughtException', (err) => {
+  console.error(err);
+  closeDb();
+  process.exit(1);
 });
