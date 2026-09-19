@@ -138,6 +138,213 @@ const RATE_MISSING =
 
 const ethMark = `<img class="eth-mark" src="/eth.svg" alt="" width="15" height="15" />`;
 
+/* ------------------------------------------------------- sorting + paging */
+
+const PAGE_SIZE = 15;
+const SORT_KEY = 'myaave-sort';
+
+// Newest borrow date first, which is the order the server already sends and
+// therefore what the table showed before it could be sorted at all.
+const DEFAULT_SORT = { key: 'trade', dir: 'desc' };
+
+const STATUS_ORDER = { OPEN: 0, HOLDING: 1, SOLD: 2, CLOSED: 3 };
+
+/**
+ * What each column sorts on.
+ *
+ * Net gain reads the same figure the cell shows, the projection included, not
+ * just the realized one. Sorting a column by a number other than the one on
+ * screen looks like a bug even when the ordering is correct.
+ */
+const SORT_KEYS = {
+  trade: (t) => t.borrow_date,
+  eth: (t) => t.buy_eth,
+  buy: (t, d) => d.buyPriceUsd,
+  sell: (t, d) => d.sellPriceUsd,
+  days: (t, d) => d.days,
+  gain: (t, d) => (isNum(d.netGainUsd) ? d.netGainUsd : d.projectedNetGainUsd),
+  pct: (t, d) => d.pct,
+  status: (t, d) => STATUS_ORDER[d.status],
+};
+
+const SORT_LABELS = {
+  trade: 'Trade',
+  eth: 'ETH',
+  buy: 'Buy price',
+  sell: 'Sell price',
+  days: 'Days',
+  gain: 'Net gain',
+  pct: 'Annualized',
+  status: 'Status',
+};
+
+function loadSort() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SORT_KEY) || 'null');
+    if (saved && SORT_KEYS[saved.key] && (saved.dir === 'asc' || saved.dir === 'desc')) {
+      return saved;
+    }
+  } catch (e) {
+    /* private browsing, or something else wrote nonsense to the key */
+  }
+  return { ...DEFAULT_SORT };
+}
+
+function saveSort() {
+  try {
+    localStorage.setItem(SORT_KEY, JSON.stringify(state.sort));
+  } catch (e) {
+    /* the sort simply will not persist */
+  }
+}
+
+/**
+ * The trades in the order the table should show them.
+ *
+ * Works on a copy: state.trades stays exactly as the server sent it, because
+ * summarize() and summaryReport() read it whole for the hero tiles and the
+ * Summary view, and neither should notice this feature exists.
+ *
+ * A row with no value for the column sorts last in BOTH directions. Ascending
+ * by net gain should not fill the first page with open trades that have no gain
+ * to rank; they belong at the end either way.
+ */
+function sortedTrades() {
+  const { key, dir } = state.sort;
+  const read = SORT_KEYS[key] || SORT_KEYS.trade;
+  const value = (t) => {
+    const v = read(t, t.derived || derive(t));
+    return v === undefined || v === null || (typeof v === 'number' && !Number.isFinite(v))
+      ? null
+      : v;
+  };
+
+  return [...state.trades].sort((a, b) => {
+    const va = value(a);
+    const vb = value(b);
+    if (va === null && vb === null) return b.id - a.id;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    const cmp = typeof va === 'string' ? (va < vb ? -1 : va > vb ? 1 : 0) : va - vb;
+    // Ties break on id so the order is stable and a re-render never reshuffles
+    // rows that compare equal.
+    return cmp === 0 ? b.id - a.id : dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+const pageCount = (total) => Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+/**
+ * The page a given trade currently falls on. Creating a trade opens it, and
+ * under any sort but the default it may not be on the page being looked at, so
+ * the row would expand somewhere the user cannot see.
+ */
+function pageOfTrade(id) {
+  const i = sortedTrades().findIndex((t) => t.id === id);
+  return i < 0 ? state.page : Math.floor(i / PAGE_SIZE) + 1;
+}
+
+/** Keep the page inside the range, so deleting the last row of the last page
+ *  lands on the one before it rather than on an empty table. */
+function clampPage(total) {
+  state.page = Math.min(Math.max(1, state.page), pageCount(total));
+  return state.page;
+}
+
+/**
+ * Which page numbers to draw. Beyond seven pages it keeps the first, the last
+ * and the current with one either side, so the pager can never wrap onto a
+ * second row however long the ledger gets.
+ */
+function pageItems(pages, current) {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1);
+  const out = [1];
+  const from = Math.max(2, current - 1);
+  const to = Math.min(pages - 1, current + 1);
+  if (from > 2) out.push('gap');
+  for (let i = from; i <= to; i += 1) out.push(i);
+  if (to < pages - 1) out.push('gap');
+  out.push(pages);
+  return out;
+}
+
+function pager(total) {
+  const pages = pageCount(total);
+  // Nothing appears until the ledger is actually long enough to need it.
+  if (pages <= 1) return '';
+  const current = state.page;
+  const step = (to, label, glyph, disabled) =>
+    `<button class="pager__btn" type="button" data-page="${to}" aria-label="${label}"${
+      disabled ? ' disabled' : ''
+    }>${glyph}</button>`;
+
+  const numbers = pageItems(pages, current)
+    .map((n) =>
+      n === 'gap'
+        ? '<span class="pager__gap" aria-hidden="true">&hellip;</span>'
+        : `<button class="pager__btn ${n === current ? 'is-active' : ''}" type="button" data-page="${n}" aria-label="Page ${n}"${
+            n === current ? ' aria-current="page"' : ''
+          }>${n}</button>`,
+    )
+    .join('');
+
+  const first = (current - 1) * PAGE_SIZE + 1;
+  const last = Math.min(current * PAGE_SIZE, total);
+
+  return `<nav class="pager" aria-label="Trade pages">
+    <span class="pager__count">${first}-${last} of ${total}</span>
+    <span class="pager__nums">
+      ${step(current - 1, 'Previous page', '&lsaquo;', current === 1)}
+      ${numbers}
+      ${step(current + 1, 'Next page', '&rsaquo;', current === pages)}
+    </span>
+  </nav>`;
+}
+
+/** A column header that can be clicked or tabbed to. */
+function sortHeader(key, extraClass = '') {
+  const active = state.sort.key === key;
+  const aria = active ? (state.sort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+  return `<th class="${extraClass}" aria-sort="${aria}">
+    <button class="th-sort ${active ? 'is-active' : ''}" type="button" data-sort="${key}">
+      ${SORT_LABELS[key]}<span class="th-sort__caret" aria-hidden="true"></span>
+    </button>
+  </th>`;
+}
+
+/**
+ * Below 760px the table becomes cards and the header row is hidden, so the
+ * sort buttons are unreachable. A plain select stands in for them there.
+ */
+function sortControl() {
+  const opts = Object.keys(SORT_KEYS)
+    .map((k) => `<option value="${k}"${k === state.sort.key ? ' selected' : ''}>${SORT_LABELS[k]}</option>`)
+    .join('');
+  return `<div class="sortbar">
+    <label class="sortbar__label" for="sort-by">Sort by</label>
+    <div class="control control--select"><select id="sort-by" data-sort-select>${opts}</select></div>
+    <button class="btn btn--sm" type="button" data-sort-dir aria-label="Reverse sort order">
+      ${state.sort.dir === 'asc' ? '&uarr; Ascending' : '&darr; Descending'}
+    </button>
+  </div>`;
+}
+
+/** Switching column starts descending, which is the useful way round for money
+ *  and for dates. Clicking the column already sorted flips it. */
+function applySort(key) {
+  if (!SORT_KEYS[key]) return;
+  state.sort =
+    state.sort.key === key
+      ? { key, dir: state.sort.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: 'desc' };
+  saveSort();
+  // A half filled stage form whose row may have just moved to another page is
+  // a draft with nowhere to go, so the editor closes rather than stranding it.
+  state.editing = null;
+  state.page = 1;
+  render();
+}
+
 /* ------------------------------------------------------------------ state */
 
 const state = {
@@ -147,6 +354,11 @@ const state = {
   openId: null,
   editing: null, // { id, stage }
   creating: false,
+  // The column is remembered between visits, the page deliberately is not:
+  // coming back to a ledger you have not looked at today and landing on page 4
+  // of it is disorienting.
+  sort: loadSort(),
+  page: 1,
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -615,7 +827,7 @@ function prerequisiteMet(key, s) {
 
 /* ---------------------------------------------------------- table render */
 
-function tradeRow(t, index) {
+function tradeRow(t, index, total) {
   const d = t.derived || derive(t);
   const isOpen = state.openId === t.id;
 
@@ -678,7 +890,7 @@ function tradeRow(t, index) {
       ? `<tr class="detail"><td colspan="8">
           <div class="stages">${STAGES.map((s) => stageCard(s, t, d)).join('')}</div>
           <div class="detail__foot">
-            <span class="detail__note">Trade #${index} of ${state.trades.length}, added ${fmtDate((t.created_at || '').slice(0, 10))}.</span>
+            <span class="detail__note">Trade #${index} of ${total}, added ${fmtDate((t.created_at || '').slice(0, 10))}.</span>
             <button class="btn btn--sm btn--danger" type="button" data-delete="${t.id}">Delete trade</button>
           </div>
         </td></tr>`
@@ -727,17 +939,25 @@ function renderTable() {
     return;
   }
 
-  mount.innerHTML = `<table class="table">
+  const rows = sortedTrades();
+  const total = rows.length;
+  const page = clampPage(total);
+  const start = (page - 1) * PAGE_SIZE;
+  const shown = rows.slice(start, start + PAGE_SIZE);
+
+  mount.innerHTML = `${sortControl()}
+  <table class="table">
     <thead>
       <tr>
-        <th>Trade</th><th>ETH</th><th>Buy price</th><th>Sell price</th>
-        <th>Days</th><th>Net gain</th><th>Annualized</th><th>Status</th>
+        ${sortHeader('trade')}${sortHeader('eth', 'num')}${sortHeader('buy', 'num')}${sortHeader('sell', 'num')}
+        ${sortHeader('days', 'num')}${sortHeader('gain', 'num')}${sortHeader('pct', 'num')}${sortHeader('status')}
       </tr>
     </thead>
     <tbody>
-      ${state.trades.map((t, i) => tradeRow(t, state.trades.length - i)).join('')}
+      ${shown.map((t, i) => tradeRow(t, start + i + 1, total)).join('')}
     </tbody>
-  </table>`;
+  </table>
+  ${pager(total)}`;
 
   const openForm = mount.querySelector('[data-stage-form]');
   if (openForm) {
@@ -1081,6 +1301,9 @@ async function submitBorrow(form) {
     state.creating = false;
     state.openId = created.id;
     state.editing = null;
+    // Go to wherever the new trade landed, so the row that just opened is on
+    // screen whatever the table is sorted by.
+    state.page = pageOfTrade(created.id);
     document.getElementById('new-trade-card').hidden = true;
     render();
     toast('Trade created. Add the ETH purchase next.');
@@ -1202,6 +1425,32 @@ function wire() {
       return;
     }
 
+    const sortBtn = e.target.closest('[data-sort]');
+    if (sortBtn) {
+      applySort(sortBtn.dataset.sort);
+      return;
+    }
+
+    const pageBtn = e.target.closest('[data-page]');
+    if (pageBtn && !pageBtn.disabled) {
+      const to = Number(pageBtn.dataset.page);
+      if (Number.isFinite(to) && to !== state.page) {
+        state.page = to;
+        // Same reasoning as a sort change: an open editor may belong to a row
+        // that is no longer on screen.
+        state.editing = null;
+        render();
+        document.getElementById('table-mount')?.scrollIntoView({ block: 'start' });
+      }
+      return;
+    }
+
+    const dirBtn = e.target.closest('[data-sort-dir]');
+    if (dirBtn) {
+      applySort(state.sort.key);
+      return;
+    }
+
     if (e.target.closest('#fetch-rates')) {
       const btn = e.target.closest('#fetch-rates');
       btn.disabled = true;
@@ -1261,6 +1510,19 @@ function wire() {
     }
     if (e.key === 'Escape' && state.editing) {
       state.editing = null;
+      render();
+    }
+  });
+
+  // The mobile stand-in for the column headers, which are hidden in card mode.
+  document.body.addEventListener('change', (e) => {
+    const select = e.target.closest('[data-sort-select]');
+    if (!select) return;
+    if (select.value !== state.sort.key) {
+      state.sort = { key: select.value, dir: state.sort.dir };
+      saveSort();
+      state.editing = null;
+      state.page = 1;
       render();
     }
   });

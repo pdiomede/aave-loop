@@ -717,6 +717,138 @@ a.brand {
 .pill--SOLD { background: var(--accent-soft); color: var(--accent); }
 .pill--CLOSED { background: var(--positive-soft); color: var(--positive); }
 
+/* ------------------------------------------------------- sorting + paging */
+
+/* The header text is a real button so it is reachable by keyboard and
+   announced as a control; the th carries aria-sort for the ordering itself. */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.th-sort:hover {
+  color: var(--text);
+}
+
+.th-sort:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-radius: 4px;
+}
+
+.th-sort.is-active {
+  color: var(--text);
+}
+
+/* Only the sorted column shows a caret, pointing the way the rows run. */
+.th-sort__caret {
+  width: 0;
+  height: 0;
+  opacity: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+}
+
+.th-sort.is-active .th-sort__caret {
+  opacity: 1;
+}
+
+th[aria-sort="ascending"] .th-sort__caret {
+  transform: rotate(180deg);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px 4px;
+}
+
+.pager__count {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager__nums {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.pager__btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--radius-btn);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.pager__btn:hover:not([disabled]):not(.is-active) {
+  color: var(--text);
+}
+
+.pager__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The same treatment the nav uses for the view you are on. */
+.pager__btn.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.pager__btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pager__gap {
+  color: var(--text-faint);
+  padding: 0 2px;
+}
+
+/* Stands in for the header buttons in card mode, where the header row is
+   hidden. Nothing to see at desktop widths. */
+.sortbar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px 4px;
+}
+
+.sortbar__label {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.sortbar .control {
+  flex: 1;
+  min-width: 0;
+}
+
 .chip {
   display: inline-block;
   padding: 2px 8px;
@@ -1165,6 +1297,16 @@ a.brand {
 
   .table thead {
     display: none;
+  }
+
+  /* The header row is gone here, so its sort buttons go with it and the
+     select takes over. */
+  .sortbar {
+    display: flex;
+  }
+
+  .pager {
+    padding: 14px 16px 4px;
   }
 
   .table,

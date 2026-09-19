@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.16] - 2026-09-19
+
+### Added
+
+- **Every column in the history table sorts.** Click a header, click again to reverse. Trade sorts on the borrow date, Status on how far the loop has got. Net gain sorts on the figure the cell actually shows, the projection included, because sorting a column by a number other than the one on screen looks like a bug even when the order is right.
+- A row with no value for the column sorts **last in both directions**. Ascending by net gain should not fill the first page with open trades that have no gain to rank. Ties break on id, so a re-render never reshuffles equal rows.
+- **Pagination, 15 to a page**, with square numbered buttons. It is hidden entirely below 16 trades, and windows to first, last and the current page either side once there are more than seven, so it can never wrap onto a second row.
+- The chosen column and direction are remembered between visits. The page is not: coming back to a ledger and landing on page 4 of it is disorienting.
+- Below 760px the header row is hidden, so a select stands in for it, the same reasoning that turned the nav into a segmented control at that width.
+
+### Notes
+
+- Sorting works on a copy. `state.trades` stays as the server sent it, so the Summary and the hero tiles keep reading every trade and are unaffected by what the table is showing.
+- Creating a trade jumps to whatever page it landed on, since it opens the new row and under any sort but the default that row could be three pages away.
+- Changing sort or page closes an open stage editor rather than stranding a half-filled form on a row that has moved.
+- Verified by checking all eight columns in both directions against an independently written comparison, across every page, plus nulls-last in both directions.
+
 ## [0.0.15] - 2026-09-19
 
 ### Fixed
