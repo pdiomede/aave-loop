@@ -3,6 +3,30 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.18] - 2026-09-19
+
+### Changed
+
+- **Tooltips are drawn by CSS instead of by the browser.** A native `title` waits about a second before it appears, lands wherever the pointer happens to be rather than beside the thing it explains, and on a phone never appears at all. These appear at once, in place, and work on a tap. No script runs on hover.
+- The explanation marker is a real button now, so it can be reached by keyboard and read out by a screen reader, which the `title` it replaces could not manage.
+
+### Added
+
+- **Every figure in the Summary says what it means.** All nine rows of the Performance card, and all ten column headers of *By currency* and *By month closed*. Each one names which trades it counts, since that is the detail that makes two correct figures look inconsistent when it quietly differs between them, and it is what sent this ledger hunting for math bugs that were not there.
+- The "no rate" chip carries its explanation the same way, wherever it lands: a hero tile, a trades cell, an expanded detail row or the currency table.
+
+### Fixed
+
+- **"Of which currency" painted a saving red.** The figure is a component of what the loan cost, so a negative one means the currency moved in your favour and the loan cost less than the interest alone, but it was coloured from the gain palette and so rendered as though it were a loss. The number and the label are unchanged, and it still sums with "Interest paid" to the total cost; only the colour is taken from the sign reversed.
+
+### Notes
+
+- A card no longer clips its overflow, which is what lets a tooltip on the last row out. The only thing the clip was holding in was the trades table, whose hovered last row would have squared the card's bottom corners, so that row rounds its own now.
+- The bubble is hidden with `display`, not `visibility`. A bubble hidden with `visibility` is still laid out, and a wide one sitting off to the right of its anchor widened the document enough to give the phone layout a horizontal scrollbar while nothing was being hovered at all.
+- Each bubble anchors to a box wide enough to hold it, the summary row or the column header or the chip, rather than to the 14px marker. That is what makes it incapable of running off an edge, and it is also why there is no caret.
+- The ten column-header tooltips are a sighted-hover affordance, exactly like the `title` they replace, and the phone layout drops the header row entirely so they are desktop only. The nine row markers work at every width.
+- Verified in Chromium at 1440px, 1100px and 390px in both themes: every bubble measured against every clipping ancestor, none clipped, none off the card, none off screen, and no horizontal page scroll.
+
 ## [0.0.17] - 2026-09-19
 
 Eight bugs in the exchange rate lookup, found by auditing the path a euro trade's rate takes from the ECB to the dollar totals. No figure on a trade whose rate was already correct changes.

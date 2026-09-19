@@ -88,6 +88,92 @@ const esc = (s) =>
 
 const gainClass = (v) => (!isNum(v) ? '' : v >= 0 ? 'pos' : 'neg');
 
+/**
+ * The marker that carries an explanation. A real button, so the sentence can be
+ * reached by keyboard and by tap, neither of which a native title allowed. It
+ * does nothing when pressed: CSS draws the bubble from data-tip, which is the
+ * whole point, since a title waits a second before it appears.
+ *
+ * aria-label repeats the sentence because the visible glyph is only a question
+ * mark, which tells a screen reader nothing.
+ */
+const hintMark = (tip) =>
+  tip ? ` <button type="button" class="kv__hint" data-tip="${esc(tip)}" aria-label="${esc(tip)}">?</button>` : '';
+
+/**
+ * A column header that can be asked what it means. The trigger is the header
+ * itself rather than a marker beside it, because a question mark on all ten
+ * columns doubles the weight of a row that is meant to be scanned.
+ *
+ * Sighted hover only, exactly like the title it replaces. Exposing it to a
+ * screen reader would fold the sentence into the column header's accessible
+ * name and have it read out against every cell in the column.
+ */
+const hintHead = (label, tip, cls = '') =>
+  `<th${cls ? ` class="${cls}"` : ''} data-tip="${esc(tip)}"><span class="th-tip">${label}</span></th>`;
+
+/**
+ * Every explanation in the Summary, in one place, so the wording can be checked
+ * against lib/calc.js rather than against the label sitting above it.
+ *
+ * Each one says which trades it counts. That is the detail that makes two
+ * correct figures look inconsistent when it quietly differs between them, and
+ * it is what sent this ledger looking for math bugs that were not there.
+ */
+const TIPS = {
+  netGain:
+    'What the repaid trades made once the loan was settled: the ETH sale less the purchase, ' +
+    'less what the loan cost. A closed trade still waiting on an exchange rate is left out ' +
+    'rather than counted as zero.',
+  avgPct:
+    'The return on the capital actually deployed, weighted by how much and for how long. ' +
+    'Not the average of the percentages in the table: a one day flip would otherwise ' +
+    'count as heavily as a trade held for months.',
+  interestPaid:
+    'Interest on the closed loans only, each converted at the rate published for the day it ' +
+    'was repaid. Interest still accruing on an open loan is not in here.',
+  currencyEffect:
+    'The other half of what the loan cost: the principal revalued between the day you ' +
+    'borrowed and the day you repaid. A negative figure means the currency moved your way ' +
+    'and the loan cost less than the interest alone. Always zero on a dollar loan.',
+  winRate:
+    'The share of closed trades that finished above water, counted only where the dollar ' +
+    'result is known. A trade that came out exactly flat counts as neither a win nor a loss.',
+  totalBorrowed:
+    'Everything ever borrowed, open trades included, each loan valued at the rate on its own ' +
+    'borrow date. A running total, not the amount currently at risk.',
+  avgHold:
+    'Mean days from borrowing to repaying, over the same closed trades the figures above are ' +
+    'built from.',
+  best: 'Ranked by dollars made, not by the annualized rate.',
+  worst: 'Ranked by dollars, not by the annualized rate.',
+  cur: {
+    currency:
+      'The stablecoin the loan was denominated in. A trade is grouped by what you borrowed, ' +
+      'not by what you bought.',
+    closed: 'Trades in this currency that have been repaid.',
+    open: 'Trades in this currency still running, whether the ETH has been bought, sold or neither.',
+    borrowed:
+      'Everything borrowed in this currency, open and closed, in dollars at the rate on each ' +
+      'borrow date. The line beneath is the same total in the currency itself.',
+    netGain: 'The dollar result of the closed trades in this currency. Open trades contribute nothing.',
+    avgPct:
+      'The closed trades in this currency blended together, weighted by loan size and days ' +
+      'held, the same way the headline rate is.',
+  },
+  month: {
+    month:
+      'The month the loan was repaid, which is when the gain became real. A trade opened in ' +
+      'March and closed in May lands in May.',
+    trades: 'Closed trades that landed in this month.',
+    netGain: 'The dollar result of the trades closed in this month.',
+    share:
+      'The result for this month against the largest month in the table, so the bars can be ' +
+      'compared at a glance.',
+  },
+  noRate: 'No exchange rate for this date yet. Use Fetch rates on the Summary.',
+};
+
 // Artwork for the stablecoins we have it for. The rest fall back to a
 // tinted circle carrying the ticker.
 const COIN_ART = {
@@ -133,8 +219,7 @@ function signedFxNote(usdValue, leg) {
   return `<span class="fx-note__usd">${signedUsd(usdValue)}</span>${at}`;
 }
 
-const RATE_MISSING =
-  '<span class="chip chip--warn" title="No exchange rate for this date yet. Use Fetch rates on the Summary.">no rate</span>';
+const RATE_MISSING = `<span class="chip chip--warn" data-tip="${esc(TIPS.noRate)}">no rate</span>`;
 
 const ethMark = `<img class="eth-mark" src="/eth.svg" alt="" width="15" height="15" />`;
 
@@ -977,7 +1062,7 @@ const dash = '<span class="muted">-</span>';
 
 function statRow(label, value, cls = '', hint = '') {
   return `<div class="kv">
-    <dt>${label}${hint ? ` <span class="kv__hint" title="${esc(hint)}">?</span>` : ''}</dt>
+    <dt>${label}${hintMark(hint)}</dt>
     <dd class="${cls}">${value || dash}</dd>
   </div>`;
 }
@@ -998,7 +1083,11 @@ function currencyTable(rows) {
   // here, because the table is grouped by the currency it is denominated in.
   return `<table class="table table--flush">
     <thead>
-      <tr><th>Currency</th><th>Closed</th><th>Open</th><th>Borrowed</th><th>Net gain</th><th>Avg annualized</th></tr>
+      <tr>
+        ${hintHead('Currency', TIPS.cur.currency)}${hintHead('Closed', TIPS.cur.closed)}
+        ${hintHead('Open', TIPS.cur.open)}${hintHead('Borrowed', TIPS.cur.borrowed)}
+        ${hintHead('Net gain', TIPS.cur.netGain)}${hintHead('Avg annualized', TIPS.cur.avgPct)}
+      </tr>
     </thead>
     <tbody>
       ${rows
@@ -1032,7 +1121,10 @@ function monthTable(rows) {
   const peak = Math.max(...rows.map((r) => Math.abs(r.netGain)), 1);
   return `<table class="table table--flush">
     <thead>
-      <tr><th>Month</th><th>Trades</th><th>Net gain</th><th class="bar-col">Share</th></tr>
+      <tr>
+        ${hintHead('Month', TIPS.month.month)}${hintHead('Trades', TIPS.month.trades)}
+        ${hintHead('Net gain', TIPS.month.netGain)}${hintHead('Share', TIPS.month.share, 'bar-col')}
+      </tr>
     </thead>
     <tbody>
       ${rows
@@ -1063,7 +1155,7 @@ function monthTable(rows) {
 function extremeCard(label, entry, hint = '') {
   if (!entry) return statRow(label, '');
   return `<div class="kv">
-    <dt>${label}${hint ? ` <span class="kv__hint" title="${esc(hint)}">?</span>` : ''}</dt>
+    <dt>${label}${hintMark(hint)}</dt>
     <dd>
       <span class="${gainClass(entry.netGain)}">${signedUsd(entry.netGain)}</span>
       <span class="muted">${esc(entry.currency)}, ${fmtDate(entry.date)} &middot; ${pct(entry.pct)} annualized</span>
@@ -1120,33 +1212,33 @@ function renderSummary() {
     ${summaryCard(
       'Performance',
       `<div class="kv-grid">
-        ${statRow('Realized net gain', signedUsd(r.netGain), gainClass(r.netGain))}
-        ${statRow(
-          'Blended annualized',
-          pct(r.avgPct),
-          gainClass(r.avgPct),
-          'The return on the capital actually deployed, weighted by how much and for how long. ' +
-            'Not the average of the percentages in the table: a one day flip would otherwise ' +
-            'count as heavily as a trade held for months.',
-        )}
-        ${statRow('Interest paid', valuedAny ? usd(r.interestPaid) : '')}
+        ${statRow('Realized net gain', signedUsd(r.netGain), gainClass(r.netGain), TIPS.netGain)}
+        ${statRow('Blended annualized', pct(r.avgPct), gainClass(r.avgPct), TIPS.avgPct)}
+        ${statRow('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', TIPS.interestPaid)}
         ${
           isNum(r.currencyEffect) && Math.abs(r.currencyEffect) >= 0.005
-            ? statRow('Of which currency', signedUsd(r.currencyEffect), gainClass(r.currencyEffect))
+            ? // The figure is a component of what the loan cost, so a negative one means the
+              // currency made the loan cheaper. The gain palette would paint that saving red,
+              // which is why the colour is taken from the sign reversed while the number
+              // itself is left alone: it still sums with Interest paid to the total cost.
+              statRow('Of which currency', signedUsd(r.currencyEffect), gainClass(-r.currencyEffect), TIPS.currencyEffect)
             : ''
         }
         ${statRow(
           'Win rate',
           valuedAny ? `${pct(r.winRate, 0)} <span class="muted">(${r.wins} up, ${r.losses} down)</span>` : '',
+          '',
+          TIPS.winRate,
         )}
-        ${statRow('Total borrowed', valuedAny ? usd(r.totalBorrowed) : '')}
-        ${statRow('Average hold', r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`)}
-        ${extremeCard('Biggest gain', r.best, 'Ranked by dollars made, not by the annualized rate.')}
-        ${extremeCard(
-          r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss',
-          r.worst,
-          'Ranked by dollars, not by the annualized rate.',
+        ${statRow('Total borrowed', valuedAny ? usd(r.totalBorrowed) : '', '', TIPS.totalBorrowed)}
+        ${statRow(
+          'Average hold',
+          r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`,
+          '',
+          TIPS.avgHold,
         )}
+        ${extremeCard('Biggest gain', r.best, TIPS.best)}
+        ${extremeCard(r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss', r.worst, TIPS.worst)}
       </div>`,
       valuedAny
         ? `${r.closedCount} closed of ${r.tradeCount}`

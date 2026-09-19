@@ -162,8 +162,14 @@ a.brand {
 }
 
 /* A figure that needs a sentence to be read correctly carries it here rather
-   than in a longer label that would wrap the row. */
+   than in a longer label that would wrap the row. It is a real button so the
+   sentence can be reached by keyboard and by tap, neither of which a native
+   title ever allowed. Pressing it does nothing; CSS draws the bubble. */
 .kv__hint {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
   display: inline-grid;
   place-items: center;
   width: 14px;
@@ -171,10 +177,19 @@ a.brand {
   border-radius: 50%;
   background: var(--surface-sunken);
   color: var(--text-faint);
+  font-family: inherit;
   font-size: 10px;
   font-weight: 700;
+  line-height: 1;
   cursor: help;
   vertical-align: 1px;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.kv__hint:hover,
+.kv__hint:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .brand__mark {
@@ -366,11 +381,18 @@ a.brand {
   margin-right: auto;
 }
 
+/* Deliberately does not clip its overflow: a tooltip on the last row of a card
+   has to be able to spill past the edge. The one thing the clip was holding in
+   was the trades table, whose hovered last row would otherwise square the
+   bottom corners, and that is handled on the table itself.
+
+   A card must also stay unpositioned. Giving it a position would create a
+   stacking context per card, and the next card down would then paint over the
+   tooltip hanging out of this one. */
 .card {
   background: var(--surface);
   border-radius: var(--radius-card);
   box-shadow: var(--ring);
-  overflow: hidden;
 }
 
 .card + .card {
@@ -594,6 +616,18 @@ a.brand {
 .table thead th:last-child,
 .table tbody td:last-child {
   padding-right: 20px;
+}
+
+/* The card no longer clips, so the table rounds its own bottom corners. Only
+   the last row needs it: the header paints no background of its own, and
+   whichever row is last, expanded detail included, is the one that meets the
+   card edge. */
+.table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-card);
+}
+
+.table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-card);
 }
 
 .table tbody td {
@@ -944,6 +978,9 @@ th[aria-sort="ascending"] .th-sort__caret {
 }
 
 .kv {
+  /* Also the anchor for this row's tooltip, which is what stops the bubble
+     being wider than the row it explains. */
+  position: relative;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1207,6 +1244,128 @@ th[aria-sort="ascending"] .th-sort__caret {
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- tooltips */
+
+/* One tooltip for the whole app, drawn entirely by CSS. A native title waits
+   about a second before it shows, lands wherever the pointer happens to be
+   rather than beside the thing it explains, and on a touch screen never shows
+   at all. This appears at once, in place, with no script running on hover.
+
+   The bubble anchors to a box wide enough to hold it, the summary row or the
+   column header or the chip, rather than to the 14px marker itself. That is
+   what makes it incapable of running off an edge, and it is also why there is
+   no caret: a caret would have nothing to point at. */
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 40;
+  width: max-content;
+  max-width: min(320px, 100%);
+  padding: 8px 10px;
+  border-radius: var(--radius-btn);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  box-shadow: var(--ring-raised);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  /* The headers uppercase and letter space their text, and the trades table
+     sets nowrap on its cells. None of that belongs in a sentence. */
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  /* display, not visibility. A bubble hidden with visibility is still laid
+     out, and a wide one sitting off to the right of its anchor widened the
+     document enough to give the phone layout a horizontal scrollbar while
+     nothing was even being hovered.
+
+     The 40ms in front stops the bubble flashing when the pointer merely
+     crosses the marker on its way somewhere else, and allow-discrete is what
+     lets display take part in that. A browser without it simply shows and
+     hides the bubble at once, which is the behaviour being asked for anyway. */
+  display: none;
+  opacity: 0;
+  transition: opacity 0.1s ease 0.04s, display 0.1s ease 0.04s;
+  transition-behavior: allow-discrete;
+}
+
+[data-tip]:hover::after,
+[data-tip]:focus-visible::after {
+  display: block;
+  opacity: 1;
+}
+
+@starting-style {
+  [data-tip]:hover::after,
+  [data-tip]:focus-visible::after {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tip]::after {
+    transition: none;
+  }
+}
+
+/* A summary row. The marker is not positioned itself, so the bubble resolves
+   against .kv and is capped at the width of the row. */
+.kv__hint[data-tip]::after {
+  left: 0;
+}
+
+/* A column header. The bubble follows the header's own alignment, which is
+   what keeps it inside the table whichever column it belongs to. */
+.table thead th[data-tip] {
+  position: relative;
+  cursor: help;
+}
+
+.table thead th[data-tip]::after {
+  right: 0;
+  max-width: min(280px, calc(100vw - 48px));
+}
+
+.table thead th[data-tip]:first-child::after {
+  left: 0;
+  right: auto;
+}
+
+/* The dotted rule says a header can be asked what it means, without putting a
+   question mark on all ten of them. */
+.th-tip {
+  text-decoration: underline dotted var(--text-faint);
+  text-underline-offset: 3px;
+}
+
+/* The no rate chip explains itself wherever it lands: a hero tile, a trades
+   cell, a detail row or the currency table. */
+.chip--warn[data-tip] {
+  position: relative;
+  cursor: help;
+}
+
+/* Nearly everywhere the chip lands it is at the right hand end of its line, in
+   a right aligned cell, a hero tile or a detail row, so the bubble grows
+   leftwards by default and cannot run off the screen. */
+.chip--warn[data-tip]::after {
+  right: 0;
+  max-width: min(260px, calc(100vw - 48px));
+}
+
+/* The exception is the currency name in the summary table, which is left
+   aligned. Only there, and only on a wide screen: the phone layout right
+   aligns that cell along with the rest, and the expanded detail panel is one
+   full width cell whose chips would send a left anchored bubble off the page. */
+@media (min-width: 761px) {
+  .table--flush tbody td:first-child .chip--warn[data-tip]::after {
+    left: 0;
+    right: auto;
+  }
 }
 
 .toast {
