@@ -138,13 +138,190 @@ wrote it.
 
 ---
 
-## Notes on using it
+## Bug hunt and fix
 
-Drop the last line if you want fixes applied as it goes. Narrow the scope by deleting
-the sections you do not want; the five areas are independent.
+> Find and fix real, demonstrable bugs in the Aave Loop Ledger. Report and fix up to
+> **20**, ranked most severe first. **Six genuine bugs is a better result than twenty
+> padded ones. Do not invent findings to reach a number. If an area is clean, say so
+> plainly and move on.**
+>
+> ### The codebase
+>
+> A local-first personal ledger for Aave loop trades: borrow a stablecoin, buy ETH,
+> sell it, repay. Express + better-sqlite3 + vanilla ES modules. No framework, no
+> build step, no test suite, no linter.
+>
+> ```
+> lib/calc.js     every formula. Pure, synchronous, dependency-free. Imported by the
+>                 server AND served raw to the browser, so both run identical code
+> fx.js           EUR/USD rate lookup, validation and cache. The only module doing I/O
+> server.js       Express API, request validation, static host
+> db.js           SQLite connection, schema, migrations
+> public/app.js   the whole front end: template literals + innerHTML, no framework
+> ```
+>
+> A trade has four stages (borrow, buy ETH, sell ETH, repay), each with its own date
+> and amounts. Every amount is denominated in `borrow_currency`. USDC, USDT, DAI and
+> GHO are dollar coins; EURC is a euro coin converted to USD at the ECB reference rate
+> published for **each stage's own date**, stored per stage on the row. All summaries
+> and statistics are reported in USD.
+>
+> ### The six areas. Cover all of them; do not stop after the easy ones.
+>
+> **1. FX and currency conversion.**
+>
+> Four stages, four independent rates, one row. Prove no currency movement is double
+> counted and none is silently dropped.
+>
+> - `derive()` in `lib/calc.js`: check `borrowUsd`, `buyUsd`, `sellUsd`, `repayUsd`,
+>   `costOfSoldEthUsd`, `grossGainUsd`, `interestPaidUsd`, `principalFxUsd`,
+>   `loanCostUsd`, `netGainUsd` and `projectedNetGainUsd` each convert at the rate
+>   belonging to the stage that actually produced the number — not the borrow rate as
+>   a convenient default, and not the sale rate for a basis established at purchase.
+> - Two invariants that must hold exactly. Test them: `loanCostUsd` must equal
+>   `interestPaidUsd + principalFxUsd`; and with a single flat rate applied to all
+>   four stages, `netGainUsd` must equal `netGain * rate` to floating-point tolerance.
+>   If either fails, the FX is being applied at the wrong layer.
+> - `buyPriceUsd` and `sellPriceUsd`: a per-ETH price converted at the wrong stage's
+>   rate is still a plausible-looking number.
+> - A partially-rated row: some stages have a rate, some do not. Does a missing rate
+>   produce `null` all the way up, or does it coerce to 0 and land in a total?
+>   `fxMissing` / `fxComplete` must actually gate every USD figure they claim to.
+> - `isProvisionalFx()` and `FX_PROVISIONAL_DAYS`: weekends, ECB holidays, and a stage
+>   date in the future. Is a rate published *before* the stage date treated the same
+>   as one published after?
+> - `fx.js`: `validate()`, `cachedRate()`, `resolveRange()`, `staleFxColumns()` and
+>   `fillFxColumns()`. A cache hit keyed on the wrong date, a rate reused across
+>   currencies, a stale rate surviving a stage-date edit, a failed lookup leaving a
+>   rate attached to a stage that has since been cleared.
+> - Anywhere a rate might be inverted. The convention is `usd = native * fx`, a
+>   dollar coin is exactly 1, and nothing anywhere inverts a rate. Verify that.
+> - Aggregates in `summarize()` and `summaryReport()`: does every figure inside one
+>   card describe the same population of trades? Mixing "all closed" with "closed and
+>   FX-convertible" makes two correct numbers look inconsistent.
+>
+> **2. APY / annualized return.**
+>
+> - `annualizedPct(netGain, loan, days)`: work the algebra yourself. Check a zero-day
+>   trade (span clamps to 1), a backwards span, `loan === 0`, a negative net gain, and
+>   a multi-year hold. Confirm the clamp is documented behaviour and not masking a
+>   date bug upstream.
+> - `accruedInterest()`: simple interest on a 365-day year. Check leap years, and the
+>   gap between interest *accrued* and interest *actually paid* — confirm the two are
+>   never substituted for one another.
+> - Weighted averages anywhere in `summarize()` / `summaryReport()`: what is the
+>   weight, is it the right one, and does the **label rendered in the UI** describe
+>   the statistic actually being computed? A figure that is arithmetically correct
+>   and mislabelled is a bug, and is the exact class of bug found here before.
+> - `pct` vs `pctNative`: confirm each is shown under the currency it was computed in.
+>
+> **3. Date calculations.**
+>
+> - `parseDate()`, `todayISO()`, `daysBetween()`. Dates are calendar days, not
+>   instants. Check DST boundaries, month ends, leap days, year boundaries, and
+>   whether any path lets a local-timezone `Date` shift a day.
+> - Stage dates out of order: repay before borrow, sell before buy, a future date.
+>   Does each produce `null`, or a confident wrong number?
+> - `suggestedRepay` / `suggestedRepayOn()`: the day count driving it, and whether
+>   the interest window is inclusive or exclusive at both ends — consistently.
+> - `monthOf()` and the month grouping in the summary: which timezone decides the
+>   bucket, and what happens to the first and last day of a month.
+>
+> **4. Field validation and form errors.**
+>
+> - `sanitizeNumeric()` and `parseAmount()` / `normaliseAmountText()`: thousands
+>   separators, a European decimal comma, a currency symbol, leading `+`, exponent
+>   notation, whitespace, an empty string, and values that lose precision. Check the
+>   pasted path separately from the typed path.
+> - `validateField()` and `validateForm()` against what `server.js` actually enforces.
+>   Disagreement in **either** direction is a bug: a value the client accepts and the
+>   server rejects, and a value the client blocks that is genuinely valid.
+> - `showFormError()` / `clearFieldError()`: an error that survives a successful
+>   resubmit, an error attached to the wrong field, or focus stolen on re-render.
+> - `payloadOf()`: does the request body carry any field the server should compute
+>   itself — exchange rates above all?
+> - Bounds: zero, negative, absurdly large, and more decimal places than the column
+>   stores.
+>
+> **5. Overall UI.**
+>
+> - `captureDraft()` / `restoreDraft()`: can a half-typed form be silently discarded
+>   by a re-render, a view switch, or an in-flight response landing late?
+> - `api()` and `loadTrades()`: can a slow response overwrite newer state? Is there
+>   any request sequencing at all?
+> - `sortedTrades()`, `applySort()`, `pager()`, `pageOfTrade()`, `clampPage()`: tie
+>   breaking, a null sort key, ranking by a different quantity from the one displayed,
+>   and the current page surviving a sort change or a row deletion.
+> - `esc()` and `innerHTML`: find every interpolation that does not pass through
+>   `esc()` and determine whether the value can carry user-controlled text. Note that
+>   `fmtDate()` escapes its own output, so double-escaping is also a defect.
+> - Any field rendering a value in one currency under the symbol of another —
+>   `money()` vs `usd()` vs `signedUsd()` vs `fxNote()`.
+> - Anything showing a stale, wrong or `0` figure where the honest answer is
+>   "unknown".
+> - Layout that clips or overflows: measure `scrollWidth` against `clientWidth` rather
+>   than judging by eye, at 1440px and 390px, in both light and dark themes.
+> - Event delegation in `wire()`: any handler that can fire twice, leak, or bind to a
+>   node replaced by the next render.
+>
+> **6. Overall math.**
+>
+> - Partial sales: is the cost basis scaled to the ETH actually sold, and marked at
+>   the purchase date rather than the sale date? Check `costOfSoldEth`, `retainedEth`
+>   and `isPartialSale`.
+> - Gross gain vs net gain vs loan cost — do they reconcile, in both currencies?
+> - `null` vs `0`: anywhere a null is coerced to zero and lands in a total, stating a
+>   figure nobody measured.
+> - Floating-point accumulation across many trades, and rounding applied to an
+>   intermediate value rather than at the point of display.
+>
+> ### Verify before you fix
+>
+> - Prove each finding. Write a throwaway script that imports `lib/calc.js` directly,
+>   or run the server against a temp database via `MYAAVE_DB` and drive it with curl.
+>   For UI findings, drive the running app in a browser.
+> - **Say explicitly which findings you executed and which you only reasoned about.**
+> - **Distinguish a defect from a deliberate decision.** Several apparent oddities are
+>   intentional and documented in code comments or `CHANGELOG.md`: an open position is
+>   not marked to the current exchange rate; a loan cost can be negative when the euro
+>   falls; the headline annualized figure is a blended return on capital over time,
+>   not the mean of the per-trade rates. If a comment explains the behaviour, either
+>   accept it or explain why it is wrong anyway.
+> - No style, naming, formatting or "add tests" findings. Behaviour only.
+>
+> ### Fixing
+>
+> - Fix in place, smallest change that actually corrects the behaviour. Do not
+>   refactor, rename, or restructure anything you are not fixing.
+> - `lib/calc.js` is served raw to the browser and imported by Node: it must stay
+>   dependency-free, side-effect-free, and free of any Node-only syntax.
+> - A fix that changes a displayed figure must also fix its **label** if the label was
+>   describing the old behaviour.
+> - After each fix, re-run the check that proved the bug, and confirm you have not
+>   broken the two FX invariants above.
+> - Add a `CHANGELOG.md` entry grouping the fixes. Do not commit or bump the version
+>   unless I ask.
+>
+> ### Report
+>
+> For each finding: `file:line`, severity, what breaks, a concrete trigger (exact
+> input, exact sequence), the impact, the fix you applied, and how you verified it.
+> End with a one-line list of areas you found clean.
 
-The highest-value variant is section 1 alone, run against a specific figure you
-distrust, phrased as: *"Reproduce this number from the raw trade data by hand, then
-tell me whether the code computes the same thing its label claims."* That is how the
-mislabelled annualized figure was found: the arithmetic was correct and the word
+---
+
+## Notes on using them
+
+**Bug hunt** is the wide audit — money, database, security, interface, edge cases —
+and it reports without changing anything. **Bug hunt and fix** is narrower, covering
+FX, APY, dates, field validation, UI and math with no database or security, and it
+applies the fixes as it goes. Use the first when you want to know, the second when
+you want it repaired. Drop the last line of **Bug hunt** to get fixes from it too.
+
+Narrow either one by deleting the sections you do not want; the areas are independent.
+
+The highest-value variant is the money section alone, run against a specific figure
+you distrust, phrased as: *"Reproduce this number from the raw trade data by hand,
+then tell me whether the code computes the same thing its label claims."* That is how
+the mislabelled annualized figure was found: the arithmetic was correct and the word
 "Average" was not.
