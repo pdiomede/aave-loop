@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.19] - 2026-09-20
+
+Five bugs from an audit of the money path, the date path and the forms. No figure on a trade whose rates are all present changes, except the *Borrowed* pair in the currency table, which now describes the trades it always claimed to.
+
+### Fixed
+
+- **"Gross gain" quoted a rate that did not produce it.** The dollar figure is the proceeds converted at the sale's rate less the cost basis converted at the purchase's, and the provenance line under it named the sale rate alone. A trade whose gross gain was 1,800.00 EURC read `+$2,228.40 at 1.1380`, and 1,800 × 1.1380 is 2,048.40. That line exists so a converted figure can be checked against the ECB's own tables, so quoting a rate the reader cannot check with is worse than quoting none. It now quotes none, as "Net gain" and "Loan cost" — the other figures built from more than one rate — already did.
+- **The two lines of *Borrowed* in the currency table counted different trades.** The dollar total could only include a trade whose rate was known; the total in the coin itself, printed directly beneath it and described as "the same total in the currency itself", counted every trade in the currency. On a ledger with two unrated EURC trades the cell read `$155,225.00` over `210,000.00 EURC`, an implied rate of 0.74 against a column of euros converted at 1.06 to 1.13. Both lines now cover the trades whose rate is known, which is what the `no rate` chip on the row is there to flag.
+- **A field's error was painted over by a live hint while the field stayed flagged.** Typing in any sibling field recomputed the hints, and a hint is written into the same slot the error occupies. A repayment of 1 against a 52,500 loan left a red field reading `Net gain +57,224.00 DAI (+$57,224.00), 2652.29% annualized` — a figure computed from the very value that had just been rejected, and no remaining explanation of what was wrong. A field still flagged invalid now keeps its error until that field is edited, which is when the input handler clears it.
+- **The stage preview converted at the rate belonging to the stage's old date.** Moving a repayment from 17 May to 15 July left the net gain at `+$1,937.36`, still converted at the rate published on 15 May, and said nothing about it — while a stage being entered for the first time correctly falls back to the coin and says "(converted on save)". The preview now drops a stage's stored rate as soon as the form moves that stage to another day, which is what the server does on the same edit, so it falls back and says so.
+- **"Added" named the wrong day.** `created_at` is stored as a UTC instant while every other date in the ledger is a calendar day on the local clock. Slicing the instant put a trade added at 00:09 in Berlin on the day before. It is formatted on the local calendar now, the same convention `todayISO` settled on.
+
+### Notes
+
+- Verified by execution. Both stated FX invariants hold — `loanCostUsd === interestPaidUsd + principalFxUsd`, and `netGainUsd === netGain × rate` under a single flat rate — across 40,000 randomly generated trades, together with stage-rate attribution for the cost basis and both ETH prices, null propagation, partial-sale reconciliation, and full aggregate reconciliation over 200 random portfolios. The five fixes were each re-proved in the running app afterwards.
+- The landing page footer had been left at v0.0.17 through the 0.0.18 release, the same slip 0.0.12 recorded. It is hand-maintained because `/api/version` sits behind auth, so it has to be bumped alongside the others. It reads 0.0.19 now.
+- Areas audited and found clean: the four-stage FX conversion in `derive`, the annualized and weighted-average maths and their labels, the date helpers across DST, leap days and month and year boundaries, `fx.js` caching, staleness and backfill, server-side validation and bounds, `esc()` coverage against `innerHTML`, and layout overflow at 1440px and 390px in both themes.
+
 ## [0.0.18] - 2026-09-19
 
 ### Changed

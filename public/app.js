@@ -9,6 +9,7 @@ import {
   parseAmount,
   normaliseAmountText,
   CURRENCIES,
+  FX_STAGES,
   isUsdPegged,
 } from '/lib/calc.js';
 
@@ -75,6 +76,22 @@ function fmtDate(iso) {
   // one of the dates it formats is the rate publication day, which arrives
   // from outside the app.
   return esc(`${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`);
+}
+
+/**
+ * The calendar day an ISO instant fell on, locally.
+ *
+ * `created_at` is stored as a UTC instant while every other date in the ledger
+ * is a calendar day on the local clock, the one `todayISO` settled on. Slicing
+ * the instant named the wrong day for anyone whose clock is not UTC: a trade
+ * added at 00:09 in Berlin was stamped as added the day before.
+ */
+function localDay(instant) {
+  const t = instant ? new Date(instant) : null;
+  if (!t || Number.isNaN(t.getTime())) return '';
+  const mo = String(t.getMonth() + 1).padStart(2, '0');
+  const d = String(t.getDate()).padStart(2, '0');
+  return `${t.getFullYear()}-${mo}-${d}`;
 }
 
 const esc = (s) =>
@@ -702,8 +719,31 @@ function refreshHints(form, trade, stage) {
       ]),
     ),
   };
+  // A rate belongs to a date. Once the form moves a stage to another day, the
+  // rate stored against that stage is no longer its rate, and converting at it
+  // showed a dollar figure the save would not produce: moving a repayment from
+  // 17 May to 15 July left the net gain at +$1,937.36, still converted at the
+  // rate published on 15 May. Dropping it is what the server does on the same
+  // edit, and it makes the preview fall back to the coin with "(converted on
+  // save)" underneath, which is the honest answer.
+  const saved = trade || {};
+  for (const s of FX_STAGES) {
+    if (merged[`${s}_date`] !== saved[`${s}_date`]) {
+      merged[`${s}_fx`] = null;
+      merged[`${s}_fx_date`] = null;
+    }
+  }
+
   const d = derive(merged);
   const set = (name, html) => {
+    // A field still flagged invalid is showing its error in this very slot.
+    // Typing in a sibling field used to paint a hint over it, leaving a red
+    // field explaining nothing, and the hint was computed from the value that
+    // had just been rejected: a repayment of 1 against a 52,500 loan read
+    // "Net gain +57,224.00". The error stays until that field is edited, at
+    // which point the input handler clears it before this runs.
+    const wrap = form.querySelector(`[data-field="${name}"]`);
+    if (wrap && wrap.classList.contains('is-invalid')) return;
     const el = form.querySelector(`[data-hint="${name}"]`);
     if (el) el.innerHTML = html;
   };
@@ -836,7 +876,12 @@ function stageSummary(stage, t, d) {
         row('ETH price', isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : RATE_MISSING) +
         (d.isPartialSale ? row2('Cost of ETH sold', money(d.costOfSoldEth, c), fxNote(d.costOfSoldEthUsd, d.fx.buy)) : '') +
         (d.isPartialSale ? row('Still held', eth(d.retainedEth)) : '') +
-        row2('Gross gain', signedMoney(d.grossGain, c), signedFxNote(d.grossGainUsd, d.fx.sell), gainClass(d.grossGain))
+        // No single rate to name: the proceeds are converted at the sale's
+        // rate and the cost basis at the purchase's, so quoting the sale rate
+        // here invited a reader to multiply by it and get a different number.
+        // Net gain and Loan cost, the other figures built from more than one
+        // rate, already pass null for the same reason.
+        row2('Gross gain', signedMoney(d.grossGain, c), signedFxNote(d.grossGainUsd, null), gainClass(d.grossGain))
       );
     case 'repay':
       // The interest the loan actually cost, which is what the net gain is
@@ -975,7 +1020,7 @@ function tradeRow(t, index, total) {
       ? `<tr class="detail"><td colspan="8">
           <div class="stages">${STAGES.map((s) => stageCard(s, t, d)).join('')}</div>
           <div class="detail__foot">
-            <span class="detail__note">Trade #${index} of ${total}, added ${fmtDate((t.created_at || '').slice(0, 10))}.</span>
+            <span class="detail__note">Trade #${index} of ${total}, added ${fmtDate(localDay(t.created_at))}.</span>
             <button class="btn btn--sm btn--danger" type="button" data-delete="${t.id}">Delete trade</button>
           </div>
         </td></tr>`
