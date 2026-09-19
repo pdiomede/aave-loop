@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.3] - 2026-09-19
+
+### Changed
+
+- Dropped the APR column from the trades table. The rate is still on the Borrowed card when a row is expanded.
+- Broke the page subtitle across two lines.
+
 ## [0.0.2] - 2026-09-19
 
 ### Changed

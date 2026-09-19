@@ -404,7 +404,6 @@ function tradeRow(t, index) {
         </span>
       </div>
     </td>
-    <td data-label="APR" class="num">${pct(t.borrow_apr)}</td>
     <td data-label="ETH" class="num">${
       isNum(t.buy_eth)
         ? `<span class="eth-cell">${ethMark}${ethQty(t.buy_eth)}</span>`
@@ -419,7 +418,7 @@ function tradeRow(t, index) {
   </tr>
   ${
     isOpen
-      ? `<tr class="detail"><td colspan="9">
+      ? `<tr class="detail"><td colspan="8">
           <div class="stages">${STAGES.map((s) => stageCard(s, t, d)).join('')}</div>
           <div class="detail__foot">
             <span class="detail__note">Trade #${index} of ${state.trades.length}, added ${fmtDate((t.created_at || '').slice(0, 10))}.</span>
@@ -444,7 +443,7 @@ function renderTable() {
   mount.innerHTML = `<table class="table">
     <thead>
       <tr>
-        <th>Trade</th><th>APR</th><th>ETH</th><th>Buy price</th><th>Sell price</th>
+        <th>Trade</th><th>ETH</th><th>Buy price</th><th>Sell price</th>
         <th>Days</th><th>Net gain</th><th>Annualized</th><th>Status</th>
       </tr>
     </thead>
