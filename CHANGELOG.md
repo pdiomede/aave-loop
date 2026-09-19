@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.11] - 2026-09-19
+
+The four low severity items left open by the 0.0.7 audit, all in the rate lookup.
+
+### Fixed
+
+- A backfill asked for one span running from the earliest date needing a rate to the latest. Two EURC trades six years apart pulled every business day in between: 2,435 days to fill two rates. The days are now grouped into runs, so the same pair costs two requests of eight days each. Each run opens a week early, so one starting on a weekend still has a published day to carry forward from.
+- A backfill had no bound on how long it could run. Each request was capped at 2.5 seconds but the number of them was not, so a ledger with many scattered dates held the browser's request open for minutes. A run now stops after twenty seconds, reports what it did not reach as still missing, and says there is more to fetch.
+- The ECB never publishes on a Saturday or a Sunday, so a weekend transaction is converted at Friday's rate permanently and correctly. `tradesWithSubstitutedFx` matched on the dates alone, which put every weekend trade in the list of replaceable stand-ins forever, to be re-fetched on every refresh and counted as still missing each time. Only transactions on a business day are listed now.
+- `derive` reported an exchange rate source inside each of the four stages, but a row stores one `fx_source` for all of them, so the four always agreed whether or not the rates came from the same fetch. The source is reported once for the row as `fxSource` instead of claiming a provenance per transaction.
+
 ## [0.0.10] - 2026-09-19
 
 ### Fixed

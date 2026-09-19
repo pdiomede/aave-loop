@@ -1175,9 +1175,13 @@ function wire() {
         .then(async (out) => {
           await loadTrades();
           render();
-          if (out.filled > 0) toast(`Filled in ${out.filled} exchange rate${out.filled === 1 ? '' : 's'}.`);
-          else if (out.offline) toast('Rate lookups are switched off.');
-          else toast(out.lastError || 'No rates could be fetched just now.');
+          // A run now stops at a time budget, so say when there is more to do
+          // rather than letting the banner sit there looking stuck.
+          const more = out.timedOut ? ' Press again for the rest.' : '';
+          if (out.filled > 0) {
+            toast(`Filled in ${out.filled} exchange rate${out.filled === 1 ? '' : 's'}.${more}`);
+          } else if (out.offline) toast('Rate lookups are switched off.');
+          else toast((out.lastError || 'No rates could be fetched just now.') + more);
         })
         .catch((err) => {
           // The re-render that would have replaced this button never happened,

@@ -17,6 +17,8 @@
 import { db, prepare, tradesMissingFx, tradesWithSubstitutedFx } from './db.js';
 import { pegOf, isUsdPegged, FX_STAGES, parseDate } from './lib/calc.js';
 
+const DAY_MS = 86400000;
+
 const FX_URL = (process.env.MYAAVE_FX_URL || 'https://api.frankfurter.app').replace(/\/+$/, '');
 const OFFLINE = process.env.MYAAVE_FX_OFFLINE === '1';
 const QUOTE = 'USD';
@@ -299,6 +301,50 @@ export function staleFxColumns(current, patch) {
 
 /* ---------------------------------------------------------------- backfill */
 
+/**
+ * Split the days that need a rate into runs worth fetching as one span.
+ * Asking for 2020-01-02..2026-09-01 to fill two rates six years apart pulls
+ * every business day in between; two small requests cost less here and at the
+ * service. A gap of about a month is where one request stops being cheaper
+ * than two.
+ */
+const SPAN_GAP_DAYS = 31;
+
+// Open each span a week early, so one that starts on a weekend or a holiday
+// still has a published day to carry forward from.
+const SPAN_LEAD_DAYS = 7;
+
+const shiftDays = (iso, days) =>
+  new Date(parseDate(iso) + days * DAY_MS).toISOString().slice(0, 10);
+
+function spansFor(sorted) {
+  const runs = [];
+  let start = null;
+  let prev = null;
+  for (const iso of sorted) {
+    if (start === null) {
+      start = iso;
+      prev = iso;
+      continue;
+    }
+    if (parseDate(iso) - parseDate(prev) > SPAN_GAP_DAYS * DAY_MS) {
+      runs.push([start, prev]);
+      start = iso;
+    }
+    prev = iso;
+  }
+  if (start !== null) runs.push([start, prev]);
+  return runs.map(([from, to]) => [shiftDays(from, -SPAN_LEAD_DAYS), to]);
+}
+
+/**
+ * However cold the cache, one backfill has to finish in a bounded time. Each
+ * request is capped at TIMEOUT_MS but the number of them was not, so a ledger
+ * with many scattered dates could hold the browser's request open for minutes.
+ * Whatever is left is reported as still missing and picked up next time.
+ */
+const BUDGET_MS = 20_000;
+
 const writeFx = (columns) =>
   prepare(`UPDATE trades SET ${columns.map((c) => `${c} = @${c}`).join(', ')}, updated_at = @updated_at WHERE id = @id`);
 
@@ -337,16 +383,36 @@ export async function backfillRates({ refresh = false } = {}) {
   }
 
   const resolved = new Map(); // `${currency}|${date}` -> rate record
+  const deadline = Date.now() + BUDGET_MS;
+  let timedOut = false;
+
   for (const [currency, dates] of wanted) {
     const sorted = [...dates].sort();
     if (sorted.length === 0) continue;
-    // One request for the whole span. On a refresh the cache would answer with
-    // the stand-in we are trying to replace, so go past it.
-    const span = await resolveRange(currency, sorted[0], sorted[sorted.length - 1]);
+
+    const span = new Map();
+    for (const [from, to] of spansFor(sorted)) {
+      if (Date.now() > deadline) {
+        timedOut = true;
+        break;
+      }
+      for (const [iso, hit] of await resolveRange(currency, from, to)) span.set(iso, hit);
+    }
+
     for (const date of sorted) {
-      const hit = span.get(date) ?? (refresh ? null : await resolveRate(currency, date));
+      // The cache is free, so it never spends the budget. On a refresh it would
+      // answer with the stand-in we are trying to replace, so go past it.
+      let hit = span.get(date) ?? (refresh ? null : cachedRate(currency, date));
+      if (!hit && !refresh) {
+        if (Date.now() > deadline) {
+          timedOut = true;
+          break;
+        }
+        hit = await resolveRate(currency, date);
+      }
       if (hit) resolved.set(`${currency}|${date}`, hit);
     }
+    if (timedOut) break;
   }
 
   let filled = 0;
@@ -386,5 +452,5 @@ export async function backfillRates({ refresh = false } = {}) {
   });
   apply();
 
-  return { scanned, filled, stillMissing, ...fxStatus() };
+  return { scanned, filled, stillMissing, timedOut, ...fxStatus() };
 }

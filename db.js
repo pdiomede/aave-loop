@@ -185,16 +185,28 @@ export function tradesMissingFx() {
  * Rows whose rate came from a day other than the day of the transaction. The
  * ECB had not published yet when these were entered, so asking again later can
  * replace a stand-in with the real thing.
+ *
+ * Only for a transaction on a business day. The ECB never publishes on a
+ * Saturday or a Sunday, so a weekend transaction is converted at Friday's rate
+ * permanently and correctly. Matching on the dates alone put every weekend
+ * trade in this list forever, to be re-fetched on every refresh and counted as
+ * still missing each time.
  */
+const IS_BUSINESS_DAY = (col) => `CAST(strftime('%w', ${col}) AS INTEGER) BETWEEN 1 AND 5`;
+
 export function tradesWithSubstitutedFx() {
   return prepare(`
     SELECT * FROM trades
     WHERE borrow_currency NOT IN (${PEGGED_SQL})
       AND (
-        (borrow_fx IS NOT NULL AND borrow_fx_date IS NOT borrow_date) OR
-        (buy_fx    IS NOT NULL AND buy_fx_date    IS NOT buy_date)    OR
-        (sell_fx   IS NOT NULL AND sell_fx_date   IS NOT sell_date)   OR
-        (repay_fx  IS NOT NULL AND repay_fx_date  IS NOT repay_date)
+        (borrow_fx IS NOT NULL AND borrow_fx_date IS NOT borrow_date
+           AND ${IS_BUSINESS_DAY('borrow_date')}) OR
+        (buy_fx    IS NOT NULL AND buy_fx_date    IS NOT buy_date
+           AND ${IS_BUSINESS_DAY('buy_date')})    OR
+        (sell_fx   IS NOT NULL AND sell_fx_date   IS NOT sell_date
+           AND ${IS_BUSINESS_DAY('sell_date')})   OR
+        (repay_fx  IS NOT NULL AND repay_fx_date  IS NOT repay_date
+           AND ${IS_BUSINESS_DAY('repay_date')})
       )
     ORDER BY borrow_date DESC, id DESC
   `).all();
