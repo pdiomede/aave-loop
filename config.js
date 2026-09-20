@@ -105,13 +105,20 @@ const FALLBACK_GROUP = 'your Telegram group';
  * when it cannot work. The sentence is shown in the alert window, so it is
  * written for someone who has not read this file.
  *
- * The token and the chat id are in here because the sender needs them. They
+ * The token and the chat ids are in here because the sender needs them. They
  * never leave the process: the API deliberately serves only `configured` and
  * `groupName`.
+ *
+ * `ownerId` is optional and changes nothing when it is absent. Set to your own
+ * user id it lets the bot answer you in a private chat as well as in the group,
+ * which is the only way to get Telegram's Menu button: that button is drawn in
+ * private chats and nowhere else, so in a group there is nothing to turn on.
+ * Alerts are unaffected and still go to the group alone.
  */
 export function telegramConfig() {
   const token = get('TELEGRAM_BOT_TOKEN');
   const chatId = get('TELEGRAM_CHAT_ID');
+  const ownerId = get('TELEGRAM_OWNER_ID');
   const groupName = get('TELEGRAM_GROUP_NAME') || FALLBACK_GROUP;
 
   let reason = null;
@@ -125,7 +132,7 @@ export function telegramConfig() {
     reason = 'TELEGRAM_CHAT_ID is missing from config.env.';
   }
 
-  return { configured: Boolean(token && chatId), token, chatId, groupName, reason };
+  return { configured: Boolean(token && chatId), token, chatId, ownerId, groupName, reason };
 }
 
 /** One line at startup. Said once, so it is read rather than scrolled past. */

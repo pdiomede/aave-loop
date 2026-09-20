@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.25] - 2026-09-20
+
+### Added
+
+- **`TELEGRAM_OWNER_ID`, optional**, so the bot answers commands in your own private chat as well as in the group. Unset, which it is unless you say otherwise, nothing changes. It exists because Telegram's Menu button - the list that opens from the message box - is drawn in private chats and nowhere else, so there was no way to reach it while the group was the only chat answered. A group shows a `/` icon instead, which is the same list one keystroke further away.
+- Alerts are unaffected and still go to `TELEGRAM_CHAT_ID` alone. The allowlist is the two ids and nothing else, and the log line for an ignored chat now names both keys.
+
 ## [0.0.24] - 2026-09-20
 
 The bot answers back: five commands, in the group and nowhere else.

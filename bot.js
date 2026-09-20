@@ -18,8 +18,10 @@
  * down means aborting it; without that, stopping the app would take up to fifty
  * seconds and look like a hang.
  *
- * Only the chat named in `TELEGRAM_CHAT_ID` is answered. The bot can be found
- * by anyone who knows its name, and `/holding` is the whole of a position.
+ * Only the chat named in `TELEGRAM_CHAT_ID` is answered, plus the private chat
+ * with whoever is named in the optional `TELEGRAM_OWNER_ID`. The bot can be
+ * found by anyone who knows its name, and `/holding` is the whole of a
+ * position, so everyone else is ignored without a reply.
  */
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -351,8 +353,18 @@ export async function runBotTick() {
   return { polled: true, handled: updates.length };
 }
 
+/**
+ * The chats whose commands are answered: the group, and optionally your own
+ * private chat with the bot. Nothing else, ever - the bot can be found by
+ * anyone who knows its name, and `/holding` is the whole of a position.
+ */
+function allowedChats() {
+  const { chatId, ownerId } = telegramConfig();
+  return new Set([chatId, ownerId].filter(Boolean).map(String));
+}
+
 async function handle(updates) {
-  const { chatId } = telegramConfig();
+  const allowed = allowedChats();
   let stale = 0;
   let handled = 0;
 
@@ -364,11 +376,14 @@ async function handle(updates) {
     // answered. One line per stranger per run, which is what makes two
     // otherwise baffling cases legible: messaging the bot privately, and a
     // group being upgraded to a supergroup, which changes its id.
-    if (String(msg.chat?.id) !== String(chatId)) {
-      const from = String(msg.chat?.id);
+    const from = String(msg.chat?.id);
+    if (!allowed.has(from)) {
       if (!state.seenForeign.has(from)) {
         state.seenForeign.add(from);
-        console.log(`A bot command arrived from chat ${from}, which is not TELEGRAM_CHAT_ID. Ignored.`);
+        console.log(
+          `A bot command arrived from chat ${from}, which is neither TELEGRAM_CHAT_ID nor ` +
+            'TELEGRAM_OWNER_ID. Ignored.',
+        );
       }
       continue;
     }
@@ -434,7 +449,8 @@ export function startBotPoller() {
 
   running = true;
   state.stopped = false;
-  console.log(`Bot commands are listening in ${groupName}.`);
+  const alsoDm = telegramConfig().ownerId ? ' and in your private chat' : '';
+  console.log(`Bot commands are listening in ${groupName}${alsoDm}.`);
   loop();
 }
 

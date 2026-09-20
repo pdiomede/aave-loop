@@ -87,6 +87,8 @@ The bot answers in the group named by `TELEGRAM_CHAT_ID`, and only there. It can
 
 `/help` lists them; `/start` does the same, because Telegram sends it by itself the first time a chat with a bot is opened. Anything unrecognised gets the same list. A `@name` suffix, capitals and trailing arguments are all fine: `/Price@aave_loop_bot now` is `/price`.
 
+**The Menu button is a private-chat feature.** Telegram draws it in a one-to-one chat with a bot and nowhere else; in a group the equivalent is the `/` icon in the message box, which appears once a bot with commands is a member. If you want the button, set the optional `TELEGRAM_OWNER_ID` to your own user id - a positive number, found the same way as the group's - and the bot will answer you privately as well. Everyone else is still ignored, and alerts still go to the group alone.
+
 Nothing registers these with Telegram, so the menu that appears as you type `/` is yours to set. Send `/setcommands` to [@BotFather](https://t.me/BotFather), pick the bot, and paste:
 
 ```
@@ -129,6 +131,7 @@ cp config.env.example config.env && chmod 600 config.env
 | `TELEGRAM_BOT_TOKEN` | the token from step 1 |
 | `TELEGRAM_CHAT_ID` | the id from step 3 |
 | `TELEGRAM_GROUP_NAME` | display only: shown in the alert window and at startup |
+| `TELEGRAM_OWNER_ID` | optional: your own user id, so the bot answers you privately too |
 
 **5. Restart, and read the line it prints.** The file is read once, when the process starts, so an app already running will not notice an edit. On the way up it says one of:
 
