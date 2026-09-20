@@ -207,12 +207,13 @@ export function alertMessage(trade, alert, price) {
 
   const gain = unrealisedUsd(d, price);
   if (gain !== null) {
-    const days = d.elapsedDays;
-    const since =
-      typeof days === 'number' && days > 0
-        ? ` after ${days} day${days === 1 ? '' : 's'} of interest`
-        : ' after interest';
-    lines.push(`Gain: ${gain >= 0 ? '+' : '-'}$${n2(Math.abs(gain))}${since}`);
+    // The cost is stated rather than alluded to. "After interest" on a loan
+    // taken out this morning claimed a deduction that had not happened yet,
+    // and on an older one it asked the reader to take the size of it on trust.
+    // `unrealisedUsd` is null unless this figure is a number, so it is one.
+    lines.push(
+      `Gain: ${gain >= 0 ? '+' : '-'}$${n2(Math.abs(gain))} after $${n2(d.accruedInterestUsd)} interest`,
+    );
   }
 
   return lines.join('\n');
