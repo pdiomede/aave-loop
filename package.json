@@ -1,6 +1,6 @@
 {
   "name": "myaave",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Aave Loop: track stablecoin and EURC borrow, ETH buy and sell, and repay cycles.",
   "type": "module",
   "private": true,

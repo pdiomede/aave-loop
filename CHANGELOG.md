@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.0.1] - 2026-09-20
+
+Two lines on the landing page that were breaking in the wrong places.
+
+### Fixed
+
+- **The call to action wrapped with one word alone on a second line.** "The app is private and asks for a password. If you do not have one, ask." comes to 54ch against `.cta__sub`'s 52ch measure - a nineteen pixel miss, which left `ask.` stranded underneath. It is sized to its content now rather than to a reading measure. Widening the shared measure would have fixed it too, and would have been a number tuned to this exact wording that breaks again, silently, the next time the wording changes; `fit-content` caps itself at the container, so a phone still wraps it. The 404 page keeps the 52ch measure, because its copy is a paragraph to read rather than a line to act on.
+
+### Changed
+
+- **The hero subtitle breaks between its two sentences.** "Borrow a stablecoin, buy ETH, sell it, repay the loan." now ends a line, and what the app does with those four moves starts the next. The ledger's own hero has done exactly this, with the same sentence, since it had a hero.
+
+### Notes
+
+- Verified by measurement rather than by eye: one line at 1440, 1024 and 768 pixels, two at 375 with no sideways scroll, and still centred - margins of 200.688 and 200.695 pixels either side.
+- **A pagination pass over both tables found nothing to fix.** Driven against 86 trades and 25 alerts: every page of both, the counters against the rows actually drawn, the short last page and the exact-multiple boundary, sorting from page three by header, by select and by direction toggle, emptying the last page a row at a time, deleting every alert from page two, creating a trade from page nine, and the condensed pager past seven pages. Recorded because the absence is the result.
+- `README.md` now points at the changelog and the licence from its first screen, and its Releasing section has moved to `CLAUDE.md`, which is where the next person cutting a release will be looking.
 ## [1.0.0] - 2026-09-20
 
 The first stable release.
