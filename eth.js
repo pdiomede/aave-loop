@@ -23,6 +23,10 @@ const ETH_URL = (process.env.MYAAVE_ETH_URL || 'https://api.coingecko.com/api/v3
 );
 const OFFLINE = process.env.MYAAVE_ETH_OFFLINE === '1';
 
+/** One coin, one call, and the three windows the bot reports. */
+const MARKETS_PATH =
+  '/coins/markets?vs_currency=usd&ids=ethereum&price_change_percentage=24h%2C7d%2C30d';
+
 /**
  * A fixed price, for trying the alert path without waiting for the market to
  * move. Set it and nothing here reaches the network at all.
@@ -77,17 +81,31 @@ function recordSuccess() {
 
 /* -------------------------------------------------------------------- cache */
 
-const selectPrice = () => prepare('SELECT price, fetched_at FROM eth_price WHERE id = 1');
+const selectPrice = () =>
+  prepare('SELECT price, fetched_at, change_24h, change_7d, change_30d FROM eth_price WHERE id = 1');
 
 const upsertPrice = () =>
   prepare(`
-    INSERT INTO eth_price (id, price, fetched_at) VALUES (1, @price, @fetched_at)
-    ON CONFLICT (id) DO UPDATE SET price = excluded.price, fetched_at = excluded.fetched_at
+    INSERT INTO eth_price (id, price, fetched_at, change_24h, change_7d, change_30d)
+    VALUES (1, @price, @fetched_at, @change_24h, @change_7d, @change_30d)
+    ON CONFLICT (id) DO UPDATE SET
+      price = excluded.price, fetched_at = excluded.fetched_at,
+      change_24h = excluded.change_24h, change_7d = excluded.change_7d,
+      change_30d = excluded.change_30d
   `);
+
+/** The three change windows, as fetched or as cached. Any of them may be null. */
+const changes = (row) => ({
+  change24h: pctOrNull(row?.change_24h),
+  change7d: pctOrNull(row?.change_7d),
+  change30d: pctOrNull(row?.change_30d),
+});
+
+const NO_CHANGES = { change24h: null, change7d: null, change30d: null };
 
 /** The cached price alone. Synchronous, and never reaches for the network. */
 export function cachedEthPrice() {
-  if (FIXED) return { price: FIXED, fetchedAt: new Date().toISOString(), ageMs: 0 };
+  if (FIXED) return { price: FIXED, fetchedAt: new Date().toISOString(), ageMs: 0, ...NO_CHANGES };
   // A timer can outlive the connection during shutdown, and better-sqlite3
   // throws rather than returning nothing when it does.
   if (!db.open) return null;
@@ -98,6 +116,7 @@ export function cachedEthPrice() {
     price: row.price,
     fetchedAt: row.fetched_at,
     ageMs: Number.isFinite(at) ? Math.max(0, Date.now() - at) : Infinity,
+    ...changes(row),
   };
 }
 
@@ -109,6 +128,16 @@ export function cachedEthPrice() {
  * through would read as "ETH has fallen" and fire every alert waiting for a
  * drop, all at once, and those messages cannot be unsent.
  */
+/**
+ * A change window that is not a number is simply not known.
+ *
+ * Deliberately not run through `validate` below. CoinGecko does return null for
+ * one of these now and then, and a price is not made wrong by a missing
+ * seven-day figure. Rejecting the whole answer over it would take the alert
+ * sweep off the air for the sake of a line in a chat message.
+ */
+const pctOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
 function validate(price) {
   if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
     return 'The price that came back was not a usable number.';
@@ -124,14 +153,14 @@ function validate(price) {
  * caller carries on without one.
  */
 export async function ethPrice({ maxAgeMs = FRESH_MS } = {}) {
-  if (FIXED) return { price: FIXED, fetchedAt: new Date().toISOString(), ageMs: 0 };
+  if (FIXED) return { price: FIXED, fetchedAt: new Date().toISOString(), ageMs: 0, ...NO_CHANGES };
 
   const hit = cachedEthPrice();
   if (hit && hit.ageMs <= maxAgeMs) return hit;
   if (networkIsOut()) return hit;
 
   try {
-    const res = await fetch(`${ETH_URL}/simple/price?ids=ethereum&vs_currencies=usd`, {
+    const res = await fetch(`${ETH_URL}${MARKETS_PATH}`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -156,7 +185,9 @@ export async function ethPrice({ maxAgeMs = FRESH_MS } = {}) {
     }
 
     const body = await res.json();
-    const price = body?.ethereum?.usd;
+    // The endpoint answers with an array of coins, one here because one was asked for.
+    const coin = Array.isArray(body) ? body[0] : null;
+    const price = coin?.current_price;
     const problem = validate(price);
     if (problem) {
       recordFailure(problem);
@@ -165,8 +196,15 @@ export async function ethPrice({ maxAgeMs = FRESH_MS } = {}) {
 
     recordSuccess();
     const fetchedAt = new Date().toISOString();
-    if (db.open) upsertPrice().run({ price, fetched_at: fetchedAt });
-    return { price, fetchedAt, ageMs: 0 };
+    const row = {
+      price,
+      fetched_at: fetchedAt,
+      change_24h: pctOrNull(coin.price_change_percentage_24h_in_currency),
+      change_7d: pctOrNull(coin.price_change_percentage_7d_in_currency),
+      change_30d: pctOrNull(coin.price_change_percentage_30d_in_currency),
+    };
+    if (db.open) upsertPrice().run(row);
+    return { price, fetchedAt, ageMs: 0, ...changes(row) };
   } catch (err) {
     recordFailure(
       err.name === 'TimeoutError' ? 'The price service did not answer in time.' : err.message,

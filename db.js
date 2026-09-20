@@ -94,9 +94,50 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS eth_price (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
     price      REAL    NOT NULL,
-    fetched_at TEXT    NOT NULL
+    fetched_at TEXT    NOT NULL,
+    change_24h REAL,
+    change_7d  REAL,
+    change_30d REAL
+  );
+
+  CREATE TABLE IF NOT EXISTS bot_state (
+    id            INTEGER PRIMARY KEY CHECK (id = 1),
+    holder        TEXT,
+    lease_until   TEXT,
+    next_offset   INTEGER NOT NULL DEFAULT 0,
+    watch         INTEGER NOT NULL DEFAULT 0,
+    watch_next_at TEXT,
+    updated_at    TEXT    NOT NULL
   );
 `);
+
+/**
+ * Everything the Telegram bot has to remember between one poll and the next,
+ * in one row.
+ *
+ * Telegram hands an update to exactly one caller of `getUpdates`, and a second
+ * caller gets an error rather than a copy. This app can legitimately be running
+ * twice against this same file, so one of the two has to be the one that polls:
+ * `holder` and `lease_until` are that lease, taken and renewed by the same kind
+ * of conditional UPDATE the alerts use to claim a firing.
+ *
+ * `next_offset` is how far Telegram has been told we have read. It lives here
+ * rather than in a variable because that is precisely what makes a handover
+ * safe: whoever picks the lease up carries on from where the last holder got
+ * to, instead of from whatever its own memory happened to say. It shares the
+ * row with the lease because advancing it and renewing the lease have to be one
+ * statement - only the holder may move it.
+ *
+ * `watch` and `watch_next_at` are the price report every twenty minutes. The
+ * deadline is stored, not just the switch: keeping only the switch would reset
+ * the phase on every restart, and a process that crashes and comes back would
+ * send a report each time it did.
+ *
+ * Every time written here comes from JavaScript, never from SQLite's own
+ * `datetime('now')`. The lease is compared as text, which is exact for ISO
+ * strings ending in Z and quietly wrong for anything shaped differently. That
+ * is also why the row is seeded from bot.js rather than in the DDL above.
+ */
 
 /**
  * A price alert, and the last ETH price anyone looked up.
@@ -132,6 +173,10 @@ db.exec(`
  * leaves an existing table exactly as it found it. So read the shape back and
  * add only what is missing. Every ledger written before exchange rates existed
  * has to keep opening, unchanged, without anyone running a migration by hand.
+ *
+ * The same is true of the price cache, which gained the three change windows
+ * when the bot learned to report them: an install from before that has a table
+ * three columns short, and CREATE TABLE above will not touch it.
  */
 const FX_COLUMN_TYPES = [
   ['borrow_fx', 'REAL'],
@@ -145,16 +190,25 @@ const FX_COLUMN_TYPES = [
   ['fx_source', 'TEXT'],
 ];
 
-function addMissingColumns() {
-  const present = new Set(db.pragma('table_info(trades)').map((c) => c.name));
-  const missing = FX_COLUMN_TYPES.filter(([name]) => !present.has(name));
+const ETH_MARKET_COLUMNS = [
+  ['change_24h', 'REAL'],
+  ['change_7d', 'REAL'],
+  ['change_30d', 'REAL'],
+];
+
+function addMissingColumns(table, columns) {
+  const present = new Set(db.pragma(`table_info(${table})`).map((c) => c.name));
+  const missing = columns.filter(([name]) => !present.has(name));
   for (const [name, type] of missing) {
-    db.exec(`ALTER TABLE trades ADD COLUMN ${name} ${type}`);
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }
   return missing.length;
 }
 
-db.transaction(addMissingColumns)();
+db.transaction(() => {
+  addMissingColumns('trades', FX_COLUMN_TYPES);
+  addMissingColumns('eth_price', ETH_MARKET_COLUMNS);
+})();
 
 export const FIELDS = [
   'borrow_date',

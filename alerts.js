@@ -20,9 +20,10 @@
  * switch it off.
  */
 import { db, prepare } from './db.js';
-import { derive } from './lib/calc.js';
+import { derive, unrealisedUsd } from './lib/calc.js';
 import { ethPrice } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
+import { n2, n4, fmtDate } from './format.js';
 
 /**
  * Fifteen minutes. The price is checked on a schedule rather than watched, and
@@ -167,17 +168,6 @@ export function deleteAlert(tradeId) {
 
 /* ------------------------------------------------------------------ message */
 
-const n2 = (v) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const n4 = (v) => Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** The same "20 Sep 2026" the interface shows, so the two read alike. */
-function fmtDate(iso) {
-  if (!iso) return '';
-  const [y, m, d] = String(iso).split('-');
-  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
-}
-
 /**
  * What lands in the group. Written to be read on a phone, at a glance, by
  * someone who has not opened the ledger: the headline first, then enough of
@@ -238,25 +228,6 @@ export function previewMessage(trade, goalPrice, price = null) {
     // out once the goal is reached, so those are the figures it will carry.
     goalPrice,
   );
-}
-
-/**
- * What the position is up or down, right now, at a given price.
- *
- * `lib/calc.js` cannot work this out on its own: it has no idea what ETH costs
- * today, so its projected gain begins only once the ETH is sold and the
- * proceeds are a fact. Here there is a live price, so the same subtraction can
- * be done a stage earlier: what the ETH would fetch, less what was spent on
- * it, less the interest the loan has run up in the meantime.
- *
- * Null whenever any part of that is unknown, which on a loan in a currency
- * that is not a dollar means until its exchange rate has been looked up. A
- * gain missing a term is not a smaller gain, it is a wrong one.
- */
-function unrealisedUsd(d, price) {
-  if (!Number.isFinite(d.ethHeld) || !Number.isFinite(price)) return null;
-  if (!Number.isFinite(d.buyUsd) || !Number.isFinite(d.accruedInterestUsd)) return null;
-  return d.ethHeld * price - d.buyUsd - d.accruedInterestUsd;
 }
 
 /* -------------------------------------------------------------------- sweep */

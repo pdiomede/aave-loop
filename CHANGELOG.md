@@ -3,6 +3,38 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.24] - 2026-09-20
+
+The bot answers back: five commands, in the group and nowhere else.
+
+### Added
+
+- **`/price`, `/holding`, `/summary`, `/watch` and `/unwatch`**, plus `/help` and `/start` which list them. `/holding` is one line per open position with the ETH, what was paid, the unrealised gain, the days held and the alert if there is one; `/summary` is the four figures above the table, built from the same `summarize()` the page uses so the two cannot disagree. `/watch` sends the price report every twenty minutes until `/unwatch`, survives a restart, and carries on from where it was rather than reporting on every boot.
+- **`bot.js`**, reading commands by long polling. Nothing has to be reachable from the internet, which a webhook would have required of an app that binds loopback behind basic auth.
+- **`report.js`** builds every message as a pure function, so the exact text can be printed with `node -e` before anyone receives it, and **`format.js`** holds the number and date formatting the bot and the alerts now share.
+- `lib/calc.js` gains `unrealisedUsd`, moved out of `alerts.js` now that two callers want it. It takes the price as an argument, so the module stays as pure as the rest of it.
+
+### Changed
+
+- **One price source.** `eth.js` moves from `/simple/price` to `/coins/markets`, which answers with the 24h, 7d and 30d change alongside the price, in one keyless call. A second fetcher would have meant two cooldowns that know nothing of each other pointed at one shared rate limit. `eth_price` gains three nullable columns, added by the migration on open.
+- `sendTelegramMessage` takes an optional `parseMode`. Alerts and the test message are unchanged plain text; only the bot's own tables ask for HTML, because Telegram draws message text proportionally and columns line up nowhere but inside a `pre`.
+- Commands can only be named in letters, digits and underscore, so `/watch` and `/unwatch` rather than the `/price-on` and `/price-off` first asked for: a hyphen ends the command, and `/price-on` arrives as `/price` followed by the text `-on`.
+
+### Security
+
+- **Only `TELEGRAM_CHAT_ID` is answered.** A bot is discoverable by username and `/holding` is the whole of a position, so a command from any other chat is confirmed and dropped without a reply. One log line per unknown chat per run, which is what makes the two confusing cases legible: messaging the bot privately, and a group being upgraded to a supergroup, which changes its id.
+- Nothing calls `setMyCommands` or `deleteWebhook`. Both change the bot for every chat it is in, and neither is this app's to decide.
+
+### Notes
+
+- **Telegram hands each update to one caller of `getUpdates` and refuses the second**, so the two instances this app already tolerates would have stolen each other's commands. A lease in `bot_state`, taken with the same conditional UPDATE the alerts use to claim a firing, settles which one polls; the other never calls Telegram at all. Verified with two instances against one database: one reply to one command, and takeover within seconds of killing the holder.
+- **The offset lives in the database, and is committed before a command is answered**, so a handover resumes where the last holder got to rather than from whatever a variable happened to say. At-most-once on purpose: a crash between the two loses a command, which costs six keystrokes, where the other order could put the same message in the group twice.
+- **A long poll is aborted on shutdown.** There is no `unref` for a fetch, so without that, stopping the app waited out the rest of a fifty second request. Measured: 0.3s against a server that never answers.
+- Commands older than ten minutes are confirmed and not answered, so coming back from an afternoon of downtime does not fire an afternoon of replies.
+- A rejected token stops the loop after one attempt rather than retrying forever; a 409 backs off and, when it names a webhook, says how to remove it.
+- `README.md` step 3 gained a warning: `curl .../getUpdates` to find the chat id only works before the app is running, or with `MYAAVE_BOT_OFF=1`, because the app is now the other reader of that queue.
+- Verified by execution: every command including `@name`, capitals, arguments and nonsense; a foreign chat; a stale backlog; the lease and its handover; shutdown mid-poll; 401 and 409; a trade with no exchange rate showing a dash rather than being summed; and an alert still sending plain text with no `parse_mode`.
+
 ## [0.0.23] - 2026-09-20
 
 The app wears its own mark, and the name comes off the social card.

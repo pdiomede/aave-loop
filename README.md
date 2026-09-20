@@ -73,6 +73,33 @@ The price comes from CoinGecko, which answers without a key, and is checked ever
 
 Sending needs a Telegram bot of its own, set up once in `config.env`. Without that file nothing breaks: the bell works, goals are saved and kept, and the window says what is missing.
 
+## Bot commands
+
+The bot answers in the group named by `TELEGRAM_CHAT_ID`, and only there. It can be found by anyone who knows its username, and `/holding` is the whole of your position, so a command from any other chat is ignored without a reply.
+
+| Command | Returns |
+| --- | --- |
+| `/price` | ETH now, with 24h, 7d and 30d change |
+| `/holding` | every open position, one line each, with the total and what it is worth |
+| `/summary` | realized net gain, blended annualized, closed trades, open positions |
+| `/watch` | the price report every twenty minutes |
+| `/unwatch` | stops it |
+
+`/help` lists them; `/start` does the same, because Telegram sends it by itself the first time a chat with a bot is opened. Anything unrecognised gets the same list. A `@name` suffix, capitals and trailing arguments are all fine: `/Price@aave_loop_bot now` is `/price`.
+
+Nothing registers these with Telegram, so the menu that appears as you type `/` is yours to set. Send `/setcommands` to [@BotFather](https://t.me/BotFather), pick the bot, and paste:
+
+```
+price - ETH price now, with 24h, 7d and 30d change
+holding - open positions, one line each
+summary - realized gain, annualized, closed and open
+watch - send the price every 20 minutes
+unwatch - stop the price updates
+help - what this bot can do
+```
+
+`/watch` survives a restart and carries on from where it was rather than reporting on every boot. Commands are read by long polling, so nothing needs to be reachable from the internet; and because Telegram allows only one reader per bot, two copies of the app running against one database settle it between themselves with a lease — one polls, the other waits, and it changes hands on its own if the first stops.
+
 ## Setting up config.env
 
 Alerts are the one part of this app that speaks to the outside world on your behalf, so they need a bot and somewhere to send to. Five minutes, once.
@@ -87,7 +114,9 @@ Alerts are the one part of this app that speaks to the outside world on your beh
 curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*'
 ```
 
-It has to be a `/` message: a bot in a group gets Telegram's privacy mode by default and is shown only commands and replies to itself, so ordinary chat leaves `getUpdates` empty and looks like a failure. The id is negative, and begins `-100` for a supergroup. Privacy mode has no bearing on anything after this step, because the app only ever sends.
+It has to be a `/` message: a bot in a group gets Telegram's privacy mode by default and is shown only commands and replies to itself, so ordinary chat leaves `getUpdates` empty and looks like a failure. The id is negative, and begins `-100` for a supergroup. Privacy mode has no bearing on anything after this step.
+
+**Do this before the app is running**, or start it with `MYAAVE_BOT_OFF=1` while you do. The app reads commands from the same queue this curl reads, and only one reader is allowed: with it running, this either answers `409 Conflict` or hands back an empty list it has already taken.
 
 **4. Write the file**, in the directory the app runs from:
 
@@ -105,7 +134,14 @@ cp config.env.example config.env && chmod 600 config.env
 
 ```
 Price alerts will message Aave Loop Alerts.
+Bot commands are listening in Aave Loop Alerts.
+```
+
+or, if something is missing:
+
+```
 Price alerts are not configured: TELEGRAM_CHAT_ID is missing from config.env.
+Bot commands are off: TELEGRAM_CHAT_ID is missing from config.env.
 ```
 
 **6. Send a test**, rather than waiting for the market to tell you whether it works:
@@ -133,6 +169,9 @@ fx.js          exchange rate lookup and cache, server only
 eth.js         ETH spot price lookup and cache, server only
 telegram.js    sending one message to a group, server only
 alerts.js      price alerts and the timer that checks them, server only
+bot.js         reads commands from Telegram and answers them, server only
+report.js      builds what the bot says, server only
+format.js      number and date formatting for those messages, server only
 config.js      reads config.env, server only
 lib/calc.js    all formulas, shared by the server and the browser
 public/        interface

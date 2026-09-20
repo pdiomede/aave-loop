@@ -27,6 +27,7 @@ import {
   startAlertPoller,
   stopAlertPoller,
 } from './alerts.js';
+import { startBotPoller, stopBotPoller } from './bot.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -658,6 +659,7 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   // leave a poller running in a process that is on its way out.
   reportConfig();
   startAlertPoller();
+  startBotPoller();
 });
 
 server.on('error', (err) => {
@@ -667,6 +669,7 @@ server.on('error', (err) => {
     console.error(err);
   }
   stopAlertPoller();
+  stopBotPoller();
   closeDb();
   process.exit(1);
 });
@@ -677,8 +680,10 @@ function shutdown(signal) {
   shuttingDown = true;
   console.log(`\n${signal} received, shutting down.`);
   // Before the database closes, or a tick landing mid-shutdown finds the
-  // connection gone.
+  // connection gone. The bot poller also aborts its long poll here, without
+  // which stopping would wait out the rest of a fifty second request.
   stopAlertPoller();
+  stopBotPoller();
   server.close(() => {
     closeDb();
     process.exit(0);
@@ -694,6 +699,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => shutdown(si
 process.on('uncaughtException', (err) => {
   console.error(err);
   stopAlertPoller();
+  stopBotPoller();
   closeDb();
   process.exit(1);
 });

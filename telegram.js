@@ -25,11 +25,18 @@ const redact = (text) => String(text ?? '').replace(/bot\d+:[A-Za-z0-9_-]+/g, 'b
 /**
  * Send one message. Never throws.
  *
- * Deliberately no `parse_mode`. Plain text has nothing to escape; in HTML or
- * Markdown a group name with an underscore or a `<` in it fails the whole
- * send, and the first anyone would know is a message that never arrived.
+ * Plain text by default, and every caller that carries a figure or a name from
+ * outside this app leaves it that way. In HTML or Markdown a group name with an
+ * underscore or a `<` in it fails the whole send, and the first anyone would
+ * know is a message that never arrived.
+ *
+ * `parseMode` is opt-in for the one case that has earned it: a table of numbers
+ * this app built itself. Telegram draws message text in a proportional font, so
+ * columns only line up inside a `<pre>`, and a report nobody can read down is
+ * not much of a report. Whatever asks for it escapes its own content and has a
+ * plain-text fallback ready.
  */
-export async function sendTelegramMessage(text) {
+export async function sendTelegramMessage(text, { parseMode = null } = {}) {
   const { configured, token, chatId, reason } = telegramConfig();
   if (!configured) return { ok: false, retryable: false, error: reason };
 
@@ -37,7 +44,12 @@ export async function sendTelegramMessage(text) {
     const res = await fetch(`${API}/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true,
+        ...(parseMode ? { parse_mode: parseMode } : {}),
+      }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
 
