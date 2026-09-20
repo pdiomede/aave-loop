@@ -27,7 +27,7 @@ A trade is created with the borrow alone, then each stage is added as it happens
 | Sell ETH | date, ETH sold, amount received | `SOLD` |
 | Repay | date, amount repaid | `CLOSED` |
 
-**Trades** is the history table; expand a row to see its four stages and edit them. **Summary** reports performance by currency, net gain by month closed, best and worst trade, interest paid, win rate, total borrowed and average hold. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money.
+**Trades** is the history table; expand a row to see its four stages and edit them. **Summary** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed and average hold. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money.
 
 ## The math
 

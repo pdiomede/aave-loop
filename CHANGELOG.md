@@ -3,6 +3,40 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.35] - 2026-09-20
+
+What ETH costs, in the header on every tab, and a Performance card that ranks a gain two ways.
+
+### Added
+
+- **The ETH price in the header**, beside the theme toggle, with the 1h, 24h and 7d change beside it. The header sits outside the three views, so one ticker serves Trades, Summary and Alerts. It refreshes every five minutes, stops asking while the tab is hidden, and keeps the last figure it had when the price service cannot be reached rather than turning into an error message.
+- `GET /api/eth`, its own route. `/api/alerts` carries the armed-alert map and the Telegram configuration and dropped the change windows before answering, so polling that to read one number was the wrong shape - the same argument that split the alert log out in 0.0.33.
+- **The 1h window**, which did not exist anywhere before. `/coins/markets` takes it in the comma list the other three already use, so it is one more field on a call that was being made anyway: no second request and no second cooldown. `eth_price` gains a nullable `change_1h`, added by the migration that is already there for exactly this. 30d is still fetched and still reported by `/price` in Telegram; the ticker just does not draw it.
+- **Biggest and smallest gain in %**, ranked on the annualized rate rather than the dollars, beside the two that already ranked on dollars. The two orders disagree, which is the point of showing both: a four day trade that made $75 can be the best return on the ledger and the smallest cheque on it at the same time.
+
+### Changed
+
+- **The Performance card is three tiles then four.** The general figures keep the first row; the second reads gain, loss, gain, loss, so the dollar pair and the rate pair sit one above the other and the same trade can be found in both columns.
+- **Win rate is gone** from the card. `winRate`, `wins` and `losses` are still on `GET /api/summary`, because removing a tile is a display decision and an external caller should not lose fields over it.
+- **"Biggest gain" and "Smallest gain" say in USD**, and both pairs still flip to "Biggest loss" once a losing trade exists - the card must not call the worst thing on a ledger the smallest gain.
+- The two ranking tooltips said "Ranked by dollars made, not by the annualized rate", written to stop the rate being mistaken for the ranking key. Two tiles now rank on exactly that, so all four are rewritten, and the rate ones warn that a same-day trade is scaled to a full year from one day of capital and can post an enormous figure on a small gain.
+- `MYAAVE_ETH_POLL_MS` overrides the ticker interval, as `MYAAVE_ALERT_POLL_MS` does for the sweep. Five minutes is a long time to sit watching a ticker to find out whether it ticks. The page refuses anything under thirty seconds whatever the server says.
+
+### Fixed
+
+Four found in the ticker after it was written, each reproduced before the fix and again after.
+
+- **The header and the alert window could show two different ETH prices at once.** Opening the bell asks for a price no more than a minute old while the ticker settles for five, so the window read $3,333.00 with the header above it still reading $3,000.00 - and that window is where a goal is set against the figure. `/api/alerts` now carries the change windows too, so one answer feeds both and the newer of the two always wins.
+- **The same figure was drawn in two colours.** A movement of -0.04% and one of +0.02% both print `0.0%`, and they sat side by side in the header one red and one green. The sign already came from the figure as printed - that is the rule 0.0.32 introduced for `-$0.00` - and now the colour does too: a movement too small to show is drawn flat, because it is neither up nor down.
+- **The row could not be read out or copied.** The gaps between the price and the badges, and between each label and its figure, are drawn by flex, so the text itself ran together as `ETH: $3,000.001h+1.4%24h-1.5%`. The spaces are in the markup now; flex drops them on the way to the screen, so nothing moved.
+- **Every switch back to the tab fired a request.** Ten alt-tabs in ten seconds were ten round trips - through nginx and basic auth on the deployed app - none of which could return anything new, because the server serves the same cached figure for five minutes. It asks on return only when the figure it holds is actually due.
+
+### Notes
+
+- **One call to the price service per five minutes, however many tabs are open.** Measured: 60 requests fired at two instances sharing one database file produced two calls, one per process, and then none. `ethPrice` shares a request between concurrent callers and caches the answer on disk, and any fetch resets that cache for everyone. This is the number that matters - going past the free tier's limit parks the whole module for ten minutes and takes the alert sweep's own price lookups with it.
+- Verified by execution: the `change_1h` column arriving on a database written before this release and on one created after, with no second add on re-open; a price service that has never heard of the 1h window, which leaves the badge off rather than breaking; a null 7d, likewise; a dead price service leaving the last good figure and no unhandled rejection; a cold start with no cached price at all, where the two calls race and the priced answer wins; the interval picking up a move on its own; the header at 1440, 1000, 901, 900, 800, 761, 760, 500 and 375px in both themes, with no sideways scroll and the row dropping under the nav below 760; and the two rankings naming different trades, with a trade whose rate cannot be worked out winning neither.
+- A window with an absurd value was tested too - it renders wide but the header absorbs it at every width, so nothing was changed for it.
+
 ## [0.0.34] - 2026-09-20
 
 An audit of the three views. Nine findings, every one reproduced before it was fixed and again after: five in the Alerts view, two in the Summary and two in the Trades table. Nothing was invented to reach a number, and the Trades table's own count is two because that is what was there.

@@ -237,6 +237,74 @@ a.brand {
   background: var(--accent);
 }
 
+/* ---------------------------------------------------------------- ticker */
+
+/*
+ * What ETH costs, in the header. `.nav` carries `margin-right: auto`, so this
+ * and the theme toggle sit together on the right with nothing else to say.
+ *
+ * Empty until a price arrives, and hidden while it is, so a price service that
+ * never answers leaves a header that looks exactly as it did before.
+ */
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticker:empty {
+  display: none;
+}
+
+.ticker__price {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/*
+ * Built on the shape `.chip` sets rather than `.pill`, which injects a 6px dot
+ * through `.pill::before` that would have to be undone here.
+ */
+.ticker__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The window's name is the label, not the figure, so it stays quiet while the
+   percentage beside it takes the colour. */
+.ticker__win {
+  color: var(--text-muted);
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.ticker__chip--pos {
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+
+.ticker__chip--neg {
+  background: var(--negative-soft);
+  color: var(--negative);
+}
+
+/* A movement too small to show. It keeps the plain chip colours rather than
+   being painted up or down, because `0.0%` is neither. */
+.ticker__chip--flat {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
 /* --------------------------------------------------------------- buttons */
 
 .btn {
@@ -999,18 +1067,37 @@ th[aria-sort="ascending"] .th-sort__caret {
   grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
 }
 
-/* The six figures on the Performance card, as tiles.
-   Six read better as a grid than as two columns of a list, and a tile leaves
-   room for the line under a figure that qualifies it - the split of a win rate,
-   or which trade a gain belongs to - without it looking like a second value.
-   auto-fit means three across on a wide screen, two on a tablet, one on a
-   phone, with no breakpoint of its own. */
+/* The seven figures on the Performance card, as tiles.
+   They read better as a grid than as two columns of a list, and a tile leaves
+   room for the line under a figure that qualifies it - which trade a gain
+   belongs to, and at what rate - without it looking like a second value.
+   auto-fit means four across on a wide screen, stepping down on its own with
+   no breakpoint of its own. */
 .perf-grid {
   display: grid;
   gap: 12px;
-  /* 300px settles at three across on a desktop, so six tiles are two clean
-     rows rather than four and a gap; two on a tablet, one on a phone. */
-  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  /* The shell is 1180px with 24px gutters and the card body adds 20px a side,
+     so the grid has 1092px at full width: four columns at a 12px gap is 264px
+     each, and a 240px floor is what settles it there. Below that it takes
+     three, then two, then one. The seventh tile leaves the last slot of the
+     second row empty, which is the arrangement that was asked for - auto-fit
+     does not collapse that track, because column four is filled in row one. */
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+}
+
+/*
+ * The first of the four extremes starts a fresh row, which is what splits the
+ * card three and four: the general figures keep the first row, and the second
+ * reads gain, loss, gain, loss - so the dollar pair and the rate pair sit one
+ * above the other and the same trade can be found in both.
+ *
+ * Left unconditional. Once the grid is down to two columns the break puts a gap
+ * after Average hold instead, which separates the three figures about the whole
+ * ledger from the four about single trades, and reads as a divider rather than
+ * a hole.
+ */
+.perf--row-start {
+  grid-column-start: 1;
 }
 
 .perf {
@@ -1609,6 +1696,18 @@ th[aria-sort="ascending"] .th-sort__caret {
 /* ------------------------------------------------------------ responsive */
 
 @media (max-width: 900px) {
+  /* The header is still one row here and cannot hold all three windows beside
+     the brand and the nav. 24h is the one read first, so it is the one kept;
+     below 760 the row wraps and they all come back. */
+  .ticker__chip[data-window="1h"],
+  .ticker__chip[data-window="7d"] {
+    display: none;
+  }
+
+  .ticker__price {
+    font-size: 12.5px;
+  }
+
   /* The band between the card layout taking over and a table having room for
      its own padding. Seven columns at 14px a side is 196px of air, which on a
      768px screen is what put the Delete button past the right edge and gave
@@ -1677,6 +1776,33 @@ th[aria-sort="ascending"] .th-sort__caret {
     flex: 1;
     text-align: center;
     padding: 8px 10px;
+  }
+
+  /* A row of its own, under the nav that already took one. It has the full
+     width here, so every window is worth drawing again.
+     It wraps, and that is load bearing rather than tidiness: the price and the
+     three badges come to 344px and a 375px phone leaves 343px between the
+     gutters, so a nowrap row cannot shrink to fit and pushed itself out past
+     both of them, clipping the E off ETH. Wrapping drops the min-content width
+     to that of the widest single badge. */
+  .ticker {
+    order: 4;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    column-gap: 8px;
+    row-gap: 6px;
+    /* The header goes full bleed at this width - `.header__inner`'s padding
+       shorthand drops the 16px `.shell` gives every other block - and a logo or
+       a filled segmented control carries that. A bare price label against the
+       screen edge does not, so this row takes the gutter back and lines up with
+       the hero title underneath it. The rest of the header is left as it is. */
+    padding: 0 16px;
+  }
+
+  .ticker__chip[data-window="1h"],
+  .ticker__chip[data-window="7d"] {
+    display: inline-flex;
   }
 
   /* A segmented control reads better than an underline on a wrapped header. */

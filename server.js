@@ -474,6 +474,17 @@ app.post('/api/fx/backfill', async (req, res, next) => {
 /* ------------------------------------------------------------ price alerts */
 
 /**
+ * How fresh the header ticker asks for its price to be, and how often the page
+ * polls for it. One number so the two cannot drift: asking more often than the
+ * cache allows would return the same figure and spend a request doing it.
+ *
+ * Overridable for the same reason `MYAAVE_ALERT_POLL_MS` is - five minutes is
+ * a long time to sit watching a ticker to find out whether it ticks. The page
+ * refuses anything under thirty seconds whatever this says.
+ */
+const ETH_TICKER_MS = Number(process.env.MYAAVE_ETH_POLL_MS) || 300_000;
+
+/**
  * Everything the alert window needs, in one call: whether there is anywhere to
  * send a message, what ETH last cost, and every alert keyed by its trade.
  *
@@ -500,10 +511,71 @@ app.get('/api/alerts', async (req, res, next) => {
     const quote = cachedEthPrice();
     res.json({
       config: { configured, chatName, reason },
+      // The change windows ride along, so this answer can feed the header
+      // ticker as well as the window. Without them the page had two sources
+      // for one price: opening the bell refreshes at a tighter freshness than
+      // the ticker polls at, so the window showed $3,333 while the header
+      // beside it still said $3,000.
       eth: quote
-        ? { price: quote.price, fetchedAt: quote.fetchedAt, stale: quote.ageMs > alertPollMs }
+        ? {
+            price: quote.price,
+            fetchedAt: quote.fetchedAt,
+            ageMs: quote.ageMs,
+            stale: quote.ageMs > alertPollMs,
+            change1h: quote.change1h,
+            change24h: quote.change24h,
+            change7d: quote.change7d,
+          }
         : { price: null, fetchedAt: null, stale: true, reason: ethStatus().lastError },
       alerts: armedAlerts(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * What ETH costs, for the ticker in the page header.
+ *
+ * Its own route rather than a field on /api/alerts, which is the same argument
+ * that split the alert log out below: that one carries the armed-alert map and
+ * the Telegram configuration, and a header that asks every five minutes has no
+ * use for either. It also strips the change windows, which are the whole point
+ * here.
+ *
+ * `maxAgeMs` is the refresh interval the page polls at, so a cached price is
+ * served without a fetch and this endpoint reaches the price service at most
+ * once in five minutes however many tabs are open - `ethPrice` shares one
+ * request between concurrent callers and caches the answer on disk, and the
+ * alert sweep asks on the same window. Going past the free tier's limit would
+ * not just stop the ticker: a 429 parks the whole module for ten minutes and
+ * takes the alert sweep's price lookups with it.
+ */
+app.get('/api/eth', async (_req, res, next) => {
+  try {
+    const quote = await ethPrice({ maxAgeMs: ETH_TICKER_MS });
+    // `pollMs` is served rather than written into the page, so the cadence the
+    // browser polls at and the freshness this endpoint enforces are one number.
+    if (!quote) {
+      return res.json({
+        price: null,
+        fetchedAt: null,
+        stale: true,
+        pollMs: ETH_TICKER_MS,
+        reason: ethStatus().lastError,
+      });
+    }
+    res.json({
+      pollMs: ETH_TICKER_MS,
+      price: quote.price,
+      fetchedAt: quote.fetchedAt,
+      ageMs: quote.ageMs,
+      // The same threshold /api/alerts uses, so the two never disagree about
+      // whether the figure on screen is old.
+      stale: quote.ageMs > alertPollMs,
+      change1h: quote.change1h,
+      change24h: quote.change24h,
+      change7d: quote.change7d,
     });
   } catch (err) {
     next(err);

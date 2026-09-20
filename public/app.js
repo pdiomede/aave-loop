@@ -68,6 +68,37 @@ function pct(v, digits = 2) {
   return `${v.toFixed(digits)}%`;
 }
 
+/**
+ * The same figure carrying its sign, for a place where the direction is the
+ * point: a price movement, or a return set beside a dollar one that already
+ * reads `+$2,531.00`.
+ *
+ * The sign comes from the figure as printed, not as held, so -0.04 at one
+ * decimal is `0.0%` rather than `-0.0%` - a minus on a figure whose digits are
+ * all zero reads as a fall that did not happen. `format.js` applies the same
+ * rule server-side; this is its counterpart, because nothing in `format.js` is
+ * served to the browser.
+ */
+function signedPct(v, digits = 2) {
+  if (!isNum(v)) return '';
+  const shown = Math.abs(v).toFixed(digits);
+  return `${Number(shown) === 0 ? '' : v < 0 ? '-' : '+'}${shown}%`;
+}
+
+/**
+ * Up, down, or neither - decided on the figure as printed, exactly as the sign
+ * above it is.
+ *
+ * `gainClass` reads the number as held, which on a movement too small to show
+ * disagrees with the digits beside it: -0.04% and +0.02% both print `0.0%`, and
+ * the pair sat in the header one red and one green. Same figure, two colours.
+ */
+function pctClass(v, digits = 2) {
+  if (!isNum(v)) return '';
+  if (Number(Math.abs(v).toFixed(digits)) === 0) return 'flat';
+  return v < 0 ? 'neg' : 'pos';
+}
+
 function fmtDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -165,9 +196,6 @@ const TIPS = {
     'The other half of what the loan cost: the principal revalued between the day you ' +
     'borrowed and the day you repaid. A negative figure means the currency moved your way ' +
     'and the loan cost less than the interest alone. Always zero on a dollar loan.',
-  winRate:
-    'The share of closed trades that finished above water, counted only where the dollar ' +
-    'result is known. A trade that came out exactly flat counts as neither a win nor a loss.',
   totalBorrowed:
     'Everything ever borrowed, open trades included, each loan valued at the rate on its own ' +
     'borrow date. A running total, not the amount currently at risk. A trade still waiting on ' +
@@ -175,8 +203,22 @@ const TIPS = {
   avgHold:
     'Mean days from borrowing to repaying, over the same closed trades the figures above are ' +
     'built from.',
-  best: 'Ranked by dollars made, not by the annualized rate.',
-  worst: 'Ranked by dollars, not by the annualized rate.',
+  best:
+    'The largest result in dollars, over the closed trades whose dollar result is known. The ' +
+    'rate underneath is that trade\'s, not the ranking: the two tiles below rank on the rate ' +
+    'instead, and they often name a different trade.',
+  worst:
+    'The smallest result in dollars, over the same trades. On a ledger carrying a loss this ' +
+    'is the biggest one, and it says so.',
+  bestPct:
+    'The best annualized return, over the same closed trades - which is rarely the same trade ' +
+    'as the biggest cheque. A few days at a good price beats months at a fair one. Treat a ' +
+    'very short trade with care: a same day loop is scaled to a full year from one day of ' +
+    'capital at work, so a small gain can read as an enormous rate.',
+  worstPct:
+    'The weakest annualized return, over the same trades, and the biggest loss by rate once ' +
+    'one exists. A trade whose rate cannot be worked out - a loan of nothing, or dates that ' +
+    'run backwards - is left out of both rate tiles rather than ranked as zero.',
   cur: {
     currency:
       'The stablecoin the loan was denominated in. A trade is grouped by what you borrowed, ' +
@@ -512,6 +554,12 @@ const state = {
   alertLog: null,
   alertLogError: null,
   alertsPage: 1,
+  // What ETH costs, for the ticker in the header. Deliberately not `ethPrice`
+  // above: that one belongs to the alert window, is refreshed on its own by
+  // `loadAlerts({ refresh: true })`, and arrives through a call that also
+  // rewrites `state.alerts`. Polling for a header figure through that would put
+  // a second writer on the armed-alert map for no reason.
+  eth: null,
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -585,6 +633,11 @@ async function loadAlerts({ refresh = false } = {}) {
   state.alerts = body.alerts || {};
   state.alertConfig = body.config || null;
   state.ethPrice = body.eth || null;
+  // The same quote, so the header cannot disagree with the window in front of
+  // it. Opening the bell asks for a price no more than a minute old while the
+  // ticker settles for five, so this call is regularly the fresher of the two
+  // - and the header was left showing the older figure until its next poll.
+  adoptEthQuote(body.eth);
 }
 
 /**
@@ -619,6 +672,154 @@ async function loadAlertLog() {
     state.alertLogError = err.message || 'Could not reach the server.';
   }
 }
+
+/* ----------------------------------------------------------- eth ticker */
+
+/**
+ * What ETH costs, in the header, on every tab.
+ *
+ * Its own endpoint and its own slice of state. `/api/alerts` carries the armed
+ * alert map and the Telegram configuration and has no change windows on it at
+ * all, so polling that for a price would fetch three things to read one - and
+ * would put a repeating writer on `state.alerts`, which has no sequence guard.
+ */
+let ethSeq = 0;
+let ethTimer = null;
+
+/** The cadence the server asks for; replaced by the figure it serves. */
+let ethPollMs = 300_000;
+
+/** When the figure on screen was fetched, for deciding whether to ask again. */
+let ethQuoteAt = 0;
+
+/**
+ * Take a quote from whichever call brought it, keeping the newer of the two.
+ *
+ * Both `/api/eth` and `/api/alerts` read the same server-side cache, so they
+ * agree - except at boot, where they are in flight together and the first may
+ * go to the price service while the second answers from the cache it has not
+ * refreshed yet. Letting the older one land last put the header back to the
+ * price it had a moment earlier.
+ */
+function adoptEthQuote(quote) {
+  if (!quote) return;
+  // A priced quote is never replaced by an unpriced one. On a database with no
+  // cached price yet, /api/alerts reads the cache and answers with nothing
+  // while /api/eth goes and fetches - so whichever way round the two land, the
+  // figure wins over the blank.
+  if (!isNum(quote.price) && isNum(state.eth?.price)) return;
+  const at = Date.parse(quote.fetchedAt ?? '');
+  const held = Date.parse(state.eth?.fetchedAt ?? '');
+  if (Number.isFinite(at) && Number.isFinite(held) && at < held) return;
+  state.eth = quote;
+  ethQuoteAt = Date.now();
+  renderTicker();
+}
+
+async function loadEth() {
+  const seq = ++ethSeq;
+  try {
+    const body = await api('/api/eth');
+    if (seq !== ethSeq) return;
+    if (Number.isFinite(body?.pollMs) && body.pollMs >= 30_000) ethPollMs = body.pollMs;
+    adoptEthQuote(body);
+  } catch (err) {
+    /*
+     * The figure is left exactly as it was. A price lookup that could not get
+     * through is not news, and a header that turns into an error message every
+     * time the network hiccups is worse than one showing a figure from ten
+     * minutes ago.
+     *
+     * Re-rendered all the same, which rewrites nothing but the tooltip: that
+     * is where the age is stated, and a service that has stopped answering is
+     * precisely when the age stops being what it was and starts mattering.
+     */
+    if (seq === ethSeq) renderTicker();
+  }
+}
+
+/**
+ * Only the windows that came back.
+ *
+ * CoinGecko leaves one null now and then, and an empty badge says less than a
+ * shorter row - the same call `priceText` makes for the Telegram report.
+ */
+const TICKER_WINDOWS = [
+  ['1h', 'change1h'],
+  ['24h', 'change24h'],
+  ['7d', 'change7d'],
+];
+
+function renderTicker() {
+  const mount = document.getElementById('eth-ticker');
+  if (!mount) return;
+
+  const q = state.eth;
+  // Nothing at all rather than a placeholder: the element is `display: none`
+  // while it is empty, so a price that never arrives leaves no gap behind.
+  if (!q || !isNum(q.price)) {
+    mount.innerHTML = '';
+    mount.removeAttribute('title');
+    return;
+  }
+
+  // Every space in here is real, not indentation: the gaps between these are
+  // drawn by flex, so with the markup packed tight the whole row reads as
+  // `ETH: $3,000.001h+1.4%24h-1.5%` when it is copied, and to a screen reader.
+  // Flex drops whitespace between items and trims it inside them, so none of
+  // it reaches the screen.
+  const chips = TICKER_WINDOWS.filter(([, key]) => isNum(q[key]))
+    .map(
+      ([label, key]) =>
+        `<span class="ticker__chip ticker__chip--${pctClass(q[key], 1)}" data-window="${label}"><span class="ticker__win">${label}</span> ${signedPct(q[key], 1)}</span>`,
+    )
+    .join(' ');
+
+  mount.innerHTML = `<span class="ticker__price">ETH: ${usd(q.price)}</span> ${chips}`;
+  // A native title, not the CSS tooltip: this is a footnote nobody needs and
+  // the bubble would be drawn over the page on every hover of the header.
+  //
+  // It states the age rather than promising a cadence. "Updates every few
+  // minutes" is not something this can know: a hidden tab is not polling, and
+  // a price service that has stopped answering leaves the figure where it is.
+  // Measured from the timestamp against the clock now, not from the `ageMs`
+  // the server put in the reply: that figure was true when it was written and
+  // goes stale sitting in a tab, which is exactly the case the title is for.
+  mount.title = `ETH price, fetched ${ageWords(Date.now() - Date.parse(q.fetchedAt ?? ''))} ago.`;
+}
+
+/** "12 minutes", and "less than a minute" for one that has only just landed. */
+function ageWords(ms) {
+  if (!Number.isFinite(ms)) return 'a while';
+  const mins = Math.round(ms / 60_000);
+  if (mins < 1) return 'less than a minute';
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'}`;
+  const hours = Math.round(mins / 60);
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+/**
+ * Ask again on a timer, but only while somebody is looking.
+ *
+ * A hidden tab asking every few minutes forever is a request per tab per
+ * interval spent on a header nobody can see, and they all land on one shared
+ * rate limit - the same one the alert sweep depends on. So the timer is torn
+ * down when the tab goes away and a fresh figure is fetched the moment it comes
+ * back, which is also when it is most likely to be out of date.
+ */
+function startEthPoller() {
+  stopEthPoller();
+  if (document.visibilityState === 'hidden') return;
+  ethTimer = setInterval(loadEth, ethPollMs);
+}
+
+function stopEthPoller() {
+  clearInterval(ethTimer);
+  ethTimer = null;
+}
+
+/** Whether the figure on screen has been there longer than the poll interval. */
+const ethQuoteDue = () => Date.now() - ethQuoteAt >= ethPollMs;
 
 /* ----------------------------------------------------- input and validation */
 
@@ -1340,26 +1541,45 @@ function statRow(label, value, cls = '', hint = '') {
  *
  * The two figures that used to head this card, the realized gain and the
  * blended rate, are the first two tiles above the table on every view, so they
- * were being stated twice on the same screen. What is left is the six that are
- * only here, and six read better as a grid than as two columns of a list.
+ * were being stated twice on the same screen. What is left is the seven that
+ * are only here, and they read better as a grid than as two columns of a list.
  */
-function perfTile(label, value, cls = '', hint = '', sub = '') {
-  return `<div class="perf">
+function perfTile(label, value, cls = '', hint = '', sub = '', tileCls = '') {
+  return `<div class="perf${tileCls ? ` ${tileCls}` : ''}">
     <div class="perf__label">${label}${hintMark(hint)}</div>
     <div class="perf__value ${cls}">${value || dash}</div>
     ${sub ? `<div class="perf__sub muted">${sub}</div>` : ''}
   </div>`;
 }
 
-/** The biggest gain and its opposite, in the same tile shape. */
-function perfExtreme(label, entry, hint = '') {
-  if (!entry) return perfTile(label, '', '', hint);
+/**
+ * The biggest gain and its opposite, in the same tile shape.
+ *
+ * `by` picks which figure is being ranked and therefore which one is the
+ * headline: the dollar tiles put the rate on the second line and the rate tiles
+ * put the dollars there, so a pair read side by side answers "how much" and
+ * "how fast" without either looking like the other's ranking key.
+ *
+ * The second line is built from whichever part is actually a number. The value
+ * slot falls back to a dash on its own, but the sub-line does not, and an empty
+ * `pct()` left it reading "USDC, 3 Feb 2026 &middot;  annualized" with a hole
+ * in the middle of it.
+ */
+function perfExtreme(label, entry, hint = '', by = 'usd', tileCls = '') {
+  if (!entry) return perfTile(label, '', '', hint, '', tileCls);
+
+  const rate = isNum(entry.pct) ? `${signedPct(entry.pct)} annualized` : '';
+  const money = isNum(entry.netGain) ? signedUsd(entry.netGain) : '';
+  const headline = by === 'pct' ? entry.pct : entry.netGain;
+  const second = by === 'pct' ? money : rate;
+
   return perfTile(
     label,
-    signedUsd(entry.netGain),
-    gainClass(entry.netGain),
+    by === 'pct' ? signedPct(entry.pct) : signedUsd(entry.netGain),
+    gainClass(headline),
     hint,
-    `${esc(entry.currency)}, ${fmtDate(entry.date)} &middot; ${pct(entry.pct)} annualized`,
+    [`${esc(entry.currency)}, ${fmtDate(entry.date)}`, second].filter(Boolean).join(' &middot; '),
+    tileCls,
   );
 }
 
@@ -1525,20 +1745,34 @@ function renderSummary() {
           )
         }
         ${perfTile(
-          'Win rate',
-          valuedAny ? pct(r.winRate, 0) : '',
-          '',
-          TIPS.winRate,
-          valuedAny ? `${r.wins} up, ${r.losses} down` : '',
-        )}
-        ${perfTile(
           'Average hold',
           r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`,
           '',
           TIPS.avgHold,
         )}
-        ${perfExtreme('Biggest gain', r.best, TIPS.best)}
-        ${perfExtreme(r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss', r.worst, TIPS.worst)}
+        ${
+          // The three figures above stay together on the first row and these
+          // four take the second, reading gain, loss, gain, loss - so the
+          // dollar pair and the rate pair sit one above the other and the same
+          // trade can be found in both columns.
+          //
+          // Both pairs keep the label that flips: on a ledger that has lost
+          // money the second of each pair is a loss, and calling it the
+          // smallest gain would be the card lying about the worst thing on it.
+          perfExtreme('Biggest gain in USD', r.best, TIPS.best, 'usd', 'perf--row-start')
+        }
+        ${perfExtreme(
+          r.worst && r.worst.netGain >= 0 ? 'Smallest gain in USD' : 'Biggest loss in USD',
+          r.worst,
+          TIPS.worst,
+        )}
+        ${perfExtreme('Biggest gain in %', r.bestPct, TIPS.bestPct, 'pct')}
+        ${perfExtreme(
+          r.worstPct && r.worstPct.pct >= 0 ? 'Smallest gain in %' : 'Biggest loss in %',
+          r.worstPct,
+          TIPS.worstPct,
+          'pct',
+        )}
       </div>`,
       valuedAny
         ? `${r.closedCount} closed of ${r.tradeCount}`
@@ -2234,6 +2468,20 @@ function wire() {
   }
   window.addEventListener('hashchange', () => setView(viewFromHash(), { updateHash: false }));
 
+  // The ticker stops asking while the tab is hidden, and on the way back asks
+  // again only if the figure it is holding is actually due.
+  //
+  // It used to ask unconditionally, which meant a request per switch: ten
+  // alt-tabs in ten seconds were ten round trips, none of which could return
+  // anything new, because the server serves the same cached figure for five
+  // minutes. On the deployed app each of those goes through nginx and basic
+  // auth to be told what the page already knew.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') return stopEthPoller();
+    if (ethQuoteDue()) loadEth();
+    startEthPoller();
+  });
+
   document.getElementById('theme-toggle').addEventListener('click', () => {
     applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   });
@@ -2585,6 +2833,11 @@ async function boot() {
   // worth showing even when the alert subsystem cannot be reached, and asking
   // for both at once means one render rather than two.
   const alerts = loadAlerts().catch(() => {});
+
+  // The header ticker is not awaited at all. It draws itself when it has
+  // something to draw, and a price service that never answers must not hold up
+  // a ledger that is already on disk. `loadEth` swallows its own failures.
+  loadEth().then(startEthPoller);
 
   try {
     await loadTrades();

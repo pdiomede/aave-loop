@@ -23,9 +23,17 @@ const ETH_URL = (process.env.MYAAVE_ETH_URL || 'https://api.coingecko.com/api/v3
 );
 const OFFLINE = process.env.MYAAVE_ETH_OFFLINE === '1';
 
-/** One coin, one call, and the three windows the bot reports. */
+/**
+ * One coin, one call, and every window anything here reports.
+ *
+ * 1h is for the ticker in the page header and 30d is for `/price` in Telegram;
+ * neither draws all four. They are asked for together because this endpoint
+ * takes them in one comma list, so a window nobody happens to be looking at
+ * costs nothing - where a second fetcher would have meant two cooldowns that
+ * know nothing of each other pointed at one shared rate limit.
+ */
 const MARKETS_PATH =
-  '/coins/markets?vs_currency=usd&ids=ethereum&price_change_percentage=24h%2C7d%2C30d';
+  '/coins/markets?vs_currency=usd&ids=ethereum&price_change_percentage=1h%2C24h%2C7d%2C30d';
 
 /**
  * A fixed price, for trying the alert path without waiting for the market to
@@ -82,26 +90,31 @@ function recordSuccess() {
 /* -------------------------------------------------------------------- cache */
 
 const selectPrice = () =>
-  prepare('SELECT price, fetched_at, change_24h, change_7d, change_30d FROM eth_price WHERE id = 1');
+  prepare(
+    'SELECT price, fetched_at, change_1h, change_24h, change_7d, change_30d FROM eth_price WHERE id = 1',
+  );
 
 const upsertPrice = () =>
   prepare(`
-    INSERT INTO eth_price (id, price, fetched_at, change_24h, change_7d, change_30d)
-    VALUES (1, @price, @fetched_at, @change_24h, @change_7d, @change_30d)
+    INSERT INTO eth_price (id, price, fetched_at, change_1h, change_24h, change_7d, change_30d)
+    VALUES (1, @price, @fetched_at, @change_1h, @change_24h, @change_7d, @change_30d)
     ON CONFLICT (id) DO UPDATE SET
       price = excluded.price, fetched_at = excluded.fetched_at,
-      change_24h = excluded.change_24h, change_7d = excluded.change_7d,
-      change_30d = excluded.change_30d
+      change_1h = excluded.change_1h, change_24h = excluded.change_24h,
+      change_7d = excluded.change_7d, change_30d = excluded.change_30d
   `);
 
-/** The three change windows, as fetched or as cached. Any of them may be null. */
+/** The four change windows, as fetched or as cached. Any of them may be null. */
 const changes = (row) => ({
+  change1h: pctOrNull(row?.change_1h),
   change24h: pctOrNull(row?.change_24h),
   change7d: pctOrNull(row?.change_7d),
   change30d: pctOrNull(row?.change_30d),
 });
 
-const NO_CHANGES = { change24h: null, change7d: null, change30d: null };
+// The shape a fixed price answers with, so `MYAAVE_ETH_PRICE` returns the same
+// fields as a real quote rather than a shorter object callers have to guard.
+const NO_CHANGES = { change1h: null, change24h: null, change7d: null, change30d: null };
 
 /**
  * The cached price alone. Synchronous, and never reaches for the network.
@@ -252,6 +265,7 @@ async function fetchPrice(hit) {
     const row = {
       price,
       fetched_at: fetchedAt,
+      change_1h: pctOrNull(coin.price_change_percentage_1h_in_currency),
       change_24h: pctOrNull(coin.price_change_percentage_24h_in_currency),
       change_7d: pctOrNull(coin.price_change_percentage_7d_in_currency),
       change_30d: pctOrNull(coin.price_change_percentage_30d_in_currency),

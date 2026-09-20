@@ -37,6 +37,13 @@
           <a class="nav__link" href="#summary" data-view="summary">Summary</a>
           <a class="nav__link" href="#alerts" data-view="alerts">Alerts</a>
         </nav>
+        <!--
+          What ETH costs, written from JS. In the header rather than in the hero
+          because the header is outside the three view sections, so one ticker
+          serves every tab. aria-live is off on purpose: a figure that rewrites
+          itself every few minutes must not interrupt whatever is being read.
+        -->
+        <div class="ticker" id="eth-ticker" aria-live="off"></div>
         <button class="btn btn--icon" id="theme-toggle" type="button" title="Switch theme">
           <span class="sr-only">Switch theme</span>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true" id="theme-icon"></svg>
@@ -113,7 +120,7 @@
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v0.0.34</span> - Built by
+          &copy; 2026 &middot; <span id="version">v0.0.35</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>

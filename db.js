@@ -96,6 +96,7 @@ db.exec(`
     id         INTEGER PRIMARY KEY CHECK (id = 1),
     price      REAL    NOT NULL,
     fetched_at TEXT    NOT NULL,
+    change_1h  REAL,
     change_24h REAL,
     change_7d  REAL,
     change_30d REAL
@@ -291,7 +292,12 @@ const FX_COLUMN_TYPES = [
   ['fx_source', 'TEXT'],
 ];
 
+// Both halves are needed, and a change to only one of them is the bug this
+// pairing exists to prevent: the DDL above serves a database being created now,
+// and this list serves every one that already exists, since CREATE TABLE IF NOT
+// EXISTS will not touch a table it finds.
 const ETH_MARKET_COLUMNS = [
+  ['change_1h', 'REAL'],
   ['change_24h', 'REAL'],
   ['change_7d', 'REAL'],
   ['change_30d', 'REAL'],
