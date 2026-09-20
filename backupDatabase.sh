@@ -59,13 +59,15 @@ backups past --keep are then removed, oldest first.
   --keep N      How many backups to keep. Defaults to 12. 0 keeps them all.
   --db FILE     Database to back up. Defaults to $MYAAVE_DB, then to
                 data/myaave.db.
-  --log FILE    Append this run's output here instead of the console. A log
-                that cannot be opened is a warning, not a failure - the
-                backup still runs.
+  --log FILE    Append this run's output here instead of the console, from
+                the first check onwards. A log that cannot be opened is a
+                warning, not a failure - the backup still runs.
   --help        Show this message.
 
-Relative paths are resolved from wherever you run this, not from the folder
-the script lives in.
+A path typed into --dest, --log or --db is resolved from wherever you run
+this. The database's two defaults are not: data/myaave.db and $MYAAVE_DB are
+read from the folder the script lives in, the same way resetDatabase.sh reads
+them, because that is the only place they mean anything.
 
 Backups are matched on the database's own name, so several databases can
 share one destination folder without pruning each other.
@@ -98,31 +100,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-case "$KEEP" in
-  ''|*[!0-9]*) die "--keep must be a number, got '$KEEP'." ;;
-esac
-# Digits alone are not enough: a value past what bash can compare made `[` fail
-# with "integer expression expected" and skipped the prune entirely, loudly
-# enough to be confusing and quietly enough to leave every backup in place.
-[ "${#KEEP}" -le 9 ] || die "--keep is absurdly large, got '$KEEP'. Use 0 to keep everything."
-
-[ -n "$DEST" ] || die "No destination. HOME is not set here, so pass --dest."
-
-# Named now rather than reaching the copy and reporting a bare failure. cron
-# runs with a short PATH - often just /usr/bin:/bin - so a node installed by
-# nvm or under /usr/local is on the PATH of the person who tested this by hand
-# and absent from the one the schedule uses.
-command -v node >/dev/null 2>&1 || die "node is not on PATH. Under cron, set PATH in the crontab to include it."
-
-# Relative to where this was run from, not to the checkout it lives in.
-# Without this for --db, standing in a folder with its own data/myaave.db and
-# passing `--db data/myaave.db` backed up the checkout's database instead, and
-# said it had succeeded: the wrong ledger, copied and reported as the right one.
-case "$DEST" in /*) ;; *) DEST="$INVOKED_FROM/$DEST" ;; esac
+# The log is opened before anything that can fail, so everything this run has
+# to say lands in it. Opened after the checks below - where it used to be - the
+# failures most likely to happen under cron, node missing from a short PATH
+# above all, went to stderr and never reached the file: the log the schedule is
+# watched through stayed empty on precisely the runs worth reading.
 case "$LOG" in ''|/*) ;; *) LOG="$INVOKED_FROM/$LOG" ;; esac
-if [ "$DB_GIVEN" -eq 1 ]; then
-  case "$DB" in /*) ;; *) DB="$INVOKED_FROM/$DB" ;; esac
-fi
 
 # The script owns its log rather than leaving it to a `>>` in the crontab.
 # A redirect the shell cannot open fails before the script starts, so the
@@ -139,6 +122,36 @@ if [ -n "$LOG" ]; then
   else
     warn "Could not open the log at $LOG. Carrying on, writing to the console."
   fi
+fi
+
+case "$KEEP" in
+  ''|*[!0-9]*) die "--keep must be a number, got '$KEEP'." ;;
+esac
+# Digits alone are not enough: a value past what bash can compare made `[` fail
+# with "integer expression expected" and skipped the prune entirely, loudly
+# enough to be confusing and quietly enough to leave every backup in place.
+[ "${#KEEP}" -le 9 ] || die "--keep is absurdly large, got '$KEEP'. Use 0 to keep everything."
+# Base ten, whatever was typed. `$(( ))` reads a leading zero as octal, so
+# `--keep 08` failed inside the prune with "value too great for base", skipped
+# it entirely and still exited 0 - a retention setting that quietly did nothing
+# while reporting success.
+KEEP=$((10#$KEEP))
+
+[ -n "$DEST" ] || die "No destination. HOME is not set here, so pass --dest."
+
+# Named now rather than reaching the copy and reporting a bare failure. cron
+# runs with a short PATH - often just /usr/bin:/bin - so a node installed by
+# nvm or under /usr/local is on the PATH of the person who tested this by hand
+# and absent from the one the schedule uses.
+command -v node >/dev/null 2>&1 || die "node is not on PATH. Under cron, set PATH in the crontab to include it."
+
+# Relative to where this was run from, not to the checkout it lives in.
+# Without this for --db, standing in a folder with its own data/myaave.db and
+# passing `--db data/myaave.db` backed up the checkout's database instead, and
+# said it had succeeded: the wrong ledger, copied and reported as the right one.
+case "$DEST" in /*) ;; *) DEST="$INVOKED_FROM/$DEST" ;; esac
+if [ "$DB_GIVEN" -eq 1 ]; then
+  case "$DB" in /*) ;; *) DB="$INVOKED_FROM/$DB" ;; esac
 fi
 
 # A file that is not there and a file that cannot be looked at are the same
@@ -179,6 +192,17 @@ fi
 # up to one folder pruned each other, since the newest N of everything is
 # not the newest N of either.
 PREFIX="$(basename "${DB%.db}")"
+
+# Every backup of this database, newest first.
+#
+# The timestamp is part of the pattern and not decoration. A bare `myaave-*`
+# also matches `myaave-old-20260921-030000.db`, a backup of a different ledger
+# whose name merely starts the same way, and `--keep 1` on myaave.db then
+# deleted every backup myaave-old.db had - the cross-database pruning the
+# prefix was introduced to stop, walked straight around.
+backups_newest_first() {
+  ls -1t "$DEST/$PREFIX"-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]*.db 2>/dev/null
+}
 
 # Absolute, with symlinks and `..` resolved, so the guard in the prune loop
 # compares the same thing however the path was written.
@@ -252,20 +276,20 @@ if [ "$KEEP" -gt 0 ]; then
   PRUNED=0
   while IFS= read -r old; do
     [ -n "$old" ] || continue
-    # The one file this must never remove, whatever the glob above matched.
-    # Scoping the pattern to the backup prefix already means the live file
-    # cannot match it - `myaave.db` is not `myaave-*.db` - but that is an
-    # argument about a pattern, and this is a backup tool: the source going
-    # missing is the one outcome with no recovery. So it is also checked
-    # outright, against the resolved path rather than the spelling.
+    # The one file this must never remove, whatever the pattern above matched.
+    # A live `myaave.db` cannot match a pattern that demands `-<8 digits>-<6
+    # digits>.db` after the name - but that is an argument about a pattern, and
+    # this is a backup tool: the source going missing is the one outcome with
+    # no recovery. So it is also checked outright, against the resolved path
+    # rather than the spelling.
     if [ "$(canonical "$old")" = "$LIVE_DB" ]; then
       warn "Refusing to remove $old: that is the live database."
       continue
     fi
     rm -f "$old"
     PRUNED=$((PRUNED + 1))
-  done < <(ls -1t "$DEST/$PREFIX"-*.db 2>/dev/null | tail -n "+$((KEEP + 1))")
+  done < <(backups_newest_first | tail -n "+$((KEEP + 1))")
   [ "$PRUNED" -gt 0 ] && warn "Removed $PRUNED backup$([ "$PRUNED" -eq 1 ] || echo s) beyond the last $KEEP."
 fi
 
-ok "$(ls -1 "$DEST/$PREFIX"-*.db 2>/dev/null | wc -l | tr -d ' ') backup(s) of $PREFIX now in $DEST"
+ok "$(backups_newest_first | wc -l | tr -d ' ') backup(s) of $PREFIX now in $DEST"
