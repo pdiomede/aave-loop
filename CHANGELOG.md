@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.29] - 2026-09-20
+
+### Fixed
+
+- **"send this to your Telegram chat on Telegram"** - the name of the chat falls back to a description when `TELEGRAM_CHAT_NAME` is not set, and that description said Telegram in a sentence that already did. It is "your chat" now. Only the wording changes, in the alert window, the two startup lines and the test message.
+
 ## [0.0.28] - 2026-09-20
 
 ### Changed
