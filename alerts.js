@@ -29,7 +29,7 @@ import { db, prepare } from './db.js';
 import { derive, unrealisedUsd } from './lib/calc.js';
 import { ethPrice } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
-import { n2, n4, fmtDate } from './format.js';
+import { n2, n4, fmtDate, signedUsd } from './format.js';
 
 /**
  * Fifteen minutes. The price is checked on a schedule rather than watched, and
@@ -265,9 +265,10 @@ export function alertMessage(trade, alert, price) {
     // taken out this morning claimed a deduction that had not happened yet,
     // and on an older one it asked the reader to take the size of it on trust.
     // `unrealisedUsd` is null unless this figure is a number, so it is one.
-    lines.push(
-      `Gain: ${gain >= 0 ? '+' : '-'}$${n2(Math.abs(gain))} after $${n2(d.accruedInterestUsd)} interest`,
-    );
+    // Through `signedUsd` rather than a sign built here from the held value,
+    // which put a minus on a gain too small to show: a goal typed a fraction
+    // of a cent below break-even previewed as `Gain: -$0.00`.
+    lines.push(`Gain: ${signedUsd(gain)} after $${n2(d.accruedInterestUsd)} interest`);
   }
 
   return lines.join('\n');

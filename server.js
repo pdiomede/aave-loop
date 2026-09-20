@@ -116,6 +116,18 @@ app.use('/lib', express.static(path.join(root, 'lib'), staticOptions));
 // be handed to a browser that cannot fetch the stylesheet it asks for.
 app.use('/landing', express.static(path.join(root, 'landing'), staticOptions));
 
+// The landing page's three calls to action point at /app, and so does the
+// recovery link on the 404 page. In production nginx maps that to the ledger
+// and this never runs; served from here, as the mount above exists to allow,
+// every one of them answered with the 404 page - including the one on the 404
+// page itself. Same file the static mount serves at /, so there is one ledger
+// at two paths rather than a redirect that argues with the link.
+app.get('/app', (_req, res, next) => {
+  res.sendFile(path.join(root, 'public', 'index.html'), (err) => {
+    if (err) next(err);
+  });
+});
+
 // API responses carried an ETag but no Cache-Control, which let the browser
 // heuristically cache them and show a stale ledger after a change. These are
 // live figures, so they must never be reused from cache.

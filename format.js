@@ -61,7 +61,7 @@ export const signedUsd = (v) =>
 export const pct1 = (v) =>
   isNum(v) ? `${signOf(v, 1) || '+'}${Math.abs(v).toFixed(1)}%` : MISSING;
 
-export const pct2 = (v) => (isNum(v) ? `${v.toFixed(2)}%` : MISSING);
+export const pct2 = (v) => (isNum(v) ? `${signOf(v, 2)}${Math.abs(v).toFixed(2)}%` : MISSING);
 
 export const padLeft = (s, w) => String(s).padStart(w, ' ');
 export const padRight = (s, w) => String(s).padEnd(w, ' ');

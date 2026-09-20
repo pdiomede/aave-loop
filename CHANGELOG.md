@@ -3,6 +3,26 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.41] - 2026-09-20
+
+A recursive audit of every source file in the repository - 21 files, about 10,900 lines - excluding documentation, dependencies and the database. Three bugs, each reproduced before the fix and re-run after. The count is the finding: most of this tree came back clean, and two further suspicions were dropped once testing disproved them.
+
+### Fixed
+
+- **The landing page's calls to action answered with the 404 page.** All three "Use Aave Loop" buttons point at `/app`, and so does "Open the ledger" on the 404 page itself - but nothing served that path. In production nginx maps it to the ledger, so this only bites the no-proxy case, which is precisely the case the `/landing` static mount was added to support. The 404 page linking to a 404 is the part worth keeping in mind: the one page whose whole job is recovery had no working way out. `/app` now serves the same file the static mount serves at `/`.
+- **The Telegram summary could report a blended rate of `-0.00%`.** `format.js` defines `signOf` for exactly this - take the sign from the figure as printed, so digits that are all zero do not carry a minus - and `usd`, `signedUsd` and `pct1` all use it. `pct2` was the one that did not, and it is the formatter "Blended annualized" goes through.
+- **An alert could report `Gain: -$0.00`.** `alertMessage` built its own sign from the held value rather than using the `signedUsd` sitting in the module it already imports from. Reproduced with a goal a person could type: half an ETH at 3.1%, goal 24,207.91, which lands 0.001 below break-even. The live preview in the alert window is written by the same function, so it showed it too.
+
+### Notes
+
+- **Clean, after being read:** `telegram.js`, `config.js`, `db.js`, `eth.js`, `fx.js`, `report.js`, `bot.js`, `lib/calc.js`, `public/app.js`, `public/index.html`, `public/styles.css`, `landing/index.html`, `landing/404.html`, `landing/styles.css`, `scripts/stamp-version.mjs`, `run_myAave.sh`, `resetDatabase.sh`, `config.env.example`.
+- **Two suspicions withdrawn rather than reported.** `resetDatabase.sh` copies the WAL with `[ -f "$DB-wal" ] && cp ...` under `set -e`, which looks like it would abort the script when no WAL exists; and its `node -e` trade count uses `require` in a package marked `"type": "module"`. Both were run: `set -e` does not exit on that list form, and `node -e` is evaluated as CommonJS. Neither is a bug.
+- **Checked and sound where it was worth proving:** no schema migration gap, since `bot_state` and `fx_rates` were each introduced complete in one commit; every string the server sends reaches the DOM through `textContent` and the only HTML passed to `confirmDialog` interpolates a number, so there is no injection path; `notes` accepts 2000 characters and is never rendered; and the `/api/eth` error shape, which omits the change windows, is handled by the ticker rather than drawn as empty chips.
+
+### Removed
+
+- `PROMPTS.md`. The reusable audit prompts it held have been run enough times to have done their work, and the findings they produced are in the entries above rather than in the file.
+
 ## [0.0.40] - 2026-09-20
 
 Eight bugs across the three views, each reproduced against a seeded ledger before the fix and checked after. Fewer than the passes allowed for, and the shortfall is the point: the Trades view had one left in it, not five.
