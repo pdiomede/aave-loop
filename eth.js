@@ -103,14 +103,29 @@ const changes = (row) => ({
 
 const NO_CHANGES = { change24h: null, change7d: null, change30d: null };
 
-/** The cached price alone. Synchronous, and never reaches for the network. */
+/**
+ * The cached price alone. Synchronous, and never reaches for the network.
+ *
+ * Nor does it throw. The `db.open` check is not enough on its own: a statement
+ * can be refused while the connection is perfectly open, which a second copy of
+ * this app checkpointing the same file will do, and this is read from a timer
+ * and from inside a request handler both. A cache that cannot be read is a
+ * cache miss - the caller asks the network instead - and not a reason for
+ * anything above to fail.
+ */
 export function cachedEthPrice() {
   if (FIXED) return { price: FIXED, fetchedAt: new Date().toISOString(), ageMs: 0, ...NO_CHANGES };
-  // A timer can outlive the connection during shutdown, and better-sqlite3
-  // throws rather than returning nothing when it does.
   if (!db.open) return null;
-  const row = selectPrice().get();
+
+  let row;
+  try {
+    row = selectPrice().get();
+  } catch (err) {
+    console.error('Could not read the cached ETH price:', err.message);
+    return null;
+  }
   if (!row) return null;
+
   const at = Date.parse(row.fetched_at);
   return {
     price: row.price,
@@ -120,14 +135,26 @@ export function cachedEthPrice() {
   };
 }
 
+/**
+ * Write the price we just fetched, and carry on if that fails.
+ *
+ * Best effort on purpose. The price is already in hand and already correct;
+ * losing the ability to remember it for next time is not a reason to throw it
+ * away, which is what happened when this sat in the same try as the fetch: a
+ * refused write discarded a good price, reported the whole attempt as a
+ * failure, and put lookups to sleep for a minute over a busy database.
+ */
+function cachePut(row) {
+  if (!db.open) return;
+  try {
+    upsertPrice().run(row);
+  } catch (err) {
+    console.error('Could not cache the ETH price:', err.message);
+  }
+}
+
 /* ----------------------------------------------------------------- fetching */
 
-/**
- * A price that is not a positive, finite, plausibly sized number is not a
- * price. The ceiling matters more than it looks: a zero or a NaN slipping
- * through would read as "ETH has fallen" and fire every alert waiting for a
- * drop, all at once, and those messages cannot be unsent.
- */
 /**
  * A change window that is not a number is simply not known.
  *
@@ -138,6 +165,12 @@ export function cachedEthPrice() {
  */
 const pctOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
+/**
+ * A price that is not a positive, finite, plausibly sized number is not a
+ * price. The ceiling matters more than it looks: a zero or a NaN slipping
+ * through would read as "ETH has fallen" and fire every alert waiting for a
+ * drop, all at once, and those messages cannot be unsent.
+ */
 function validate(price) {
   if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
     return 'The price that came back was not a usable number.';
@@ -159,6 +192,26 @@ export async function ethPrice({ maxAgeMs = FRESH_MS } = {}) {
   if (hit && hit.ageMs <= maxAgeMs) return hit;
   if (networkIsOut()) return hit;
 
+  // One request at a time, however many callers want an answer.
+  //
+  // There are four of them now - the alert sweep, the watch timer, /price, and
+  // the alert window asking for a fresh figure - and nothing stops two
+  // coinciding. Each used to open its own request, against a service with no
+  // key and a rate limit shared with every other caller on this address, to
+  // fetch a number they would all have been equally happy to share. A caller
+  // who could have lived with an older price has already returned above, so
+  // anyone reaching here wants what this fetch is about to get.
+  if (inFlight) return inFlight;
+  inFlight = fetchPrice(hit).finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+let inFlight = null;
+
+/** The request itself. Never throws; `ethPrice` promises as much on its behalf. */
+async function fetchPrice(hit) {
   try {
     const res = await fetch(`${ETH_URL}${MARKETS_PATH}`, {
       headers: { Accept: 'application/json' },
@@ -203,7 +256,7 @@ export async function ethPrice({ maxAgeMs = FRESH_MS } = {}) {
       change_7d: pctOrNull(coin.price_change_percentage_7d_in_currency),
       change_30d: pctOrNull(coin.price_change_percentage_30d_in_currency),
     };
-    if (db.open) upsertPrice().run(row);
+    cachePut(row);
     return { price, fetchedAt, ageMs: 0, ...changes(row) };
   } catch (err) {
     recordFailure(

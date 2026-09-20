@@ -5,9 +5,11 @@ import Database from 'better-sqlite3';
 import { PEGGED_CURRENCIES } from './lib/calc.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(root, 'data');
-const dbFile = process.env.MYAAVE_DB || path.join(dataDir, 'myaave.db');
+const dbFile = process.env.MYAAVE_DB || path.join(root, 'data', 'myaave.db');
 
+// The directory of whichever file was chosen, not `data/`. MYAAVE_DB can point
+// anywhere, and creating `data/` while writing somewhere else left an empty
+// directory behind on every install that used it.
 fs.mkdirSync(path.dirname(dbFile), { recursive: true });
 
 export const db = new Database(dbFile);

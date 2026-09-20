@@ -132,10 +132,10 @@ const FALLBACK_NAME = 'your chat';
  *
  * `ownerId` is optional and changes nothing when it is absent. Set to your own
  * user id it lets the bot answer you in a private chat as well as in the chat
- * alerts go to,
- * which is the only way to get Telegram's Menu button: that button is drawn in
- * private chats and nowhere else, so in a group there is nothing to turn on.
- * Alerts are unaffected and still go to the group alone.
+ * alerts go to, which is the only way to reach Telegram's Menu button: that is
+ * drawn in private chats and nowhere else, so in a group there is nothing to
+ * turn on. Only worth setting when `chatId` is a group; if it is already you,
+ * this is the same number. Alerts go to `chatId` either way.
  */
 export function telegramConfig() {
   const token = get('TELEGRAM_BOT_TOKEN');

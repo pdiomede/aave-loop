@@ -14,7 +14,7 @@ import { db, prepare } from './db.js';
 import { derive, summarize, unrealisedUsd } from './lib/calc.js';
 import { ethPrice, ethStatus } from './eth.js';
 import { alertPollMs } from './alerts.js';
-import { n2, n4, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
+import { n4, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
 /** Telegram refuses a message over 4096 characters, so stop well short of it. */
 const MAX_CHARS = 3900;
@@ -245,7 +245,15 @@ export async function watchMessage() {
 
 export async function holdingMessage() {
   if (!db.open) return CLOSED;
-  const rows = selectHolding().all();
+  let rows;
+  try {
+    rows = selectHolding().all();
+  } catch (err) {
+    // A refused statement is not a reason to say nothing back. The command was
+    // asked in a chat, and silence there reads as a broken bot.
+    console.error('Could not read the open positions:', err.message);
+    return 'Could not read the ledger just now. Try again in a moment.';
+  }
   // Asked for even with nothing held, so the answer names the price it used.
   const quote = await ethPrice();
   return holdingText(rows, quote?.price ?? null);
@@ -257,5 +265,10 @@ export async function holdingMessage() {
  */
 export function summaryMessage() {
   if (!db.open) return CLOSED;
-  return summaryText(summarize(prepare('SELECT * FROM trades').all()));
+  try {
+    return summaryText(summarize(prepare('SELECT * FROM trades').all()));
+  } catch (err) {
+    console.error('Could not read the ledger for a summary:', err.message);
+    return 'Could not read the ledger just now. Try again in a moment.';
+  }
 }

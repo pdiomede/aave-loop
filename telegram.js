@@ -62,9 +62,16 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
     if (res.ok && body?.ok) return { ok: true, retryable: false, error: null };
 
     const described = redact(body?.description || `Telegram answered ${res.status}.`);
-    // 5xx is Telegram having a bad minute; anything else it said about our
+    // 5xx is Telegram having a bad minute, and 429 is it asking us to slow
+    // down - both are worth trying again. Anything else it said about our
     // request will be just as true the next time we ask.
-    return { ok: false, retryable: res.status >= 500, error: described };
+    //
+    // 429 was the one this got wrong. Telegram rate limits a bot per chat, and
+    // a flood controlled alert was filed under "it will never work", which left
+    // the row marked fired and the message never sent. It is the one failure
+    // that is certain to pass on its own.
+    const retryable = res.status >= 500 || res.status === 429;
+    return { ok: false, retryable, error: described };
   } catch (err) {
     const message =
       err.name === 'TimeoutError' ? 'Telegram did not answer in time.' : redact(err.message);

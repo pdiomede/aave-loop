@@ -32,7 +32,6 @@
   --radius-pill: 999px;
 
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-  --mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --shell: 1180px;
 }
@@ -93,9 +92,11 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   accent-color: var(--accent);
-  /* The theme switch is deliberately instant. Easing it leaves the page
-     backdrop out of step with the cards, which flashes grey mid change. */
 }
+
+/* The theme switch is deliberately instant: no transition on the page
+   background or the cards. Easing it leaves the backdrop out of step with the
+   surfaces, which flashes grey part way through the change. */
 
 h1,
 h2,
@@ -666,6 +667,9 @@ a.brand {
   gap: 10px;
 }
 
+/* Every supported stablecoin has artwork, and .coin--art below carries it.
+   This tinted-initials circle is the fallback if one is ever added before its
+   logo lands. */
 .coin {
   width: 26px;
   height: 26px;
@@ -696,9 +700,6 @@ a.brand {
   flex: none;
   border-radius: 50%;
 }
-
-/* Every supported stablecoin has artwork. This tinted-initials circle is the
-   fallback if one is ever added before its logo lands. */
 
 .row__stack {
   display: flex;
@@ -921,8 +922,12 @@ th[aria-sort="ascending"] .th-sort__caret {
   font-size: 11.5px;
 }
 
+/* A card carrying the missing-rate banner. It has to be `box-shadow`: .card
+   draws its edge with the ring rather than a border, so setting a border
+   colour here coloured nothing and the warning card looked like all the
+   others. The ring is restated with the warn colour in place of the hairline. */
 .card--warn {
-  border-color: var(--warn);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03), 0 0 0 1px var(--warn);
 }
 
 .fx-banner {

@@ -479,6 +479,8 @@ p {
 
 .step__body {
   margin-top: 8px;
+  /* Breathing room above the badge pinned to the bottom of the card. */
+  margin-bottom: 18px;
   color: var(--text-muted);
   font-size: 14.5px;
 }
@@ -491,7 +493,6 @@ p {
   align-self: flex-start;
   gap: 6px;
   margin-top: auto;
-  padding-top: 0;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
   background: var(--violet-soft);
@@ -499,11 +500,6 @@ p {
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.03em;
-}
-
-/* The body copy needs breathing room above the pinned badge. */
-.step__body {
-  margin-bottom: 18px;
 }
 
 .status::before {

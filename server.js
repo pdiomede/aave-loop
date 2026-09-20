@@ -341,9 +341,6 @@ const selectOne = prepare('SELECT * FROM trades WHERE id = ?');
 
 /* ------------------------------------------------------------------ routes */
 
-// Browsers ask for this even when the page names its icon explicitly.
-app.get('/favicon.ico', (_req, res) => res.redirect(301, '/AaveLoop_logo_96.png'));
-
 app.get('/api/version', (_req, res) => res.json({ version: pkg.version }));
 
 app.get('/api/trades', (_req, res) => {
@@ -618,7 +615,10 @@ app.delete('/api/trades/:id', (req, res) => {
  * four argument handler only when something has thrown.
  */
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/')) {
+  // `/api` exactly, as well as anything under it. Matching only the trailing
+  // slash handed an API caller the browser's HTML error page for the one path
+  // most likely to be typed by hand.
+  if (req.path === '/api' || req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'No such endpoint.' });
   }
   res.status(404).sendFile(path.join(root, 'landing', '404.html'), (err) => {

@@ -19,11 +19,21 @@ export const MISSING = '-';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
-export const n2 = (v) =>
-  Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/**
+ * Grouped to a fixed number of places.
+ *
+ * Guarded like everything else here. These two were the exception: handed
+ * undefined they returned the string "NaN", which is not a figure and is
+ * exactly the sort of thing that reaches a chat message unnoticed, because
+ * every other formatter in this file quietly says "-" instead.
+ */
+const fixed = (v, dp) =>
+  isNum(v)
+    ? Number(v).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp })
+    : MISSING;
 
-export const n4 = (v) =>
-  Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+export const n2 = (v) => fixed(v, 2);
+export const n4 = (v) => fixed(v, 4);
 
 /** The same "20 Sep 2026" the interface shows, so the two read alike. */
 export function fmtDate(iso) {
@@ -32,12 +42,24 @@ export function fmtDate(iso) {
   return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
 }
 
-export const usd = (v) => (isNum(v) ? `${v < 0 ? '-' : ''}$${n2(Math.abs(v))}` : MISSING);
+/**
+ * The sign comes from the figure as printed, not as held.
+ *
+ * A value too small to show rounds to zero at two places, and taking the sign
+ * from the raw number then wrote "-$0.00" - a loss, in red, of nothing. The
+ * same went for "-0.0%". Rounding first and deciding after means a figure that
+ * prints as zero reads as zero.
+ */
+const signOf = (v, dp) => (Number(Math.abs(v).toFixed(dp)) === 0 ? '' : v < 0 ? '-' : '');
+
+export const usd = (v) => (isNum(v) ? `${signOf(v, 2)}$${n2(Math.abs(v))}` : MISSING);
 
 /** Always carries its sign, because a gain and a loss must not look alike. */
-export const signedUsd = (v) => (isNum(v) ? `${v >= 0 ? '+' : '-'}$${n2(Math.abs(v))}` : MISSING);
+export const signedUsd = (v) =>
+  isNum(v) ? `${signOf(v, 2) || '+'}$${n2(Math.abs(v))}` : MISSING;
 
-export const pct1 = (v) => (isNum(v) ? `${v >= 0 ? '+' : '-'}${Math.abs(v).toFixed(1)}%` : MISSING);
+export const pct1 = (v) =>
+  isNum(v) ? `${signOf(v, 1) || '+'}${Math.abs(v).toFixed(1)}%` : MISSING;
 
 export const pct2 = (v) => (isNum(v) ? `${v.toFixed(2)}%` : MISSING);
 

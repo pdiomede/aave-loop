@@ -296,6 +296,11 @@ function handleFailure({ status, error }) {
     console.error(`Bot commands stopped: Telegram rejected the token (${status}). ${error}`);
     state.stopped = true;
     running = false;
+    // Handed back rather than left to expire. `stopBotPoller` returns early
+    // once running is false, so stopping this way used to sit on the lease for
+    // its full term - during which the other instance could not take over and
+    // a corrected token could not be picked up by a restart either.
+    releaseLease();
     return;
   }
 
@@ -375,6 +380,7 @@ async function handle(updates) {
   const allowed = allowedChats();
   let stale = 0;
   let handled = 0;
+  let dropped = 0;
 
   for (const update of updates) {
     const msg = update.message;
@@ -404,7 +410,13 @@ async function handle(updates) {
     const command = commandOf(msg.text);
     if (!command) continue;
 
-    if (handled >= MAX_PER_BATCH) continue;
+    // Past the cap they are dropped, and the offset covering them has already
+    // been written, so they are gone rather than deferred. Rare enough to be
+    // worth a line in the log rather than a second queue.
+    if (handled >= MAX_PER_BATCH) {
+      dropped += 1;
+      continue;
+    }
 
     handled += 1;
     try {
@@ -416,6 +428,9 @@ async function handle(updates) {
 
   if (stale) {
     console.log(`Skipped ${stale} bot command${stale === 1 ? '' : 's'} older than ${MAX_AGE_S} seconds.`);
+  }
+  if (dropped) {
+    console.log(`Dropped ${dropped} bot command${dropped === 1 ? '' : 's'} over the ${MAX_PER_BATCH} per batch limit.`);
   }
 }
 

@@ -3,6 +3,39 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.32] - 2026-09-20
+
+An audit of every file. Twenty-two findings across twelve of them; `alerts.js`, `lib/calc.js` and both HTML files had nothing worth changing.
+
+### Fixed
+
+- **A Telegram 429 was filed as permanent.** Telegram rate limits a bot per chat and answers 429 when it wants you to slow down, which is the one failure certain to pass on its own. `sendTelegramMessage` classed anything under 500 as not worth retrying, so a flood controlled alert was left marked `fired` and the message was never sent. 429 joins 5xx as retryable.
+- **`eth.js` threw from a function documented not to.** `cachedEthPrice` guarded `db.open` but not the statement itself, and the call sat outside `ethPrice`'s try, so a read refused while the connection was open - a second copy of the app checkpointing the same file will do it - rejected the promise. A cache that cannot be read is a cache miss.
+- **A failed cache write threw away a good price.** The write sat in the same try as the fetch, so a refused `UPDATE` discarded a price already in hand, reported the whole attempt as a failure and put lookups to sleep for a minute. It is best effort now and the price is returned either way.
+- **Four callers, four requests.** The alert sweep, the watch timer, `/price` and the alert window all call `ethPrice`, and nothing stopped two coinciding against a keyless service with a shared rate limit. One request is now shared by everyone waiting on it; measured at four concurrent callers, one HTTP request where there were four.
+- **`fx.js` could walk from 1970.** `resolveRange` looped from `parseDate(fromISO)`, and `parseDate` answers null for anything it cannot read, which coerces to 0 in the comparison. The bounds are checked before the walk starts, and the loop uses the `DAY_MS` the rest of the file does rather than the literal beside it.
+- **The rate cache could throw on the save path**, the same shape as `eth.js` above and fixed the same way.
+- **`/api` exactly answered with the browser's HTML error page**, because the 404 handler matched only `/api/`. It is the path most likely to be typed by hand.
+- **`n2` and `n4` returned the string "NaN"** when handed anything that was not a number, alone among the formatters, every one of which says "-" instead. That is the sort of thing that reaches a chat message unnoticed.
+- **A figure too small to show still carried a minus sign**: `-$0.00` in red, and `-0.0%`. The sign now comes from the figure as printed rather than as held.
+- **`.card--warn` coloured nothing.** A card draws its edge with a ring rather than a border, so setting `border-color` left the one state that rule exists to mark looking exactly like every other card. It is a ring now.
+- **The bot sat on its lease after stopping itself.** A rejected token sets `running = false`, and `stopBotPoller` returns early on that, so the lease was left to expire - during which no other instance could take over and a restart with a corrected token had to wait it out.
+- **Commands past the per-batch cap vanished silently.** Their offset had already been committed, so they were gone rather than deferred. Still dropped, but the log says how many.
+- **`holdingMessage` and `summaryMessage` read the database outside any try.** Both answer a chat command, where silence reads as a broken bot; they now say the ledger could not be read.
+
+### Removed
+
+- The `/favicon.ico` route, which `express.static` had been answering two hundred lines earlier and which therefore never ran.
+- `dataDir` in `db.js`, which created `data/` even when `MYAAVE_DB` pointed somewhere else entirely.
+- `AMOUNT_FIELDS` and the `annualizedPct` import in `public/app.js`, the `n2` import in `report.js`, and `--mono` in the stylesheet: all declared, none read.
+- A `padding-top` in the landing stylesheet overridden by the shorthand on the very next line, and a second `.step__body` block whose only job was to add a margin to the first.
+
+### Notes
+
+- **`alerts.js` and `lib/calc.js` came out clean**, as did both HTML files. `lib/calc.js` is the most audited file here and it shows; no finding in either was worth inventing a fix for.
+- Comments that had drifted from what they describe were moved back: the `validate` block in `eth.js`, which a later insertion had left documenting the function below it, and two in the stylesheet.
+- Verified by execution: every command answered, an alert still sent as plain text with no `parse_mode`, `/api` returning JSON and `/favicon.ico` still 200, the four figures on the summary matching the page, and the ledger rendering with no console or network errors in either theme.
+
 ## [0.0.31] - 2026-09-20
 
 ### Changed

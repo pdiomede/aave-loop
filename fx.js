@@ -95,17 +95,37 @@ const upsertRate = () =>
       source = excluded.source, fetched_at = excluded.fetched_at
   `);
 
+/**
+ * Both of these swallow a database error and carry on.
+ *
+ * A statement can be refused while the connection is open - a second copy of
+ * the app checkpointing this same file will do it - and these are read on the
+ * save path. A cache that cannot be read is a cache miss, and a rate that
+ * cannot be written is still the right rate for the caller holding it; neither
+ * is a reason to fail a lookup that had already succeeded.
+ */
 function cacheGet(base, date) {
-  const row = selectRate().get(base, QUOTE, date);
-  return row ? { rate: row.rate, rateDate: row.rate_date, source: row.source } : null;
+  if (!db.open) return null;
+  try {
+    const row = selectRate().get(base, QUOTE, date);
+    return row ? { rate: row.rate, rateDate: row.rate_date, source: row.source } : null;
+  } catch (err) {
+    console.error('Could not read the rate cache:', err.message);
+    return null;
+  }
 }
 
 function cachePut(base, date, { rate, rateDate, source }) {
-  upsertRate().run({
-    base, quote: QUOTE, date, rate,
-    rate_date: rateDate, source,
-    fetched_at: new Date().toISOString(),
-  });
+  if (!db.open) return;
+  try {
+    upsertRate().run({
+      base, quote: QUOTE, date, rate,
+      rate_date: rateDate, source,
+      fetched_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('Could not cache a rate:', err.message);
+  }
 }
 
 /**
@@ -228,9 +248,17 @@ export async function resolveRange(currency, fromISO, toISO) {
   if (days.length === 0) return out;
 
   // Walk the span day by day, carrying the last published rate forward.
+  //
+  // The bounds are checked first. `parseDate` answers null for anything it
+  // cannot read, and null coerces to 0 in the comparison, so an unusable start
+  // date would have walked from 1970 to the end of the span one day at a time.
+  const fromTs = parseDate(fromISO);
+  const toTs = parseDate(toISO);
+  if (fromTs === null || toTs === null) return out;
+
   let cursor = 0;
   let carried = null;
-  for (let ts = parseDate(fromISO); ts <= parseDate(toISO); ts += 86400000) {
+  for (let ts = fromTs; ts <= toTs; ts += DAY_MS) {
     const iso = new Date(ts).toISOString().slice(0, 10);
     while (cursor < days.length && days[cursor] <= iso) {
       const rate = published[days[cursor]]?.[QUOTE];

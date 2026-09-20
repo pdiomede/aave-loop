@@ -3,7 +3,6 @@ import {
   summarize,
   summaryReport,
   accruedInterest,
-  annualizedPct,
   daysBetween,
   todayISO,
   parseAmount,
@@ -591,8 +590,6 @@ const FIELD_LABELS = {
   repay_date: 'Repayment date',
   repay_amount: 'Amount repaid',
 };
-
-const AMOUNT_FIELDS = ['borrow_amount', 'buy_amount', 'sell_amount', 'repay_amount', 'buy_eth', 'sell_eth'];
 
 /**
  * Check one field in the context of the trade it belongs to.
