@@ -9,6 +9,15 @@
 #
 set -euo pipefail
 
+# Kept before the cd, so a relative --dest or --log means what the person
+# typing it meant. Without this they resolved against the checkout instead:
+# `--dest backups` from a home folder quietly filled /var/www/aave/backups,
+# and the success line printed the bare relative path, so it did not even
+# say where the file had gone.
+INVOKED_FROM="$PWD"
+
+# The cd itself is for `require("better-sqlite3")` below, which resolves from
+# the working directory.
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; OFF=$'\033[0m'
@@ -19,7 +28,17 @@ warn() { printf '  %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
 die()  { printf '  %sx%s %s\n' "$RED" "$OFF" "$1" >&2; exit 1; }
 
 DB="${MYAAVE_DB:-data/myaave.db}"
-DEST="${MYAAVE_BACKUP_DIR:-$HOME/aaveloop-backups}"
+# HOME is not guaranteed. cron sets it from the passwd entry, but a systemd
+# timer does not, and under `set -u` a bare $HOME took the script down with
+# "HOME: unbound variable" rather than saying what to pass instead.
+if [ -n "${MYAAVE_BACKUP_DIR:-}" ]; then
+  DEST="$MYAAVE_BACKUP_DIR"
+elif [ -n "${HOME:-}" ]; then
+  DEST="$HOME/aaveloop-backups"
+else
+  DEST=""
+fi
+LOG=""
 KEEP=12
 
 usage() {
@@ -35,7 +54,13 @@ backups past --keep are then removed, oldest first.
   --keep N      How many backups to keep. Defaults to 12. 0 keeps them all.
   --db FILE     Database to back up. Defaults to $MYAAVE_DB, then to
                 data/myaave.db.
+  --log FILE    Append this run's output here instead of the console. A log
+                that cannot be opened is a warning, not a failure - the
+                backup still runs.
   --help        Show this message.
+
+Relative paths are resolved from wherever you run this, not from the folder
+the script lives in.
 
 Backups are matched on the database's own name, so several databases can
 share one destination folder without pruning each other.
@@ -44,12 +69,12 @@ A weekly cron line. Run it as the user the service runs as, which is the one
 that can read the database: on a default install `data/` is mode 700 and owned
 by that account, so nobody else can even look inside it.
 
-  0 3 * * 0 cd /var/www/aave && ./backupDatabase.sh >> "$HOME/aaveloop-backup.log" 2>&1
+  0 3 * * 0 cd /var/www/aave && ./backupDatabase.sh --log "$HOME/aaveloop-backup.log"
 
 Add it with `crontab -e` while logged in as that user, or `sudo crontab -u
-<user> -e` from an account with sudo. The log goes to that user's home folder
-because a path under /var/log has to be created and chowned first, and a cron
-job that cannot write its log is a cron job whose failures are silent.
+<user> -e` from an account with sudo. Prefer --log over a `>>` redirect: a
+redirect the shell cannot open fails before this script starts, so the backup
+never runs, and with no mail configured nothing says so.
 USAGE
 }
 
@@ -61,6 +86,8 @@ while [ $# -gt 0 ]; do
     --keep=*) KEEP="${1#*=}"; shift ;;
     --db) [ $# -ge 2 ] || die "--db needs a path."; DB="$2"; shift 2 ;;
     --db=*) DB="${1#*=}"; shift ;;
+    --log) [ $# -ge 2 ] || die "--log needs a path."; LOG="$2"; shift 2 ;;
+    --log=*) LOG="${1#*=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1. Try --help." ;;
   esac
@@ -69,6 +96,29 @@ done
 case "$KEEP" in
   ''|*[!0-9]*) die "--keep must be a number, got '$KEEP'." ;;
 esac
+
+[ -n "$DEST" ] || die "No destination. HOME is not set here, so pass --dest."
+
+# Relative to where this was run from, not to the checkout it lives in.
+case "$DEST" in /*) ;; *) DEST="$INVOKED_FROM/$DEST" ;; esac
+case "$LOG" in ''|/*) ;; *) LOG="$INVOKED_FROM/$LOG" ;; esac
+
+# The script owns its log rather than leaving it to a `>>` in the crontab.
+# A redirect the shell cannot open fails before the script starts, so the
+# backup never runs at all - and with no mail configured, that is a weekly
+# job silently doing nothing. Opened here it is one warning, and the backup
+# still happens, which is the part that matters.
+if [ -n "$LOG" ]; then
+  # In a subshell: a redirect bash cannot open reports itself before the
+  # command's own stderr redirection applies, so the raw error leaks out.
+  if ( : >> "$LOG" ) 2>/dev/null; then
+    exec >> "$LOG" 2>&1
+    # A log file is never a terminal.
+    BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; OFF=""
+  else
+    warn "Could not open the log at $LOG. Carrying on, writing to the console."
+  fi
+fi
 
 # A file that is not there and a file that cannot be looked at are the same
 # `[ -f ]` and are not the same problem. `data/` is mode 700 owned by the
@@ -92,6 +142,14 @@ fi
 # create its own, which is a destination to choose rather than a fault to fix.
 mkdir -p "$DEST" 2>/dev/null || die "Could not create $DEST. Pass --dest with somewhere this account can write."
 
+# Creatable and writable are different, and `mkdir -p` on a directory that is
+# already there succeeds whoever owns it. Without this the run got as far as
+# the copy and failed with SQLite's own "unable to open database file", which
+# names neither the directory nor the reason.
+if [ ! -w "$DEST" ] || [ ! -x "$DEST" ]; then
+  die "Cannot write into $DEST - it belongs to $(ls -ld "$DEST" | awk '{print $3}'). Pass --dest with somewhere this account can write."
+fi
+
 # Every file this script writes, reads back or removes is matched on this
 # prefix and never on a bare `*.db`. Two things went wrong without it, and
 # both destroyed data rather than merely miscounting: a destination pointed
@@ -100,6 +158,16 @@ mkdir -p "$DEST" 2>/dev/null || die "Could not create $DEST. Pass --dest with so
 # up to one folder pruned each other, since the newest N of everything is
 # not the newest N of either.
 PREFIX="$(basename "${DB%.db}")"
+
+# Absolute, with symlinks and `..` resolved, so the guard in the prune loop
+# compares the same thing however the path was written.
+canonical() {
+  local dir base
+  dir="$(dirname "$1")"
+  base="$(basename "$1")"
+  ( cd "$dir" 2>/dev/null && printf '%s/%s\n' "$(pwd -P)" "$base" )
+}
+LIVE_DB="$(canonical "$DB")"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BASE="$DEST/$PREFIX-$STAMP"
 OUT="$BASE.db"
@@ -163,6 +231,16 @@ if [ "$KEEP" -gt 0 ]; then
   PRUNED=0
   while IFS= read -r old; do
     [ -n "$old" ] || continue
+    # The one file this must never remove, whatever the glob above matched.
+    # Scoping the pattern to the backup prefix already means the live file
+    # cannot match it - `myaave.db` is not `myaave-*.db` - but that is an
+    # argument about a pattern, and this is a backup tool: the source going
+    # missing is the one outcome with no recovery. So it is also checked
+    # outright, against the resolved path rather than the spelling.
+    if [ "$(canonical "$old")" = "$LIVE_DB" ]; then
+      warn "Refusing to remove $old: that is the live database."
+      continue
+    fi
     rm -f "$old"
     PRUNED=$((PRUNED + 1))
   done < <(ls -1t "$DEST/$PREFIX"-*.db 2>/dev/null | tail -n "+$((KEEP + 1))")
