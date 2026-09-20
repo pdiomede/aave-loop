@@ -514,7 +514,7 @@ app.use((err, _req, res, _next) => {
 // Loopback only. This is a personal ledger with no authentication, so it has
 // no business being reachable from the rest of the network.
 const server = app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Aave Loop Ledger v${pkg.version} running at http://localhost:${PORT}`);
+  console.log(`Aave Loop v${pkg.version} running at http://localhost:${PORT}`);
 });
 
 server.on('error', (err) => {

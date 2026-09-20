@@ -51,7 +51,7 @@ Wide and read-only: money, database, security, interface, edge cases. Use it whe
 want to know what is wrong before deciding what to do about it.
 
 <!-- prompt:bug-hunt -->
-Audit the Aave Loop Ledger for real, demonstrable bugs. Report up to **20**, ranked
+Audit Aave Loop for real, demonstrable bugs. Report up to **20**, ranked
 most severe first. **Finding five genuine bugs is a better result than twenty padded
 ones. Do not invent findings to reach a number, and say so plainly if an area is
 clean.**
@@ -186,7 +186,7 @@ Narrower and hands-on: FX, APY, dates, field validation, UI and math, with no
 database or security. It applies the fixes as it goes.
 
 <!-- prompt:bug-hunt-and-fix -->
-Find and fix real, demonstrable bugs in the Aave Loop Ledger. Report and fix up to
+Find and fix real, demonstrable bugs in Aave Loop. Report and fix up to
 **20**, ranked most severe first. **Six genuine bugs is a better result than twenty
 padded ones. Do not invent findings to reach a number. If an area is clean, say so
 plainly and move on.**

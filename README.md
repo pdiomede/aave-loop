@@ -1,4 +1,4 @@
-# Aave Loop Ledger
+# Aave Loop
 
 Track leveraged trade cycles on Aave: borrow a stablecoin, buy ETH, sell it, repay the loan, and see what the round trip actually earned.
 

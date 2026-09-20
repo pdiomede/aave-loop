@@ -1,5 +1,5 @@
 /*
- * Aave Loop Ledger - landing page.
+ * Aave Loop - landing page.
  *
  * Deliberately self contained. The app's stylesheet lives at /styles.css, which
  * nginx keeps behind basic auth, so a public visitor asking for it gets a 401

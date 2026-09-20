@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.21] - 2026-09-20
+
+### Changed
+
+- **The app is called Aave Loop.** "Ledger" was never part of the name anywhere but in the product itself, so it is dropped from the wordmark in the app header, the landing page and its 404, both page titles, the Open Graph and Twitter cards, the README, the startup log, the reset script's banner, the `package.json` description and the two prompts in `PROMPTS.md`. The 0.0.2 entry below still records the old name, because that is what happened at 0.0.2.
+
+### Notes
+
+- The lowercase "ledger" is left alone where it is the ordinary word for what the app holds — "empty the ledger", "the ledger is busy" — since that is a description and not a name.
+- The landing page footer is hand-maintained, because `/api/version` sits behind auth. It reads 0.0.21, as does the static fallback in the app's own footer.
+
 ## [0.0.20] - 2026-09-20
 
 The four items 0.0.19 knowingly left open. One of them turned out to lose a save from the screen; the other three are smaller.

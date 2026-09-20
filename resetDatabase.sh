@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Aave Loop Ledger: wipe the ledger and start over.
+# Aave Loop: wipe the ledger and start over.
 # Destructive, so it asks twice and keeps a backup unless told not to.
 #
 set -euo pipefail
@@ -42,7 +42,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-printf '\n%sAave Loop Ledger%s %sdatabase reset%s\n\n' "$BOLD" "$OFF" "$DIM" "$OFF"
+printf '\n%sAave Loop%s %sdatabase reset%s\n\n' "$BOLD" "$OFF" "$DIM" "$OFF"
 
 if [ ! -f "$DB" ]; then
   ok "No database at $DB. There is nothing to reset."
