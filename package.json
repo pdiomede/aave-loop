@@ -1,12 +1,13 @@
 {
   "name": "myaave",
-  "version": "0.0.36",
+  "version": "0.0.37",
   "description": "Aave Loop: track stablecoin and EURC borrow, ETH buy and sell, and repay cycles.",
   "type": "module",
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "version": "node scripts/stamp-version.mjs && git add public/index.html landing/index.html"
   },
   "engines": {
     "node": ">=18"

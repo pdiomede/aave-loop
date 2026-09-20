@@ -94,6 +94,36 @@ body {
   accent-color: var(--accent);
 }
 
+/* Every other anchor rule in this file keys on where the link sits - `a.brand`,
+   `.nav__link`, `.footer a`, `.footer__line a` - so a link that belongs to none
+   of those places, such as the one the Summary note writes, matched nothing and
+   fell through to the browser default: the single blue underline in the
+   product. This is the rule for a link that is only a link. All four of those
+   selectors are more specific and keep overriding it unchanged.
+
+   Solid, not the dotted underline of `.th-tip`. Dotted already means "this can
+   be asked what it means, and stays where it is", and a dozen of those markers
+   sit in the same view as the note - the same treatment cannot also mean "this
+   opens a new tab", least of all on a touch screen where neither of them has a
+   hover state to tell them apart.
+
+   Drawn in `--text-muted` rather than `--text-faint`: with the text itself
+   taking the colour of what it sits in, the underline is the only thing saying
+   this is a link, and `--text-faint` on the light background is 2.5:1, under
+   the 3:1 WCAG 1.4.11 asks of exactly that cue. `--text-muted` is 4.4:1 light
+   and 6.9:1 dark. */
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--text-muted);
+  text-underline-offset: 3px;
+}
+
+a:hover {
+  color: var(--text);
+  text-decoration-color: currentColor;
+}
+
 /* The theme switch is deliberately instant: no transition on the page
    background or the cards. Easing it leaves the backdrop out of step with the
    surfaces, which flashes grey part way through the change. */
@@ -1023,29 +1053,19 @@ th[aria-sort="ascending"] .th-sort__caret {
   gap: 12px;
 }
 
+/* Each sentence of the note is its own paragraph, so the measure is free to be
+   a number chosen for reading - 68ch, inside the 45-75ch band, the company of
+   `.hero__sub` - instead of one widened until a hand-written break happened to
+   land in the right place. */
 .summary__foot {
   margin: 14px 2px 0;
   font-size: 12.5px;
   line-height: 1.6;
-  /* Wide enough to hold the first sentence on one line, so the break written
-     into the note is the only one at this width. Measured, not guessed. */
-  max-width: 108ch;
+  max-width: 68ch;
 }
 
-/* There is no generic link style in this app - only `a.brand` and the three
-   `.footer a` rules, none of which this matches - so without its own rule the
-   note's link falls through to the browser default and is the one blue
-   underline in the product. Quiet at rest, like the footnote it sits in, with
-   the dotted underline `.th-tip` already uses to mean "this can be followed". */
-.summary__foot a {
-  color: inherit;
-  text-decoration: underline dotted var(--text-faint);
-  text-underline-offset: 3px;
-}
-
-.summary__foot a:hover {
-  color: var(--text);
-  text-decoration: underline solid currentColor;
+.summary__foot + .summary__foot {
+  margin-top: 6px;
 }
 
 .caret {

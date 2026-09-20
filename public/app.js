@@ -1711,32 +1711,52 @@ function fxBanner(count, provisional = 0) {
 }
 
 /**
- * The note under the Summary.
+ * Where these rates are published.
  *
- * Two sentences, one starting on each line, which is why the break is written
- * rather than left to the measure.
- *
- * The link goes to where these rates are *published*, not to where this app
- * fetches them: the figures are ECB reference rates, but they arrive by way of
- * a mirror. So the claim made here is the one the rest of the project already
- * makes - that a conversion can be checked against the ECB's own tables - and
- * that page is the place to check it, because it carries the day's rates and
- * the history downloads together.
- *
- * The first anchor any script in this app writes; everything else that links is
- * hand-written in index.html, and the attributes follow the one external link
- * there. Nothing in here is data, so nothing is escaped. It needs its own rule
- * in the stylesheet: there is no generic link style in this app, and left alone
- * it would be the only browser-blue underline in the product.
+ * Not where this app fetches them: the figures are ECB reference rates, but
+ * they arrive by way of a mirror, and `MYAAVE_FX_URL` can point the fetch
+ * somewhere else again. So the claim the note makes is the one the README and
+ * `fx.js` already make - that a conversion can be checked against the ECB's own
+ * tables - and this page is the place to check it, because it carries the day's
+ * rates and the history downloads together.
  */
 const ECB_RATES_URL =
   'https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html';
 
+/**
+ * The note under the Summary.
+ *
+ * Two paragraphs rather than one with a break written into it. A hand-placed
+ * `<br />` only falls between the sentences while the measure happens to hold
+ * the first one on a single line, which left a number in the stylesheet and
+ * this wording tuned to each other with nothing in either place saying so.
+ *
+ * The scope of the first sentence is the whole of the second one. Four of the
+ * five currencies are pegged, and `rateOf` in lib/calc.js hands a pegged coin a
+ * literal 1, so no figure on a USDC ledger is converted at any rate at all.
+ * Saying every figure is converted, and then that a loan is converted twice,
+ * is false of the default currency and sends the reader looking for a currency
+ * component that cannot exist.
+ *
+ * "Or the last business day before it" is not a hedge: the ECB publishes on
+ * business days only, and db.js stores Friday's rate against a Sunday trade.
+ * Without it the link is an invitation to look up a date that has no row.
+ *
+ * Nothing in here is data, so nothing is escaped. The anchor's attributes
+ * follow the one external link in index.html, and it says that it leaves the
+ * app the way the theme toggle says what it does.
+ */
 const SUMMARY_FOOT = `<p class="summary__foot muted">
-    Every figure is in US dollars, converted at the
-    <a href="${ECB_RATES_URL}" target="_blank" rel="noopener noreferrer">European Central Bank reference rate</a>
-    published for the day of each transaction.<br />
-    A loan taken and repaid months apart is therefore converted twice.
+    Every figure is in US dollars. Amounts in a currency other than the dollar
+    are converted at the
+    <a href="${ECB_RATES_URL}" target="_blank" rel="noopener noreferrer">European
+    Central Bank reference rate<span class="sr-only"> (opens in a new tab)</span></a>
+    for the day of each transaction, or for the last business day before it.
+  </p>
+  <p class="summary__foot muted">
+    A loan in one of those currencies, taken and repaid months apart, is
+    therefore converted twice - once at each end - so the rate's movement
+    between them is part of what it cost.
   </p>`;
 
 function renderSummary() {

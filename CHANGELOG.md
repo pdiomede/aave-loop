@@ -3,19 +3,40 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.37] - 2026-09-20
+
+The note under the Summary says which figures were converted and which were never near a rate, and the app gets a link style of its own. Fourteen findings from a review of 0.0.36, every one reproduced before the fix and checked after.
+
+### Fixed
+
+- **The Summary note said every figure was converted at an ECB rate.** Splitting it in 0.0.36 dropped the six words that made it true - "Amounts in a currency other than the dollar are" - and four of the five currencies are pegged, where `rateOf` hands back a literal 1. On a USDC ledger, the default, not one figure had been near an exchange rate, and the sentence that follows told the reader such a loan was converted twice when it is converted zero times. Both are scoped again, which is how the README and the landing page had them all along.
+- **The note said "for the day of each transaction" and linked somewhere to check it.** The ECB publishes on business days, so a Sunday trade carries Friday's rate - as `db.js` says, and as the banner at the top of the same view says when it calls a rate provisional. Following the link for a weekend date found no row. It now reads "or for the last business day before it".
+- **The link's dotted underline is solid.** Dotted is `.th-tip`, which in this app means a header that explains itself and does not go anywhere; a dozen of those render in the Summary, and on a touch screen no hover told them apart. The underline is also drawn in `--text-muted` rather than `--text-faint`, which was 2.5:1 on the light background - under the 3:1 WCAG 1.4.11 asks of the one cue that identifies a link. Dark theme had always passed, so it looked right to anyone testing there.
+- **The note announces that it opens a new tab.** `.sr-only` was already in the stylesheet doing this for the theme toggle.
+
+### Changed
+
+- **The note is two paragraphs, not one with a `<br />` in it.** The break only landed between the sentences while `max-width: 108ch` held the first one on a single line: two numbers in two files tuned to each other, with about eight characters of slack and nothing on the prose side pointing at the CSS. Rewording the sentence would have brought back the three-line paragraph the split was meant to fix. The measure goes back to 68ch, a number chosen for reading.
+- **A base `a` rule.** The stylesheet had no generic link style - `a.brand`, `.nav__link` and `.footer a` all key on where the link sits - so the note's anchor got a fourth container-scoped rule that copied `.th-tip`'s declarations from 485 lines away. The next link a script writes would have needed a fifth. There is one rule now, and the container rules are all more specific and override it unchanged.
+- **`npm version` stamps the version everywhere it is written.** It was hand-edited in `package.json`, `public/index.html` and `landing/index.html` each release, and the landing page is the one a visitor reads and the one with no runtime source to paint over a miss. `package-lock.json` had drifted 31 releases to 0.0.5, which an `npm install` on the server would have rewritten into a dirty checkout; it is back in step.
+
+### Notes
+
+- The JSDoc block introduced with the link was attached to `ECB_RATES_URL` while describing `SUMMARY_FOOT` - the sentences, the break, the escaping - so hovering the note gave nothing and moving the URL would have carried the note's whole rationale off with it. Each constant carries its own now.
+
 ## [0.0.36] - 2026-09-20
 
 ### Changed
 
 - **The note under the Summary links to the ECB's rates, and reads as two lines.** It named the European Central Bank reference rate without pointing anywhere, so the one thing it invites you to do - check a figure - needed a search engine first. The phrase now links to the ECB's euro foreign exchange reference rates page, which carries the day's rates and the CSV, XML and SDMX history together; the history is the half that makes a past transaction checkable. The explanation is split after the first sentence, so the consequence starts on its own line rather than trailing off the end of a paragraph.
-- The link is worded as **where these rates are published**, not where they come from, because those are not the same place: the figures are ECB reference rates but the only lookup in this app goes to a mirror. "Checked against the ECB's own tables" is the claim `db.js`, `fx.js` and the README already make, and it is the one that is true.
+- The link is **hung on the phrase that was already there**, unchanged: "European Central Bank reference rate" named the number before and names it now. What the anchor adds is a destination, and the destination is where these rates are published rather than where this app fetches them - the figures are ECB reference rates but the only lookup goes to a mirror. "Checked against the ECB's own tables" is the claim `db.js`, `fx.js` and the README already make, and it is the one that is true.
 
 ### Notes
 
 - The note's measure widened with the split. Three lines was a property of `max-width: 68ch` rather than of the sentence, so a break on its own would have made it three lines in a different place. It is two from 900px up, three at 760, and more on a phone, which no version of this sentence avoids.
-- **The app had no link styling at all** outside the footer and the brand, so this one would have fallen through to the browser default and been the single blue underline in the product. It takes the colour of the note it sits in and the dotted underline the explanation markers already use, with the footer's solid underline on hover.
+- **Every anchor rule in the stylesheet keys on where the link sits** - `a.brand`, `.nav__link`, `.footer a` - and this link sits in none of those places, so without a rule of its own it would have fallen through to the browser default and been the single blue underline in the product. It takes the colour of the note it sits in, with the footer's solid underline on hover.
 - **The README carries the same link**, on the same phrase, and its rate bullet no longer says the rates "come from the ECB" - they are the ECB's, read through a public mirror of its daily file, and `MYAAVE_FX_URL` is named for anyone who would rather point it elsewhere. `fx.js`'s own header said the same thing and now says what its next eighteen lines actually do.
-- Verified by execution: two rendered line boxes at 1440, 1280, 1100 and 900px with the second sentence starting at the left edge of the paragraph, and still starting a fresh line at 375px where both sentences wrap; the link's colour matching the body text at rest in both themes and never the browser blue; `href`, `target` and `rel` as written; the ECB page answering with "Euro foreign exchange reference rates" and a USD quote; and no console error on any of the three views, with the Performance card still three tiles then four.
+- Verified by execution: the link's colour matching the body text at rest in both themes and never the browser blue; `href`, `target` and `rel` as written; the ECB page answering with "Euro foreign exchange reference rates" and a USD quote; and no console error on any of the three views, with the Performance card still three tiles then four. The four widths the measure was checked at - 1440, 1280, 1100 and 900px - are all above where `max-width: 108ch` binds, so they were one measurement reported four times; the width where the first sentence stops fitting was never tested. See 0.0.37, where the break stops depending on a measure at all.
 
 ## [0.0.35] - 2026-09-20
 
