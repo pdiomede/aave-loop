@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.31] - 2026-09-20
+
+### Changed
+
+- **`/summary` is a table rather than a paragraph.** Each label carries a colon and the figures line up under one another, which needs a `pre` block: Telegram draws message text proportionally, so the spaces that used to separate a label from its figure lined nothing up. The footnote about open positions counting every unrepaid trade is gone; it was a sentence of explanation under four numbers that do not need it.
+
 ## [0.0.30] - 2026-09-20
 
 ### Fixed

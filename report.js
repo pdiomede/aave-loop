@@ -180,31 +180,35 @@ function fit(lines) {
  * page uses, so the two cannot drift apart.
  */
 export function summaryText(s) {
-  const lines = ['<b>Summary</b>'];
+  const rows = [
+    [
+      'Realized net gain',
+      // Not "$0.00" when nothing has a rate yet: those trades made a real gain
+      // that is simply not known in dollars, the distinction the tile makes too.
+      Number.isFinite(s.netGain)
+        ? signedUsd(s.netGain)
+        : s.missingFx
+          ? 'not known in dollars yet'
+          : MISSING,
+    ],
+    ['Blended annualized', pct2(s.avgPct)],
+    ['Closed trades', String(s.closedCount)],
+    [
+      'Open positions',
+      s.openCount
+        ? `${s.openCount} (${usd(s.deployed)})${s.deployedMissingFx ? ' \u2014 some without a rate' : ''}`
+        : '0',
+    ],
+  ];
 
-  // Not "$0.00" when nothing has a rate yet: those trades made a real gain that
-  // is simply not known in dollars, which is the distinction the tile makes too.
-  lines.push(
-    `Realized net gain   ${escHtml(
-      Number.isFinite(s.netGain) ? signedUsd(s.netGain) : s.missingFx ? 'not known in dollars yet' : MISSING,
-    )}`,
-  );
-  lines.push(`Blended annualized  ${escHtml(pct2(s.avgPct))}`);
-  lines.push(`Closed trades       ${s.closedCount}`);
+  // Inside a `pre` for the same reason the holdings table is: Telegram draws
+  // message text proportionally, so spaces between a label and a figure line
+  // nothing up. Width from the longest label, so nothing is padded to fit a
+  // column that is not there.
+  const w = Math.max(...rows.map(([label]) => label.length)) + 2;
+  const body = rows.map(([label, value]) => `${padRight(`${label}:`, w)}${value}`).join('\n');
 
-  const open = s.openCount
-    ? `${s.openCount} (${usd(s.deployed)})${s.deployedMissingFx ? ' — some without a rate' : ''}`
-    : '0';
-  lines.push(`Open positions      ${escHtml(open)}`);
-
-  if (s.openCount) {
-    // The tile counts every trade that has not been realized, which includes
-    // one already sold but not yet repaid. Worth saying, or the two commands
-    // look like they disagree.
-    lines.push('\n<i>Open positions counts every unrepaid trade, so it can be more than /holding lists.</i>');
-  }
-
-  return lines.join('\n');
+  return `<b>Summary</b>\n<pre>${escHtml(body)}</pre>`;
 }
 
 /* -------------------------------------------------------------------- help */
