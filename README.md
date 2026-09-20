@@ -165,7 +165,7 @@ curl -X POST http://localhost:3000/api/alerts/test
 
 - **The format** is `KEY=value`, one per line. Blank lines and `#` comments are skipped, a leading `export ` is tolerated because these get pasted out of a shell, and one matching pair of surrounding quotes is stripped. There is no interpolation and no escapes: a bot token needs neither, and every such feature is another way to read a secret wrong.
 - **Anything in it can be overridden for one run** by exporting it first, the same rule every other setting follows: `TELEGRAM_CHAT_ID=-1009876543210 npm start`.
-- **On a server, where the app directory is not yours to write to**, the copy is refused. Either put the file there as root and hand it to whichever user the app runs as (`ls -ld .` and the service's `User=` say who that is), or keep it somewhere you own and point the app at it, which needs no root: `MYAAVE_CONFIG=/home/you/aave-loop.env npm start`.
+- **On a server, where the app directory is not yours to write to**, the copy is refused. Either put the file there as root and hand it to whichever user the app runs as, or keep it somewhere you own and point the app at it, which needs no root: `MYAAVE_CONFIG=/home/you/aave-loop.env npm start`. The user that runs the service is not necessarily the one that owns the checkout - `systemctl show <unit> -p User` says which, and a `config.env` the process cannot open is reported as such at startup.
 - **`config.env` is gitignored by name**, because `.env.*` does not match it. Only `config.env.example`, which holds placeholders, is committed. The app warns once at startup if the file is readable by other users on the machine, and the token appears in no log line, no error message and no API response.
 
 ## Layout

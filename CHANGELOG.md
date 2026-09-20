@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.30] - 2026-09-20
+
+### Fixed
+
+- **"No config.env yet" was also what a config.env nobody could read said.** `readFile` returned null for a missing file and for a refused one alike, so an install whose `config.env` was owned by the wrong user was told the file did not exist - six restarts running, while `Could not read config.env: EACCES` sat on a line of its own that nobody had reason to grep for. An unreadable file now says so, and says to check who owns it. The checkout belonging to one account while the service runs as another is an ordinary arrangement, and this is what it looks like when it bites.
+
 ## [0.0.29] - 2026-09-20
 
 ### Fixed

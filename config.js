@@ -50,21 +50,39 @@ function parse(text) {
   return out;
 }
 
+/**
+ * The file, or why not.
+ *
+ * `problem` is the difference between a file nobody has written yet and one
+ * that is sitting right there unreadable, and it exists because those two were
+ * reported with the same sentence. An install whose config.env was owned by
+ * the wrong user - the checkout belongs to one account and the service runs as
+ * another, which is an ordinary arrangement - was told "No config.env yet" six
+ * restarts running, while the real cause sat on a line of its own that nobody
+ * had reason to grep for.
+ */
 function readFile() {
   try {
-    return parse(fs.readFileSync(FILE, 'utf8'));
+    return { values: parse(fs.readFileSync(FILE, 'utf8')), problem: null };
   } catch (err) {
-    // ENOENT is the ordinary case: most installs never send anything.
-    if (err.code !== 'ENOENT') {
-      console.error(`Could not read ${path.basename(FILE)}: ${err.message}`);
-    }
-    return null;
+    if (err.code === 'ENOENT') return { values: null, problem: null };
+
+    const name = path.basename(FILE);
+    console.error(`Could not read ${name}: ${err.message}`);
+    return {
+      values: null,
+      problem:
+        err.code === 'EACCES'
+          ? `${name} exists but this process cannot read it. Check that it is owned by the ` +
+            'user the app runs as.'
+          : `${name} could not be read: ${err.message}`,
+    };
   }
 }
 
 // Read once. The file cannot change without a restart, and re-reading it per
 // poll would be a syscall a minute for a file nobody is editing.
-const fileValues = readFile();
+const { values: fileValues, problem: fileProblem } = readFile();
 const fileFound = fileValues !== null;
 const values = fileValues || {};
 
@@ -129,7 +147,11 @@ export function telegramConfig() {
   const chatName = get('TELEGRAM_CHAT_NAME') || FALLBACK_NAME;
 
   let reason = null;
-  if (!token && !chatId) {
+  if (fileProblem && !token && !chatId) {
+    // Said before anything else: a file that cannot be opened is not a file
+    // that is missing, and the advice for the two is not the same.
+    reason = fileProblem;
+  } else if (!token && !chatId) {
     reason = fileFound
       ? 'config.env has no Telegram bot token or chat id yet.'
       : 'No config.env yet, so there is nowhere to send an alert.';
