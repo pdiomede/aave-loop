@@ -115,7 +115,38 @@ fifteen minutes - but only when at least one alert is armed, so a ledger with no
 never calls out. An alert fires once. A second copy of the app running against the same
 database cannot send the same message twice.
 
-Sending needs a Telegram bot. Copy the template and fill it in:
+Sending needs a Telegram bot of its own, set up once in `config.env`. Without that file
+nothing breaks: the bell works, goals are saved and kept, and the window says what is
+missing.
+
+## Setting up config.env
+
+Alerts are the one part of this app that speaks to the outside world on your behalf, so
+they need a bot and somewhere to send to. Five minutes, once.
+
+**1. Make a bot.** Message [@BotFather](https://t.me/BotFather) and send `/newbot`. It
+asks for a display name, then a username ending in `bot`, and answers with a token like
+`123456789:AAE...`. That token *is* the bot: anyone holding it can post as it, so treat
+it the way you would a password.
+
+**2. Put the bot in the group.** Open the group, add a member, search for the username
+you just chose. Nothing else is needed - a bot can post to a group without being an
+administrator.
+
+**3. Find the group's chat id.** Send a message beginning with `/` in the group, then
+ask Telegram what it saw:
+
+```bash
+curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*'
+```
+
+It has to be a `/` message. A bot in a group is given Telegram's privacy mode by
+default, which means it is shown commands and replies to itself and nothing else, so
+ordinary chat will leave `getUpdates` empty and look like a failure. The id is negative,
+and begins `-100` for a supergroup. Privacy mode has no bearing on anything after this
+step, because the app only ever sends.
+
+**4. Write the file**, in the directory the app runs from:
 
 ```bash
 cp config.env.example config.env && chmod 600 config.env
@@ -123,17 +154,63 @@ cp config.env.example config.env && chmod 600 config.env
 
 | Key | What it is |
 | --- | --- |
-| `TELEGRAM_BOT_TOKEN` | from [@BotFather](https://t.me/BotFather), after `/newbot` |
-| `TELEGRAM_CHAT_ID` | the group's id; negative, and starting `-100` for a supergroup |
-| `TELEGRAM_GROUP_NAME` | display only, shown in the alert window and at startup |
+| `TELEGRAM_BOT_TOKEN` | the token from step 1 |
+| `TELEGRAM_CHAT_ID` | the id from step 3 |
+| `TELEGRAM_GROUP_NAME` | display only: shown in the alert window and at startup |
 
-Add the bot to the group before reading its chat id from
-`https://api.telegram.org/bot<token>/getUpdates`. `config.env` is gitignored and anything
-in it can be overridden for one run by exporting it in the shell.
+**5. Restart, and read the line it prints.** The file is read once, when the process
+starts, so a ledger already running will not notice an edit. On the way up it says one
+of:
 
-Without the file the app runs exactly as before: the bell works, goals are saved, and
-the window says what is missing. `POST /api/alerts/test` sends one message now, which is
-the quick way to find out whether the token and the chat id are right.
+```
+Price alerts will message Aave Loop Alerts.
+Price alerts are not configured: TELEGRAM_CHAT_ID is missing from config.env.
+```
+
+**6. Send a test**, rather than waiting for the market to tell you whether it works:
+
+```bash
+curl -X POST http://localhost:3000/api/alerts/test
+```
+
+`{"ok":true,"error":null}` and a message in the group means it is done. Anything else
+comes back as a sentence rather than a stack trace: `Bad Request: chat not found` for a
+wrong id, `Unauthorized` for a wrong token. One test per ten seconds.
+
+### Notes on the file
+
+**The format** is `KEY=value`, one per line. Blank lines and `#` comments are skipped, a
+leading `export ` is tolerated because these get pasted out of a shell, and one matching
+pair of surrounding quotes is stripped. There is no interpolation and no escapes: a bot
+token needs neither, and every such feature is another way to read a secret wrong.
+
+**Anything in it can be overridden for one run** by exporting it first, the same rule
+every other setting in this app follows:
+
+```bash
+TELEGRAM_CHAT_ID=-1009876543210 npm start
+```
+
+**On a server, where the app directory is not yours to write to**, the copy will be
+refused. Either put the file there as root and hand it to whichever user the app runs
+as - `ls -ld .` and the service's `User=` will say who that is:
+
+```bash
+sudo cp config.env.example config.env
+sudo chown "$APP_USER:$APP_USER" config.env
+sudo chmod 600 config.env
+```
+
+or keep it somewhere you own and point the app at it, which needs no root at all:
+
+```bash
+MYAAVE_CONFIG=/home/you/aave-loop.env npm start
+```
+
+**`config.env` is gitignored by name**, because `.env.*` does not match it. Only
+`config.env.example`, which holds placeholders, is committed. The app warns once at
+startup if the file is readable by other users on the machine, and the token appears in
+no log line, no error message and no API response.
 
 ## Layout
 
