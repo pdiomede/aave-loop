@@ -9,10 +9,16 @@
  * A rate is USD per one unit of the borrowed coin, so `usd = native * fx`, and
  * a dollar pegged coin is exactly 1. Nothing here ever inverts a rate.
  *
- * Rates come from the European Central Bank, which publishes one euro
+ * The rates are the European Central Bank's, which publishes one euro
  * reference rate per business day. They are the rates a European accountant
  * would use, they go back to 1999, and they are free to read without a key or
  * an account, which matters for something meant to run on a laptop forever.
+ *
+ * They are read through a mirror of that daily file rather than from the Bank
+ * itself - `FX_URL` below, which `MYAAVE_FX_URL` overrides. Worth saying here
+ * rather than leaving to be discovered on the line that sets it: this comment
+ * said the rates "come from the European Central Bank", which is true of the
+ * figures and not of the request.
  */
 import { db, prepare, tradesMissingFx, tradesWithSubstitutedFx } from './db.js';
 import {
