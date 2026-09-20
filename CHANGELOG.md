@@ -9,186 +9,165 @@ A trade whose ETH is still held can now say what price it is waiting for, and be
 
 ### Added
 
-- **Price alerts.** While a trade is HOLDING, the **Bought ETH** card carries a bell beside Edit. It opens a window with what the trade cost, when, what was paid per ETH and what ETH is worth now, and takes one figure: the goal price. The card then carries the goal, and the message is sent to a Telegram group once ETH reaches it. One alert per trade; saving again replaces and re-arms it, and **Remove alert** deletes it.
-- **The message is shown before it is sent.** The window renders the exact text that will arrive, built by the server from the same function that sends it, and rebuilds it as the price is typed. A group is a room full of other people and the message carries the trade's figures, so nothing goes into it unread.
-- **`config.env`, and `config.js` to read it.** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and a display-only `TELEGRAM_GROUP_NAME`. `process.env` still wins over the file, as it does for every other setting. Gitignored by name, with `config.env.example` committed in its place, and the app warns once at startup if the file is readable by other users.
-- **`eth.js`**, the ETH spot price, from CoinGecko because it answers without a key. Shaped like `fx.js`: a timeout, a cooldown after a failure, a cached value and a status object the interface can show. A 429 gets its own ten-minute cooldown and honours `Retry-After`, since walking straight back into a shared rate limit earns a longer one.
-- **`telegram.js`**, one message, plain text and no `parse_mode` - a group name with an underscore in it would otherwise fail the whole send silently. Every error string leaving it has the token redacted, because Node puts the URL in some network errors.
-- **`alerts.js`**, the alerts themselves and the timer that checks them, every fifteen minutes. The tick counts what is armed before anything else, so a ledger with no alerts on it never touches the network however long it is left running.
+- **Price alerts.** While a trade is HOLDING, the **Bought ETH** card carries a bell. It opens a window with what the trade cost, what was paid per ETH and what ETH is worth now, and takes one figure: the goal price. A Telegram group gets the message once ETH reaches it. One alert per trade; saving replaces and re-arms it, **Remove alert** deletes it.
+- **The message is shown before it is sent**, built by the server from the same function that sends it and rebuilt as the price is typed. A group is a room full of other people, so nothing goes into it unread.
+- **`config.env`, read by `config.js`:** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and a display-only `TELEGRAM_GROUP_NAME`. `process.env` still wins over the file. Gitignored by name, with `config.env.example` committed in its place, and a warning at startup if the file is readable by other users.
+- **`eth.js`**, the ETH spot price from CoinGecko, which answers without a key. Shaped like `fx.js`: a timeout, a cooldown after a failure, a cached value and a status object, with a ten-minute cooldown on a 429 that honours `Retry-After`.
+- **`telegram.js`**, one message, plain text and no `parse_mode` - a group name with an underscore would otherwise fail the send silently. Every error string leaving it has the token redacted.
+- **`alerts.js`**, the alerts and the timer that checks them every fifteen minutes. The tick counts what is armed first, so a ledger with no alerts on it never touches the network.
 - `GET /api/alerts`, `PUT` and `DELETE /api/alerts/:id`, `GET /api/alerts/:id/preview` and `POST /api/alerts/test`. The bot token and the chat id are in none of them.
-- **A setting-up section in the README**, six steps: make the bot, add it to the group, find the chat id, write the file, restart and read the line it prints, send a test. It was a copy command and a three row table, which is enough only for someone who has done this before. Two of the steps fail in ways that look like a broken app rather than a missing step, and both are now called out: `getUpdates` answers with nothing unless the message it is meant to see begins with a slash, because a bot in a group is given Telegram's privacy mode by default and is shown commands and replies to itself and nothing else; and the file is read once when the process starts, so editing it under a running ledger changes nothing until a restart. The section also documents `MYAAVE_CONFIG`, which was in the code and nowhere else, and what to do on a server whose application directory the installing user cannot write to.
+- **A setting-up section in the README**, six steps from making the bot to sending a test, including the two that fail like a broken app: `getUpdates` answers with nothing unless the message begins with a slash, because of Telegram's privacy mode, and the file is read once at startup. It also documents `MYAAVE_CONFIG`, which was in the code and nowhere else.
 
 ### Notes
 
-- **An alert is claimed before the message is sent, not after.** `run_myAave.sh` will start a second copy of the app on the next free port against the same database file, and both copies poll. The claim is a conditional `UPDATE ... WHERE status = 'armed'`, so only one of them can win it. Verified with two instances at a fast poll against one database: one message, over nine ticks.
-- **Selling the ETH stops the alert being checked**, because the sweep joins the trade and requires `sell_date IS NULL`. Nothing has to remember to switch it off, and undoing the sale brings the alert back. Verified by re-arming an alert on a sold trade by hand and confirming four ticks past the goal sent nothing.
-- A transport failure and a refusal are handled apart. A timeout leaves delivery genuinely unknown, so the alert goes back to armed and is retried up to three times; Telegram answering "no such chat" will say the same thing next time, so the alert stays fired and the card carries the reason.
-- **Without `config.env` the app is what it was.** It boots, logs one line, the bell works and goals are saved; the window says what is missing and offers to send them once it is filled in. That was the negative test the whole thing was built around.
-- **Which way an alert reads is decided against ETH's current price, not against what was paid for it.** A goal is a crossing that has not happened yet: with ETH at 3,000 and a purchase at 2,500, a goal of 2,600 means "tell me if it falls back to 2,600". Judged against the purchase price that is an upward goal already met, and the next tick fired it, with a message announcing that ETH had hit a price it had in fact fallen from. The price it was decided from is stored beside the goal. The purchase price is now only the fallback, for a ledger that cannot reach the price service at all; with neither known the alert reads upward and the window says so.
-- The goal is always in dollars. Where the purchase price is used as the fallback it is `buyPriceUsd` and never `buyPrice`, which on a EURC loan is euros per ETH while CoinGecko quotes dollars.
-- **An armed alert is only checked while the trade is still holding ETH**, which means the purchase recorded in full as well as no sale. Asking only whether it had been sold missed the other way a trade leaves HOLDING: every stage here can be cleared, and an alert left armed on a trade whose purchase had been undone sent a message reading "Bought 0.0000 ETH for 0.00 USDC".
-- The alert window asks the server for the alert and a freshly fetched price each time it opens. Both were previously read once at page load, so a tab left open offered a goal to set against a morning price and went on calling a fired alert armed until it was reloaded. Page load itself does not ask for a fresh price: a boot should not wait on an outside service.
-- A transport failure keeps the price the goal was reached at rather than blanking it, so an alert that gives up after three tries can still say what it was trying to tell you. A row back at `armed` ignores those columns and re-firing overwrites them.
-- A rate limited price lookup honours `Retry-After` upward, bounded at an hour. Taking the smaller of the header and our own ten minutes meant a service asking for an hour was heard as ten minutes, which walks straight back into the limit it had just been told about.
-- `config.env` values are no longer masked by a variable exported empty - what `TELEGRAM_CHAT_ID=` in a wrapper script leaves behind - which counted as a value and reported the alerts unconfigured while the file sat there correctly filled in.
-- A preview that arrives after the window has been reopened on another trade is discarded, rather than showing one trade's figures under another trade's heading. Clearing the debounce timer only stops a request that has not left yet.
-- A **Remove alert** that does not reach the server says so and leaves the window open, rather than reporting the alert removed while it is still armed.
-- The alert stores neither the trade's amount nor its date nor its purchase price, though the window shows all three. They live on the trade, an edit can move any of them, and a copy taken when the alert was set would start disagreeing with the card beside it. The two prices it does store are prices observed at a moment, which is the same reason the `*_fx` columns are stored.
-- **`.gitignore` did not cover `config.env`.** `.env.*` matches a file beginning `.env.`, not this one, so the file would have been committed with a live token in it. Listed in full now.
-- The alert window is the first modal in the app. It lives in the page shell rather than inside the card that opens it, because the trades table is rebuilt wholesale on every render and anything inside it would be torn out mid-typing - the same reason the toast has sat outside it since the beginning. `.modal` sets `color` explicitly: a `dialog` is given `CanvasText` by the browser, which is near black on the dark theme's surface.
-- Verified by execution throughout: the fire path, no second message after firing, two instances against one database, the disarm on sale, cascade delete, a clean shutdown mid-sweep, and the window in both themes at 1440px and 375px.
-
+- **An alert is claimed before the message is sent**, by a conditional `UPDATE ... WHERE status = 'armed'`, so two copies of the app polling one database cannot both send it. Verified with two instances at a fast poll: one message, over nine ticks.
+- **An armed alert is only checked while the trade is still holding ETH** - the purchase recorded in full and no sale - so selling disarms it without deleting it and undoing a sale brings it back. Asking only whether it had been sold let an alert on an undone purchase send "Bought 0.0000 ETH for 0.00 USDC".
+- A timeout leaves delivery genuinely unknown, so the alert re-arms and is retried up to three times; a refusal such as "no such chat" will say the same next time, so it stays fired with the reason on the card.
+- **Which way an alert reads is decided against ETH's current price, not what was paid for it.** With ETH at 3,000 and a purchase at 2,500, a goal of 2,600 means "tell me if it falls back"; against the purchase price it is an upward goal already met, and the next tick fired it. The fallback is `buyPriceUsd`, never `buyPrice`, which on a EURC loan is euros per ETH.
+- **Without `config.env` the app is what it was**: it boots, the bell works, goals are saved, and the window says what is missing. `.gitignore` did not cover the file - `.env.*` matches a file beginning `.env.` - so it would have been committed with a live token.
+- Smaller: the window fetches the alert and a fresh price each time it opens rather than once at page load; `Retry-After` is honoured upward, bounded at an hour; a variable exported empty no longer masks a filled-in `config.env`; a stale preview is discarded; a failed **Remove alert** says so; and the alert keeps no copy of the trade's amount, date or purchase price, any of which an edit can move.
+- The alert window is the first modal, and lives in the page shell rather than in the card that opens it, because the trades table is rebuilt wholesale on every render. `.modal` sets `color` explicitly, since a `dialog` is given near-black `CanvasText`.
+- Verified by execution: the fire path, no second message after firing, two instances against one database, the disarm on sale, cascade delete, a clean shutdown mid-sweep, and both themes at 1440px and 375px.
 ## [0.0.21] - 2026-09-20
 
 ### Changed
 
-- **The app is called Aave Loop.** "Ledger" was never part of the name anywhere but in the product itself, so it is dropped from the wordmark in the app header, the landing page and its 404, both page titles, the Open Graph and Twitter cards, the README, the startup log, the reset script's banner, the `package.json` description and the two prompts in `PROMPTS.md`. The 0.0.2 entry below still records the old name, because that is what happened at 0.0.2.
+- **The app is called Aave Loop.** "Ledger" is dropped from the wordmark, the landing page and its 404, both page titles, the Open Graph and Twitter cards, the README, the startup log, the reset script's banner, the `package.json` description and the two prompts in `PROMPTS.md`. The 0.0.2 entry below keeps the old name, because that is what happened at 0.0.2.
 
 ### Notes
 
-- The lowercase "ledger" is left alone where it is the ordinary word for what the app holds — "empty the ledger", "the ledger is busy" — since that is a description and not a name.
+- The lowercase "ledger" is left alone where it is the ordinary word for what the app holds, since that is a description and not a name.
 - The landing page footer is hand-maintained, because `/api/version` sits behind auth. It reads 0.0.21, as does the static fallback in the app's own footer.
 
 ## [0.0.20] - 2026-09-20
 
-The four items 0.0.19 knowingly left open. One of them turned out to lose a save from the screen; the other three are smaller.
+The four items 0.0.19 knowingly left open. One of them turned out to lose a save from the screen.
 
 ### Fixed
 
-- **A save could be silently undone on screen.** **Fetch rates** reloads the whole ledger, and a stage saved while that reload was still on the wire wrote itself straight into the table. The reload had been issued against the ledger as it stood *before* that save, so when it landed it put the row back: a trade saved as CLOSED reverted to SOLD and stayed that way until the page was reloaded, with no error and nothing to suggest the save had not taken. The server had it right throughout. `loadTrades` now discards a reply that a newer load has overtaken, or that a write superseded while it was in flight. Reproduced by holding the `GET /api/trades` response back, and confirmed fixed against the same test.
-- **A cross-stage error named the wrong field, so no field was marked.** Moving an early stage past a later one — a purchase dated after its sale, a loan cut below what was already repaid, a purchase cut below the ETH already sold — passed the form and was caught only by the server, whose message names the stage it *collided with* rather than the one being edited. That field is not in the open form, so the message fell through to the form's error line with nothing highlighted. The form now checks each of these from both sides and flags the field the user is actually editing. Same-day stages, which are legitimate, are still allowed.
-- **A dropped amount was read as if it had been typed.** `sanitizeNumeric` only treated `insertFromPaste` as a complete value, so text dropped into an amount, or filled in by autofill, took the keystroke-by-keystroke path: `32.000,00` recorded a 32,000 loan as 32, the same failure 0.0.7 fixed for pasting. A drop and an autofill arrive as whole as a paste and are now read that way. Typing is unchanged, because `1,5` on its way to `1,500` still cannot be read as a decimal comma.
+- **A save could be silently undone on screen.** **Fetch rates** reloads the whole ledger, and a stage saved while that reload was on the wire was put back when it landed: a trade saved as CLOSED reverted to SOLD, with no error, until the page was reloaded. The server had it right throughout. `loadTrades` now discards a reply that a newer load has overtaken, or that a write superseded in flight.
+- **A cross-stage error named the wrong field, so no field was marked.** Moving an early stage past a later one passed the form and was caught only by the server, whose message names the stage it *collided with* rather than the one being edited. The form checks these from both sides now and flags the field being edited. Same-day stages are still allowed.
+- **A dropped amount was read as if it had been typed.** `sanitizeNumeric` treated only `insertFromPaste` as a complete value, so a dropped or autofilled `32.000,00` recorded a 32,000 loan as 32 - the failure 0.0.7 fixed for pasting. Typing is unchanged.
 
 ### Changed
 
-- **"Open positions" says when its total is incomplete.** The count includes every open trade while the dollar figure can only include the ones whose rate is known, so on a ledger with an unrated open loan the two quietly disagreed. The tile now carries the same `no rate` chip the rest of the app uses, rather than printing a total that is short without saying so.
-- "Total borrowed" states that a trade still waiting on a rate is left out, which it always was, in step with every other figure on that card.
+- **"Open positions" says when its total is incomplete**, carrying the same `no rate` chip as the rest of the app rather than printing a total that is short without saying so.
+- "Total borrowed" states that a trade waiting on a rate is left out, in step with every other figure on that card.
 
 ### Notes
 
-- Verified by execution, and the whole 0.0.19 suite re-run unchanged: both FX invariants across 40,000 generated trades and 200 portfolios, aggregate reconciliation, the server bounds matrix, and no layout overflow at 1440px or 390px in either theme with the new chip in place.
+- Verified by execution, with the 0.0.19 suite re-run unchanged: both FX invariants across 40,000 generated trades and 200 portfolios, aggregate reconciliation, the server bounds matrix, and no overflow at 1440px or 390px in either theme.
 
 ## [0.0.19] - 2026-09-20
 
-Five bugs from an audit of the money path, the date path and the forms. No figure on a trade whose rates are all present changes, except the *Borrowed* pair in the currency table, which now describes the trades it always claimed to.
+Five bugs from an audit of the money path, the date path and the forms.
 
 ### Fixed
 
-- **"Gross gain" quoted a rate that did not produce it.** The dollar figure is the proceeds converted at the sale's rate less the cost basis converted at the purchase's, and the provenance line under it named the sale rate alone. A trade whose gross gain was 1,800.00 EURC read `+$2,228.40 at 1.1380`, and 1,800 × 1.1380 is 2,048.40. That line exists so a converted figure can be checked against the ECB's own tables, so quoting a rate the reader cannot check with is worse than quoting none. It now quotes none, as "Net gain" and "Loan cost" — the other figures built from more than one rate — already did.
-- **The two lines of *Borrowed* in the currency table counted different trades.** The dollar total could only include a trade whose rate was known; the total in the coin itself, printed directly beneath it and described as "the same total in the currency itself", counted every trade in the currency. On a ledger with two unrated EURC trades the cell read `$155,225.00` over `210,000.00 EURC`, an implied rate of 0.74 against a column of euros converted at 1.06 to 1.13. Both lines now cover the trades whose rate is known, which is what the `no rate` chip on the row is there to flag.
-- **A field's error was painted over by a live hint while the field stayed flagged.** Typing in any sibling field recomputed the hints, and a hint is written into the same slot the error occupies. A repayment of 1 against a 52,500 loan left a red field reading `Net gain +57,224.00 DAI (+$57,224.00), 2652.29% annualized` — a figure computed from the very value that had just been rejected, and no remaining explanation of what was wrong. A field still flagged invalid now keeps its error until that field is edited, which is when the input handler clears it.
-- **The stage preview converted at the rate belonging to the stage's old date.** Moving a repayment from 17 May to 15 July left the net gain at `+$1,937.36`, still converted at the rate published on 15 May, and said nothing about it — while a stage being entered for the first time correctly falls back to the coin and says "(converted on save)". The preview now drops a stage's stored rate as soon as the form moves that stage to another day, which is what the server does on the same edit, so it falls back and says so.
-- **"Added" named the wrong day.** `created_at` is stored as a UTC instant while every other date in the ledger is a calendar day on the local clock. Slicing the instant put a trade added at 00:09 in Berlin on the day before. It is formatted on the local calendar now, the same convention `todayISO` settled on.
+- **"Gross gain" quoted a rate that did not produce it.** The figure is the proceeds at the sale's rate less the cost basis at the purchase's, and the line under it named the sale rate alone: 1,800.00 EURC read `+$2,228.40 at 1.1380`, and 1,800 × 1.1380 is 2,048.40. It quotes no rate now, as "Net gain" and "Loan cost" already did.
+- **The two lines of *Borrowed* in the currency table counted different trades.** The dollar total included only trades whose rate was known while the total in the coin counted every trade, so a cell read `$155,225.00` over `210,000.00 EURC`. Both lines now cover the trades whose rate is known.
+- **A field's error was painted over by a live hint while the field stayed flagged.** Typing in a sibling recomputed the hints, which are written into the slot the error occupies, leaving a red field showing a figure computed from the value just rejected. An invalid field keeps its error until that field is edited.
+- **The stage preview converted at the rate belonging to the stage's old date.** Moving a repayment from 17 May to 15 July left the net gain converted at the 15 May rate and said nothing about it. The preview drops a stage's stored rate as soon as the form moves it to another day, as the server does, so it falls back and says "(converted on save)".
+- **"Added" named the wrong day.** `created_at` is a UTC instant while every other date is a local calendar day, so slicing it put a trade added at 00:09 in Berlin on the day before. It follows `todayISO`'s convention now.
 
 ### Notes
 
-- Verified by execution. Both stated FX invariants hold — `loanCostUsd === interestPaidUsd + principalFxUsd`, and `netGainUsd === netGain × rate` under a single flat rate — across 40,000 randomly generated trades, together with stage-rate attribution for the cost basis and both ETH prices, null propagation, partial-sale reconciliation, and full aggregate reconciliation over 200 random portfolios. The five fixes were each re-proved in the running app afterwards.
-- The landing page footer had been left at v0.0.17 through the 0.0.18 release, the same slip 0.0.12 recorded. It is hand-maintained because `/api/version` sits behind auth, so it has to be bumped alongside the others. It reads 0.0.19 now.
-- Areas audited and found clean: the four-stage FX conversion in `derive`, the annualized and weighted-average maths and their labels, the date helpers across DST, leap days and month and year boundaries, `fx.js` caching, staleness and backfill, server-side validation and bounds, `esc()` coverage against `innerHTML`, and layout overflow at 1440px and 390px in both themes.
-
+- Verified by execution: both FX invariants - `loanCostUsd === interestPaidUsd + principalFxUsd`, and `netGainUsd === netGain × rate` under a flat rate - across 40,000 generated trades and 200 portfolios, with stage-rate attribution, null propagation and partial-sale reconciliation.
+- The landing page footer had been left at v0.0.17 through the 0.0.18 release, the same slip 0.0.12 recorded. Audited and found clean: `derive`, the weighted-average maths, the date helpers across DST and leap days, `fx.js` caching and backfill, server-side validation, `esc()` coverage and layout in both themes.
 ## [0.0.18] - 2026-09-19
 
 ### Changed
 
-- **Tooltips are drawn by CSS instead of by the browser.** A native `title` waits about a second before it appears, lands wherever the pointer happens to be rather than beside the thing it explains, and on a phone never appears at all. These appear at once, in place, and work on a tap. No script runs on hover.
-- The explanation marker is a real button now, so it can be reached by keyboard and read out by a screen reader, which the `title` it replaces could not manage.
+- **Tooltips are drawn by CSS instead of by the browser.** A native `title` waits a second, lands wherever the pointer is, and on a phone never appears at all. These appear at once, in place, and work on a tap, with no script on hover.
+- The explanation marker is a real button, so it can be reached by keyboard and read out by a screen reader, which the `title` could not manage.
 
 ### Added
 
-- **Every figure in the Summary says what it means.** All nine rows of the Performance card, and all ten column headers of *By currency* and *By month closed*. Each one names which trades it counts, since that is the detail that makes two correct figures look inconsistent when it quietly differs between them, and it is what sent this ledger hunting for math bugs that were not there.
-- The "no rate" chip carries its explanation the same way, wherever it lands: a hero tile, a trades cell, an expanded detail row or the currency table.
+- **Every figure in the Summary says what it means:** all nine rows of the Performance card and all ten column headers of *By currency* and *By month closed*. Each names which trades it counts, since that is what makes two correct figures look inconsistent.
+- The "no rate" chip carries its explanation the same way, wherever it lands.
 
 ### Fixed
 
-- **"Of which currency" painted a saving red.** The figure is a component of what the loan cost, so a negative one means the currency moved in your favour and the loan cost less than the interest alone, but it was coloured from the gain palette and so rendered as though it were a loss. The number and the label are unchanged, and it still sums with "Interest paid" to the total cost; only the colour is taken from the sign reversed.
+- **"Of which currency" painted a saving red.** A negative figure there means the currency moved in your favour, but it was coloured from the gain palette. Only the colour changed.
 
 ### Notes
 
-- A card no longer clips its overflow, which is what lets a tooltip on the last row out. The only thing the clip was holding in was the trades table, whose hovered last row would have squared the card's bottom corners, so that row rounds its own now.
-- The bubble is hidden with `display`, not `visibility`. A bubble hidden with `visibility` is still laid out, and a wide one sitting off to the right of its anchor widened the document enough to give the phone layout a horizontal scrollbar while nothing was being hovered at all.
-- Each bubble anchors to a box wide enough to hold it, the summary row or the column header or the chip, rather than to the 14px marker. That is what makes it incapable of running off an edge, and it is also why there is no caret.
-- The ten column-header tooltips are a sighted-hover affordance, exactly like the `title` they replace, and the phone layout drops the header row entirely so they are desktop only. The nine row markers work at every width.
-- Verified in Chromium at 1440px, 1100px and 390px in both themes: every bubble measured against every clipping ancestor, none clipped, none off the card, none off screen, and no horizontal page scroll.
-
+- A card no longer clips its overflow, which is what lets a tooltip on the last row out. The bubble is hidden with `display`, not `visibility`, because a hidden bubble is still laid out and a wide one gave the phone layout a horizontal scrollbar while nothing was hovered.
+- Each bubble anchors to a box wide enough to hold it rather than to the 14px marker, which is why it cannot run off an edge and why there is no caret. Verified in Chromium at 1440px, 1100px and 390px in both themes.
 ## [0.0.17] - 2026-09-19
 
 Eight bugs in the exchange rate lookup, found by auditing the path a euro trade's rate takes from the ECB to the dollar totals. No figure on a trade whose rate was already correct changes.
 
 ### Fixed
 
-- 0.0.11 stopped every weekend trade being queued as a replaceable stand-in forever by requiring a business day, but the ECB does not publish on its own holidays either. Christmas Day, Boxing Day, New Year's Day, Good Friday, Easter Monday and May Day are all weekdays, so a trade on any of them was re-fetched on every refresh and counted as still missing each time, permanently. The test is no longer which weekday it was: a rate published before the day it converts is worth asking about again only while the real rate could still arrive, which is a few days. After that the day simply has no rate of its own, whatever the reason, and nothing here needs the ECB's holiday calendar to know it.
-- A stand-in cached under a date was served from the cache forever. The ECB publishes in the afternoon, so a trade saved in the morning was converted at the day before's rate and cached under today. Every later save for the same day was then answered from that cache entry and never asked again, so the real rate published that afternoon never reached the ledger. A cached rate published before the day it converts is now re-asked while that day is recent, and kept as the answer if asking gets nothing.
-- Nothing in the interface ever asked for a refresh. **Fetch rates** posted `refresh: false`, so `tradesWithSubstitutedFx` and the whole replacement path behind it were unreachable and a stand-in was permanent however many times the button was pressed. It posts `refresh: true` now.
-- That button only appeared when a trade had no rate at all, which is the one case a refresh is not for. A ledger whose rates were all present but some provisional had nothing to press. The banner now also offers itself, without the warning colour, when a recent trade is converted at the day before's rate.
-- `refresh` disabled both the cache and the single day fallback for every date in the run, not just the dates being replaced. That made a refresh worse at filling in a rate that was simply missing, which is most of what a run has to do. The cache is stepped past only for the dates whose stand-in is the thing being replaced.
-- A refresh reported work it had not done and gaps that were not gaps: `filled` counted every rate written back, including the ones rewritten unchanged, and `stillMissing` counted stages that already had a perfectly good rate. A run that reached the service and found nothing to change also reported itself as a failure, because no rate filled in was read as no rate fetched.
-- Span requests used the 2.5 second timeout meant for a single day. A span is one rate per business day in it, which for a wide backfill is a much larger answer and legitimately slower, so a healthy service could time out; that recorded a network failure and put every remaining lookup in the run to sleep for a minute. Spans get fifteen seconds.
-- A backfill grouped the days it needed by coin rather than by peg, so a second euro coin would have fetched the identical span a second time. Latent today, since EURC is the only one, and contrary to what the currency table in `lib/calc.js` says it does.
+- 0.0.11 required a business day, but the ECB does not publish on its own holidays either, so Christmas, New Year's Day, Good Friday, Easter Monday and May Day were re-fetched on every refresh and counted as still missing, permanently. A rate published before the day it converts is now re-asked only while the real rate could still arrive, which is a few days.
+- A stand-in cached under a date was served from the cache forever: the ECB publishes in the afternoon, so a trade saved in the morning was converted at the day before's rate and cached under today, and every later save was answered from that entry. Such a rate is re-asked while the day is recent.
+- Nothing ever asked for a refresh: **Fetch rates** posted `refresh: false`, so the whole replacement path behind `tradesWithSubstitutedFx` was unreachable and a stand-in was permanent however often the button was pressed.
+- That button only appeared when a trade had no rate at all, which is the one case a refresh is not for. It now also offers itself, without the warning colour, when a recent trade is converted at the day before's rate.
+- `refresh` disabled the cache and the single day fallback for every date in the run, not just the ones being replaced, which made a refresh worse at filling in a rate that was simply missing.
+- A refresh reported work it had not done and gaps that were not gaps: `filled` counted rates rewritten unchanged, `stillMissing` counted stages that already had a rate, and a run that found nothing to change reported itself as a failure.
+- Span requests used the 2.5 second timeout meant for a single day, so a healthy service could time out and put every remaining lookup to sleep for a minute. Spans get fifteen seconds.
+- A backfill grouped the days it needed by coin rather than by peg, so a second euro coin would have fetched the identical span twice. Latent today, since EURC is the only one.
 
 ## [0.0.16] - 2026-09-19
 
 ### Added
 
-- **Every column in the history table sorts.** Click a header, click again to reverse. Trade sorts on the borrow date, Status on how far the loop has got. Net gain sorts on the figure the cell actually shows, the projection included, because sorting a column by a number other than the one on screen looks like a bug even when the order is right.
-- A row with no value for the column sorts **last in both directions**. Ascending by net gain should not fill the first page with open trades that have no gain to rank. Ties break on id, so a re-render never reshuffles equal rows.
-- **Pagination, 15 to a page**, with square numbered buttons. It is hidden entirely below 16 trades, and windows to first, last and the current page either side once there are more than seven, so it can never wrap onto a second row.
-- The chosen column and direction are remembered between visits. The page is not: coming back to a ledger and landing on page 4 of it is disorienting.
-- Below 760px the header row is hidden, so a select stands in for it, the same reasoning that turned the nav into a segmented control at that width.
+- **Every column in the history table sorts.** Click a header, click again to reverse. Trade sorts on the borrow date, Status on how far the loop has got, Net gain on the figure the cell actually shows.
+- A row with no value sorts **last in both directions**, so ascending by net gain does not fill the first page with open trades. Ties break on id, so a re-render never reshuffles equal rows.
+- **Pagination, 15 to a page.** Hidden below 16 trades, and windowed to first, last and the current page either side once there are more than seven, so it never wraps onto a second row.
+- The chosen column and direction are remembered between visits. The page is not: coming back and landing on page 4 is disorienting.
+- Below 760px the header row is hidden and a select stands in for it, as the nav already does at that width.
 
 ### Notes
 
-- Sorting works on a copy. `state.trades` stays as the server sent it, so the Summary and the hero tiles keep reading every trade and are unaffected by what the table is showing.
-- Creating a trade jumps to whatever page it landed on, since it opens the new row and under any sort but the default that row could be three pages away.
-- Changing sort or page closes an open stage editor rather than stranding a half-filled form on a row that has moved.
-- Verified by checking all eight columns in both directions against an independently written comparison, across every page, plus nulls-last in both directions.
-
+- Sorting works on a copy, so the Summary and the hero tiles are unaffected by what the table is showing. Creating a trade jumps to the page it landed on, and changing sort or page closes an open stage editor.
+- Verified against an independently written comparison: all eight columns, both directions, every page, nulls last.
 ## [0.0.15] - 2026-09-19
 
 ### Fixed
 
-- "Total borrowed" counted only closed, convertible trades while the by-currency table beneath it counted every trade. On a ledger with capital still out, the headline was smaller than the column under it. Both now mean the same thing.
-- "Average hold" was measured over every closed trade while every money figure in the same card is measured over the convertible ones. Two correct numbers describing different populations is a quiet way to look inconsistent.
+- "Total borrowed" counted only closed, convertible trades while the by-currency table beneath it counted every trade, so on a ledger with capital still out the headline was smaller than the column under it.
+- "Average hold" was measured over every closed trade while every money figure in the same card is measured over the convertible ones.
 
 ### Changed
 
-- **"Average annualized" is now "Blended annualized".** The figure was right and the word was wrong. It is the return on the capital actually deployed, weighted by how much and for how long, not the mean of the percentages in the table. Next to a column of 500% rows a correct 84% looked broken. A note on the row explains it.
-- **"Best trade" and "Worst trade" are now "Biggest gain" and "Biggest loss"**, and say they are ranked by dollars. They always were, but showing the annualized rate on the same line made the rate look like the ranking key, and a two day trade can post 800% on a small gain. When every trade made money the second reads "Smallest gain", because calling a profit the worst trade is misleading.
+- **"Average annualized" is now "Blended annualized".** It is the return on the capital actually deployed, weighted by how much and for how long, not the mean of the percentages in the table. A note on the row explains it.
+- **"Best trade" and "Worst trade" are now "Biggest gain" and "Biggest loss"**, and say they are ranked by dollars. They always were, but showing the annualized rate alongside made the rate look like the ranking key. When every trade made money the second reads "Smallest gain".
 - The wordmark in the app header links back to the public page.
 
 ### Added
 
-- `PROMPTS.md`, with the bug-hunting prompt used on this codebase: the money, the database, security, the interface, and error handling. It says explicitly not to invent findings to reach a number, and lists the deliberate decisions an auditor keeps re-reporting as bugs.
-- Social preview cards. Open Graph and Twitter tags on the landing page, with a 1200x630 image at `landing/og.png`, so a link shared on X, LinkedIn, Slack or Discord unfurls with the mark, the headline and the coins it supports rather than a bare URL. The image URL is absolute, because a scraper has no page to resolve a relative one against.
-- A real `favicon.ico` alongside the existing SVG, plus an apple-touch icon for a phone home screen. The app carries `noindex`, since it sits behind a password and nothing should try to preview it.
+- `PROMPTS.md`, with the bug-hunting prompt used on this codebase. It says explicitly not to invent findings to reach a number, and lists the deliberate decisions an auditor keeps re-reporting as bugs.
+- Social preview cards: Open Graph and Twitter tags with a 1200x630 image at `landing/og.png`, so a shared link unfurls with the mark, the headline and the coins rather than a bare URL. The image URL is absolute, because a scraper has no page to resolve a relative one against.
+- A real `favicon.ico` alongside the existing SVG, plus an apple-touch icon. The app carries `noindex`, since it sits behind a password.
 
 ## [0.0.14] - 2026-09-19
 
 ### Fixed
 
-- The exchange-rate lines on a EURC trade's stage cards were clipped mid-word: "$7,117.20 at 1.1862 on 13 Feb 20", "-$38.55 interest $8.25, currency ". The cards sit inside the expanded row's table cell, which inherits the table's `white-space: nowrap` so a column of figures never breaks mid number. Inside a card that is wrong, and the line had nowhere to go. The cell now resets it, and the converted figure and the rate that produced it take a line each. The part being cut was the rate and the date, which is exactly what makes a conversion checkable against the ECB's own tables.
-- The loan cost breakdown is two rows of its own rather than a run-on third line. It matters most when the cost comes out negative, which happens when the currency fell over the life of the loan, and that was the case being cut off hardest: -$38.55 is $8.25 of interest less $46.80 the euro moved. A signed figure in those rows keeps its colour, like every other gain and loss in the app.
+- The exchange-rate lines on a EURC trade's stage cards were clipped mid-word. The cards sit inside the expanded row's cell, which inherits the table's `white-space: nowrap`; the cell resets it now, and the converted figure and the rate that produced it take a line each - the part that makes a conversion checkable against the ECB's tables.
+- The loan cost breakdown is two rows of its own rather than a run-on third line. It matters most when the cost is negative, which was the case cut off hardest: -$38.55 is $8.25 of interest less $46.80 the euro moved.
 
 ### Notes
 
-- Presentation only. `lib/calc.js` is untouched and a dollar-stablecoin trade renders exactly as before: no sub-lines, no extra rows.
-- Verified by asserting that nothing inside the stage cards has `scrollWidth` greater than `clientWidth`, at 1440px and 390px in both themes. Twelve elements failed that before the change; none do now.
-
+- Presentation only; `lib/calc.js` is untouched. Verified by asserting that nothing inside the stage cards has `scrollWidth` greater than `clientWidth` at 1440px and 390px in both themes: twelve elements failed before the change, none after.
 ## [0.0.13] - 2026-09-19
 
 ### Security
 
-- The app sent no framing policy, so an attacker's page could embed the ledger against a logged in session and place a click on **Delete trade**. That was moot while it answered only on loopback; behind a proxy it is not. `frame-ancestors 'none'` and `X-Frame-Options: DENY` are both sent, along with `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. It stops at framing on purpose: a `script-src` policy would need `'unsafe-inline'` for the theme script that runs before first paint and for the bar widths on the Summary, and a policy that allows inline script is most of the way back to no policy at all.
+- The app sent no framing policy, so an attacker's page could embed the app against a logged in session and place a click on **Delete trade**. `frame-ancestors 'none'` and `X-Frame-Options: DENY` are both sent, with `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. It stops at framing on purpose: a `script-src` policy would need `'unsafe-inline'` for the theme script that runs before first paint, which is most of the way back to no policy at all.
 - `X-Powered-By: Express` is no longer advertised.
 
 ## [0.0.12] - 2026-09-19
 
 ### Changed
 
-- The **Ask for Access** button carries an envelope, so it is clear it opens a mail client rather than another page. It is an inline SVG stroked in `currentColor`, not a background image, so it takes the button's colour in both themes without a second rule.
+- The **Ask for Access** button carries an envelope, so it is clear it opens a mail client rather than another page. It is an inline SVG stroked in `currentColor`, so it takes the button's colour in both themes.
 
 ### Fixed
 
-- The landing page footer still read v0.0.10 after the 0.0.11 release. It is hand-maintained, because `/api/version` sits behind auth, so it has to be bumped alongside the others and was missed.
+- The landing page footer still read v0.0.10 after the 0.0.11 release. It is hand-maintained, because `/api/version` sits behind auth.
 
 ## [0.0.11] - 2026-09-19
 
@@ -196,115 +175,102 @@ The four low severity items left open by the 0.0.7 audit, all in the rate lookup
 
 ### Fixed
 
-- A backfill asked for one span running from the earliest date needing a rate to the latest. Two EURC trades six years apart pulled every business day in between: 2,435 days to fill two rates. The days are now grouped into runs, so the same pair costs two requests of eight days each. Each run opens a week early, so one starting on a weekend still has a published day to carry forward from.
-- A backfill had no bound on how long it could run. Each request was capped at 2.5 seconds but the number of them was not, so a ledger with many scattered dates held the browser's request open for minutes. A run now stops after twenty seconds, reports what it did not reach as still missing, and says there is more to fetch.
-- The ECB never publishes on a Saturday or a Sunday, so a weekend transaction is converted at Friday's rate permanently and correctly. `tradesWithSubstitutedFx` matched on the dates alone, which put every weekend trade in the list of replaceable stand-ins forever, to be re-fetched on every refresh and counted as still missing each time. Only transactions on a business day are listed now.
-- `derive` reported an exchange rate source inside each of the four stages, but a row stores one `fx_source` for all of them, so the four always agreed whether or not the rates came from the same fetch. The source is reported once for the row as `fxSource` instead of claiming a provenance per transaction.
+- A backfill asked for one span from the earliest date needing a rate to the latest, so two EURC trades six years apart pulled every business day in between: 2,435 days to fill two rates. The days are grouped into runs now, each opening a week early so a run starting at a weekend has a published day to carry forward from.
+- A backfill had no bound on how long it could run, so a ledger with many scattered dates held the browser's request open for minutes. A run stops after twenty seconds and reports what it did not reach as still missing.
+- A weekend trade is converted at Friday's rate permanently and correctly, but `tradesWithSubstitutedFx` matched on the dates alone, which put every weekend trade in the list of replaceable stand-ins forever. Only business days are listed now.
+- `derive` reported an exchange rate source inside each of the four stages, but a row stores one `fx_source` for all of them. It is reported once for the row as `fxSource`.
 
 ## [0.0.10] - 2026-09-19
 
 ### Fixed
 
-- The ledger answered every proxied request with `This ledger only answers on localhost.` The Host allow-list added in 0.0.7 is right to exist, but it assumed the app is only ever addressed on loopback, which stopped being true once nginx sat in front of it sending the public hostname. `MYAAVE_ALLOWED_HOSTS` now names the hosts a proxy may present. Unset, behaviour is exactly as before; set, any hostname not on the list is still refused, so the protection is intact.
-- An unknown path under `/api` fell through to Express's default handler and answered with an HTML error page, where every other API response is JSON. A client that mistyped an endpoint failed to parse the reply rather than reading the error.
+- The app answered every proxied request with `This ledger only answers on localhost.` The Host allow-list added in 0.0.7 assumed the app is only ever addressed on loopback, which stopped being true once nginx sat in front of it. `MYAAVE_ALLOWED_HOSTS` names the hosts a proxy may present; unset, behaviour is as before, and any hostname not on the list is still refused.
+- An unknown path under `/api` fell through to Express's default handler and answered with an HTML error page, where every other API response is JSON.
 
 ### Added
 
-- A 404 page for aaveloop.com at `landing/404.html`, in the landing page's own design, served by nginx for a missing public file and by the app for an unknown path. The shared `/var/www/errors/404.html` that the other sites on the host use is untouched.
-- The nginx 404 handler needs `auth_basic off`. Without it the internal redirect re-runs auth and a missing file reports as a 401, which is what made a missing `landing/` directory look like a credentials problem.
+- A 404 page at `landing/404.html`, in the landing page's design, served by nginx for a missing public file and by the app for an unknown path. The nginx handler needs `auth_basic off`, or the internal redirect re-runs auth and a missing file reports as a 401.
 
 ### Changed
 
-- The landing page drops the self-hosting card and the line about running on your own server, and the closing call to action gains an **Ask for Access** button.
+- The landing page drops the self-hosting card, and the closing call to action gains an **Ask for Access** button.
 
 ## [0.0.9] - 2026-09-19
 
 ### Changed
 
-- The Trade column states the span of a loop rather than only its start: `10 Jan 2026 - 13 Jan 2026`. The range appears only once a trade is repaid, because that is the only point at which it has a real end date. A trade still running shows its borrow date alone rather than being paired with today, which would put a date on the row that nobody entered and that moves by itself overnight.
-- A trade in a currency other than the dollar now carries its native amount on its own line, above the dates. The two used to share one line joined by a middot, which read as a run-on: the amount borrowed and the days it ran are different kinds of fact. Dollar stablecoins are unchanged at two lines, since there the native amount and the dollar value are the same number.
-- In card mode the Trade label is aligned to the top of its cell, rather than floating in the middle of what is now a three line stack.
+- The Trade column states the span of a loop rather than only its start: `10 Jan 2026 - 13 Jan 2026`. The range appears only once a trade is repaid, since that is the only point at which it has a real end date.
+- A trade in a currency other than the dollar carries its native amount on its own line, above the dates. The two used to share one line joined by a middot, which read as a run-on.
+- In card mode the Trade label is aligned to the top of its cell rather than floating in the middle of a three line stack.
 
 ### Notes
 
-- Presentation only. `lib/calc.js` is untouched and `/api/trades` and `/api/summary` return byte-identical responses before and after.
-- The first column narrowed slightly rather than widening, because splitting the two figures removed what had been the longest single string in it.
+- Presentation only: `/api/trades` and `/api/summary` return byte-identical responses before and after. The first column narrowed rather than widening, because splitting the figures removed the longest string in it.
 
 ## [0.0.8] - 2026-09-19
 
 ### Added
 
-- A public landing page at `/`, in `landing/`. It explains what the ledger does in a screen or two and carries a **Use Aave Loop** button that leads to the app, and therefore to the password prompt. Served by nginx as static files, which leaves the Node process with no publicly reachable route.
-- The page shares the app's `myaave-theme` setting, so a dark session carries across both ways, and it follows the system preference for a first time visitor, which the app does not.
+- A public landing page at `/`, in `landing/`. It explains what the app does in a screen or two and carries a **Use Aave Loop** button that leads to the app, and therefore to the password prompt. Served by nginx as static files, which leaves the Node process with no publicly reachable route.
+- The page shares the app's `myaave-theme` setting, so a dark session carries across both ways, and follows the system preference for a first time visitor.
 
 ### Notes
 
-- The landing page is intentionally self contained rather than linking the app's stylesheet: `/styles.css` sits behind basic auth, so a public visitor would get a 401 and an unstyled page.
-- Its text colour is a darker violet than the fills. `#9896ff` measures 3.6:1 on the soft violet behind the status badges, which fails contrast for small bold type; the text violet clears 4.9:1 there and 5.7:1 on white.
-- The footer states plainly that this is an independent tool and not affiliated with Aave, since the page borrows enough of their look that the question is worth answering up front.
-
+- The page is self contained rather than linking the app's stylesheet: `/styles.css` sits behind basic auth, so a public visitor would get a 401 and an unstyled page. Its text colour is a darker violet than the fills, because `#9896ff` measures 3.6:1 on the soft violet behind the status badges and fails contrast for small bold type.
+- The footer states that this is an independent tool and not affiliated with Aave, since the page borrows enough of their look that the question is worth answering.
 ## [0.0.7] - 2026-09-19
 
 Twenty-two defects found by an audit of the maths, the database handling, the security surface, the interface and the error paths. No new features.
 
 ### Security
 
-- The API answered any `Host` header, so a page on the internet could point its own hostname at `127.0.0.1` and reach the ledger as a same origin, reading and deleting every trade. The loopback bind is the whole of this app's protection, so a request now has to be addressed to loopback as well.
-- The backfill stored whatever the rate service sent. `resolveRange` never ran the check `resolveRate` applies to every single-day answer, so a rate of `-999999` was accepted and written to a trade, and the day key from the response was stored in `*_fx_date` and rendered into the page unescaped. Both paths now validate, and `fmtDate` escapes its result.
+- The API answered any `Host` header, so a page on the internet could point its own hostname at `127.0.0.1` and reach the app as a same origin, reading and deleting every trade. The loopback bind is the whole of this app's protection, so a request has to be addressed to loopback as well.
+- The backfill stored whatever the rate service sent: `resolveRange` never ran the check `resolveRate` applies to a single-day answer, so `-999999` was accepted as a rate and the day key from the response was rendered into the page unescaped. Both paths validate now, and `fmtDate` escapes its result.
 
 ### Fixed, crashes and races
 
-- `GET /api/fx/rate` had no error handling. Express does not catch a rejected async handler, so any throw from the rate cache became an unhandled rejection: the request hung with no answer and the server process exited. `/api/fx/backfill` next door already guarded against this.
-- Editing or creating a borrow threw `ReferenceError: Cannot access 'c' before initialization` on every keystroke once an amount and an APR were both present. `c` was read in the borrow branch of `refreshHints` nine lines before its `const`, so the interest-per-day hint never appeared at all.
-- `PATCH` became asynchronous when rate lookups moved into it, so two requests for one trade interleaved across the await: the second read the row before the first had written and answered the browser with a row missing the change just made. Writes are now serialized per trade.
-- A rate backfill could pin a rate to a stage that had moved while it was away on the network. It now re-reads each row inside its transaction and skips any stage whose date or currency changed.
+- `GET /api/fx/rate` had no error handling: Express does not catch a rejected async handler, so any throw from the rate cache hung the request and exited the process. Editing or creating a borrow threw `ReferenceError: Cannot access 'c' before initialization` on every keystroke once an amount and an APR were both present, so the interest-per-day hint never appeared.
+- `PATCH` became asynchronous when rate lookups moved into it, so two requests for one trade interleaved across the await and the second answered with a row missing the change just made; writes are serialized per trade now. A rate backfill could also pin a rate to a stage that had moved while it was away on the network, so it re-reads each row inside its transaction.
 
 ### Fixed, in the dates
 
-- `todayISO()` returned the UTC date, which anywhere east of UTC is yesterday for part of the day. The forms prefilled yesterday and the browser then refused the user's own today as "in the future": in Tokyo from 09:00 local onwards, in Rome between midnight and 02:00. Today is now read from the local calendar on both sides. Spans are unaffected, because `parseDate` still builds UTC midnights, so DST and leap years stay exact.
-- The server let a future date through anyway. Its 36 hour slack was measured from `Date.now()` while a date parses to UTC midnight, so tomorrow always fell inside it and still produced the negative loan span the check exists to prevent.
+- `todayISO()` returned the UTC date, which east of UTC is yesterday for part of the day: the forms prefilled yesterday and the browser then refused the user's own today as "in the future". Today is read from the local calendar on both sides now, and spans are unaffected because `parseDate` still builds UTC midnights. The server let a future date through anyway: its 36 hour slack was measured from `Date.now()` while a date parses to UTC midnight, so tomorrow always fell inside it.
 
 ### Fixed, in the maths
 
-- The Average annualized figure was weighted by loan size alone, so a one day flip that made $50 counted as heavily as a ninety day trade that made $900. Two such trades read 109.5% where the honest figure is 38.1%. The weight is now capital times time.
-- The by-currency table counted only closed trades towards Borrowed, so a currency with 50,000 still outstanding showed a dash, contradicting the Open positions tile on the same page.
-- A trade that came out exactly flat was counted as a loss, reporting a break-even ledger as 0% won. It is now left out of the win rate rather than held against it.
-- A closed trade whose rate had not been fetched made the headline Realized net gain read `+$0.00`. It made a real gain that is simply not known in dollars, and that tile shows on the Trades view too, where the Summary's banner is not there to explain it. The total is now marked unknown rather than stated as zero.
+- Average annualized was weighted by loan size alone, so a one day flip that made $50 counted as heavily as a ninety day trade that made $900: two such trades read 109.5% where the honest figure is 38.1%. The weight is capital times time now.
+- The by-currency table counted only closed trades towards Borrowed, so a currency with 50,000 still out showed a dash, contradicting the Open positions tile.
+- A trade that came out exactly flat was counted as a loss, reporting a break-even ledger as 0% won; it is left out of the win rate now. A closed trade whose rate had not been fetched made the headline Realized net gain read `+$0.00`; the total is marked unknown rather than stated as zero.
 
 ### Fixed, in the numbers people paste
 
-- A European amount was silently gutted. `32.000,00` lost its comma and became 32, recording a 32,000 loan as thirty-two; `32000,50` became 3200050. A pasted amount is now read for what it is. Typing is unchanged, because `1,5` on its way to `1,500` cannot be read as a decimal comma.
-- A half typed `1500.` was rejected as "must be a number" although the server accepted it. The trailing dot of a figure on its way to `1500.75` is now allowed.
-- The form and the server disagreed about exponent notation: `1e5` was 15 in one and 100000 in the other, because the form deleted letters until what was left parsed. Both now use one parser in `lib/calc.js`, which refuses anything that is not a number instead of editing it.
-- An APR sent as a single space was stored as 0%, a silent interest free loan. Whitespace now counts as blank.
+- A European amount was silently gutted: `32.000,00` became 32, `32000,50` became 3200050. A pasted amount is read for what it is now, while typing is unchanged, because `1,5` on its way to `1,500` cannot be read as a decimal comma. A half typed `1500.` was rejected as "must be a number" although the server accepted it.
+- The form and the server disagreed about exponent notation: `1e5` was 15 in one and 100000 in the other. Both use one parser in `lib/calc.js` now, which refuses anything that is not a number instead of editing it. An APR sent as a single space was stored as 0%, a silent interest free loan; whitespace counts as blank.
 
 ### Fixed, in the interface
 
-- An error raised when a field was left refocused that same field, so the value could not be tabbed away from until it was acceptable. An error from leaving a field no longer takes focus back.
-- Neither form disabled its button while a request was in flight, so a double click on Create trade posted the same borrow twice and the duplicate then double counted in every total.
-- Derived figures were a snapshot taken when the page loaded, so a tab left open across midnight kept showing the day count and the accrued interest from load time. The browser now recomputes them from the shared module.
-- A failed **Fetch rates** left the button reading "Fetching..." and disabled for good, because the re-render that would have replaced it never happened.
+- An error raised when a field was left refocused that same field, so the value could not be tabbed away from until it was acceptable. Neither form disabled its button while a request was in flight, so a double click on Create trade posted the same borrow twice.
+- Derived figures were a snapshot taken at page load, so a tab left open across midnight kept showing the day count and accrued interest from load time. A failed **Fetch rates** left the button reading "Fetching..." and disabled for good, because the re-render never happened.
 
 ### Fixed, on the server
 
-- Clearing a stage's amounts through the API left a row still labelled CLOSED whose net gain had become null, so it dropped out of every realized total while being counted as an open position. 0.0.5 closed this for the dates only; stage order now holds on the amounts too.
-- An oversized request body was reported as a 500. It is a 413.
-- A write that lost the lock race to a second instance was reported as a 500 as well, which read as data loss. It is now a 503 saying the ledger is busy and to try again.
-- Caching a span of rates committed once per day in the span. A wide backfill is thousands of days, so it is now one transaction.
+- Clearing a stage's amounts through the API left a row labelled CLOSED whose net gain had become null, so it dropped out of every realized total while counting as an open position. 0.0.5 closed this for the dates only.
+- An oversized request body was reported as a 500; it is a 413. A write that lost the lock race to a second instance was reported as a 500 as well, which read as data loss; it is a 503 saying to try again.
+- Caching a span of rates committed once per day in the span. A wide backfill is thousands of days, so it is one transaction now.
 
 ## [0.0.6] - 2026-09-19
 
 ### Added
 
-- EURC as a fifth borrowable currency, converted to US dollars at the European Central Bank euro reference rate published for the day of each transaction. Each of the four stages is converted at its own date, so the euro's movement over the life of a loan lands in the dollar result rather than disappearing.
-- The Repaid card splits the cost of a loan in another currency into the interest and what the currency itself did to the principal, so a loan that got cheaper in dollars reads as an explanation rather than a mistake.
-- Rates are cached in the database and looked up once. A trade always saves whether or not a rate could be fetched; one without a rate is marked, left out of the totals, and filled in later by **Fetch rates** on the Summary.
+- EURC as a fifth borrowable currency, converted at the ECB euro reference rate published for the day of each transaction. Each stage is converted at its own date, so the euro's movement over the life of a loan lands in the dollar result rather than disappearing.
+- The Repaid card splits the cost of a loan in another currency into the interest and what the currency did to the principal, so a loan that got cheaper in dollars reads as an explanation rather than a mistake.
+- Rates are cached in the database and looked up once. A trade always saves whether or not a rate could be fetched; one without a rate is marked, left out of the totals, and filled in later by **Fetch rates**.
 - `GET /api/fx/rate`, `GET /api/fx/status` and `POST /api/fx/backfill`. All three answer 200 when the network cannot be reached, since that is a result to show rather than a server fault.
 
 ### Fixed
 
-- Every cross-currency total summed raw amounts as though one token were always one dollar. Harmless while every supported coin was a dollar, it would have reported a 50,000 EURC borrow as $50,000. The totals now convert, and the average annualized return is weighted by the dollar size of each loan rather than the native one.
-- The ETH buy and sell price divided the amount spent by the ETH bought and labelled the result dollars. On a trade in another currency that is a euros-per-ETH figure under a dollar sign.
+- Every cross-currency total summed raw amounts as though one token were always one dollar, which would have reported a 50,000 EURC borrow as $50,000. The totals convert now, weighted by the dollar size of each loan.
+- The ETH buy and sell price divided the amount spent by the ETH bought and labelled the result dollars, which on a trade in another currency is a euros-per-ETH figure under a dollar sign.
 - Best and worst trade ranked native amounts against each other, which is not a comparison.
 
 ### Changed
@@ -321,43 +287,40 @@ Twenty-two defects found by an audit of the maths, the database handling, the se
 
 ### Changed
 
-- The four stage cards now put the money on the second line and state it in the coin that was borrowed, so "32,000.00 USDT" reads in one go. The Sold ETH card leads with Received and then Sold. ETH prices stay in dollars.
+- The four stage cards put the money on the second line and state it in the coin that was borrowed, so "32,000.00 USDT" reads in one go. ETH prices stay in dollars.
 - Amount fields carry the stablecoin ticker instead of a dollar sign, and the ticker follows the dropdown while a new trade is being entered.
 
 ### Fixed, in the maths
 
-- The Repaid card showed the theoretical accrued interest while the net gain was computed from the interest actually paid, so the card did not add up: gross 2,824.00 less the 304.10 shown missed the 2,519.87 stated. It now shows the interest the loan really cost.
-- The live preview under the repayment field ran its own `proceeds - repaid` formula instead of the shared one. On a partial sale it read -4,028.77 where the saved result was +971.23.
-- A repayment below the principal made the implied interest negative, which the net gain then counted as profit. Repaying 20,000 on a 32,000 loan reported a 14,824 gain. Such a repayment is now rejected.
-- A trade could be recorded as repaid without ever having been sold, a state the maths has no answer for. Stages must now be filled in order, as the interface already required.
-- `summarize` called every repaid trade closed while `summaryReport` required a net gain, so the two disagreed about the same row. Both now use one definition of a realized trade.
-- The by-stablecoin sort compared two nulls as `-Infinity - -Infinity`, giving NaN and an undefined order.
-- A typed `0` was treated as an empty field, so a 0% borrow previewed nothing even though it is accepted.
-- A future dated trade produced a negative loan span, which quietly suppressed the interest and the annualized return instead of reporting anything. Future dates are now refused.
+- The Repaid card showed the theoretical accrued interest while the net gain used the interest actually paid, so the card did not add up. It shows what the loan really cost now.
+- The live preview under the repayment field ran its own `proceeds - repaid` formula instead of the shared one: on a partial sale it read -4,028.77 where the saved result was +971.23.
+- A repayment below the principal made the implied interest negative, which the net gain counted as profit - repaying 20,000 on a 32,000 loan reported a 14,824 gain. Such a repayment is rejected.
+- A trade could be recorded as repaid without ever having been sold, a state the maths has no answer for. Stages must be filled in order, as the interface already required.
+- `summarize` called every repaid trade closed while `summaryReport` required a net gain, so the two disagreed about the same row, and the by-stablecoin sort compared two nulls as `-Infinity - -Infinity`, giving NaN and an undefined order.
+- A typed `0` was treated as an empty field, so a 0% borrow previewed nothing even though it is accepted, and a future dated trade produced a negative loan span, which quietly suppressed the interest and the annualized return. Future dates are refused.
 
 ### Fixed, in the interface
 
-- Pasting an amount such as `12,000` or `$12000` left the field silently empty, because a number input discards what it cannot parse. Amounts are now collected as text and tidied as they are typed.
+- Pasting an amount such as `12,000` or `$12000` left the field silently empty, because a number input discards what it cannot parse. Amounts are collected as text and tidied as they are typed.
 - Negative amounts, a negative APR, an APR above 100 and future dates were all accepted by the form and only refused by the server, one round trip later.
-- A blank form submitted blanks rather than saying what was missing. Every field is now checked before anything is sent, and again when a field is left.
+- A blank form submitted blanks rather than saying what was missing. Every field is checked before anything is sent, and again when a field is left.
 - An error stayed on screen and the field stayed red even after the value was corrected.
-- Edits in progress were silently discarded when the view changed, reverting the field to its stored value.
+- Edits in progress were silently discarded when the view changed.
 - The stage forms are validated against their siblings, so selling more ETH than was bought, or dating a sale before its purchase, is caught as it is entered.
 
 ## [0.0.4] - 2026-09-19
 
 ### Added
 
-- A real Summary view behind the nav link, which until now only scrolled the page. It reports performance by stablecoin, net gain by month closed, best and worst trade, interest paid, win rate, total borrowed and average hold time.
-- The nav now switches views, tracks the active link and supports deep links such as `#summary`.
+- A real Summary view behind the nav link, which until now only scrolled the page: performance by stablecoin, net gain by month closed, best and worst trade, interest paid, win rate, total borrowed and average hold time.
+- The nav switches views, tracks the active link and supports deep links such as `#summary`.
 
 ### Fixed
 
-- The nav was hidden below 760px. Once the links did something, that left the Summary view unreachable on a phone, so it now drops to a segmented control on its own row.
-- Grid tracks declared as `minmax(260px, 1fr)` cannot shrink below their floor, so on a narrow viewport they overflowed and the card's `overflow: hidden` silently clipped the values. The same flaw affected the stage cards and the stage forms.
-- API responses carried an ETag but no `Cache-Control`, so the browser could heuristically cache them and show a ledger that had already changed. They are now `no-store`, and the client asks for them uncached.
-- Static assets were served with `max-age=0`, which still allowed reuse from the memory cache. They are now `no-cache`, so an edit is picked up on the next load.
-- `/favicon.ico` returned 404. It now redirects to the app icon.
+- The nav was hidden below 760px, which left the Summary unreachable on a phone once the links did something. It drops to a segmented control on its own row.
+- Grid tracks declared as `minmax(260px, 1fr)` cannot shrink below their floor, so on a narrow viewport they overflowed and the card's `overflow: hidden` clipped the values. The same flaw affected the stage cards and forms.
+- API responses carried an ETag but no `Cache-Control`, so the browser could heuristically cache them and show a ledger that had already changed; they are `no-store` now. Static assets were served with `max-age=0`, which still allowed reuse from the memory cache; they are `no-cache`.
+- `/favicon.ico` returned 404. It redirects to the app icon.
 
 ## [0.0.3] - 2026-09-19
 
@@ -373,18 +336,16 @@ Twenty-two defects found by an audit of the maths, the database handling, the se
 - Renamed the app to Aave Loop Ledger.
 - USD is shown to two decimals and ETH to four throughout.
 - Footer is now right aligned and credits the author.
-- The server binds to loopback only, so the ledger is not exposed to the network.
+- The server binds to loopback only, so the app is not exposed to the network.
 
 ### Fixed
 
-- Gross gain on a partial sale compared the proceeds against the whole purchase, turning a profitable sale into a large reported loss. It now uses the cost basis of the ETH actually sold, and the remaining ETH is shown.
-- An annualized return was still produced when the dates ran backwards. Both that and accrued interest now return nothing for a negative span.
-- A borrow at 0% APR was rejected. Rates may now be zero while amounts must still be positive.
+- Gross gain on a partial sale compared the proceeds against the whole purchase, turning a profitable sale into a large reported loss. It uses the cost basis of the ETH actually sold now, and the remaining ETH is shown.
+- An annualized return was still produced when the dates ran backwards. Both that and accrued interest return nothing for a negative span.
+- A borrow at 0% APR was rejected. Rates may be zero while amounts must still be positive.
 - Clearing a required borrow field through the API failed as an opaque server error instead of a validation message.
-- A repayment could be dated before the sale that funded it.
-- A malformed JSON body returned a server error rather than a bad request.
-- The database is now checkpointed and closed on shutdown, so committed rows no longer sit in a stray write ahead log.
-- Added a busy timeout, so a second instance sharing the same file waits for a write instead of failing at once.
+- A repayment could be dated before the sale that funded it, and a malformed JSON body returned a server error rather than a bad request.
+- The database is checkpointed and closed on shutdown, so committed rows no longer sit in a stray write ahead log, and a busy timeout makes a second instance wait for a write instead of failing at once.
 - Prepared statements are cached rather than recompiled on every write.
 - Dark mode never set `color-scheme`, so the native date picker and scrollbars stayed light.
 - A failed delete and an unreachable server both failed silently in the interface.
@@ -393,10 +354,8 @@ Twenty-two defects found by an audit of the maths, the database handling, the se
 
 ### Added
 
-- Trade lifecycle in four stages: borrow, buy ETH, sell ETH, repay.
-- Progressive entry, so a trade can sit at Open, Holding, Sold or Closed.
-- Derived figures: ETH buy and sell price, gross gain, accrued interest, net gain, annualized return.
-- Repaid amount prefilled from the APR and the loan length, editable.
+- Trade lifecycle in four stages: borrow, buy ETH, sell ETH, repay, with progressive entry, so a trade can sit at Open, Holding, Sold or Closed.
+- Derived figures: ETH buy and sell price, gross gain, accrued interest, net gain, annualized return. The repaid amount is prefilled from the APR and the loan length, and is editable.
 - SQLite storage with full history, plus view, edit and delete of past trades.
 - Light and dark themes modelled on app.aave.com, with the choice remembered.
 - `run_myAave.sh` launcher with dependency, port and Node checks.
