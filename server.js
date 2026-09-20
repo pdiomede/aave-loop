@@ -341,7 +341,7 @@ const selectOne = prepare('SELECT * FROM trades WHERE id = ?');
 /* ------------------------------------------------------------------ routes */
 
 // Browsers ask for this even when the page names its icon explicitly.
-app.get('/favicon.ico', (_req, res) => res.redirect(301, '/aaveLogo.png'));
+app.get('/favicon.ico', (_req, res) => res.redirect(301, '/AaveLoop_logo.png'));
 
 app.get('/api/version', (_req, res) => res.json({ version: pkg.version }));
 
