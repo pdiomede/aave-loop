@@ -1710,6 +1710,35 @@ function fxBanner(count, provisional = 0) {
   </section>`;
 }
 
+/**
+ * The note under the Summary.
+ *
+ * Two sentences, one starting on each line, which is why the break is written
+ * rather than left to the measure.
+ *
+ * The link goes to where these rates are *published*, not to where this app
+ * fetches them: the figures are ECB reference rates, but they arrive by way of
+ * a mirror. So the claim made here is the one the rest of the project already
+ * makes - that a conversion can be checked against the ECB's own tables - and
+ * that page is the place to check it, because it carries the day's rates and
+ * the history downloads together.
+ *
+ * The first anchor any script in this app writes; everything else that links is
+ * hand-written in index.html, and the attributes follow the one external link
+ * there. Nothing in here is data, so nothing is escaped. It needs its own rule
+ * in the stylesheet: there is no generic link style in this app, and left alone
+ * it would be the only browser-blue underline in the product.
+ */
+const ECB_RATES_URL =
+  'https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html';
+
+const SUMMARY_FOOT = `<p class="summary__foot muted">
+    Every figure is in US dollars, converted at the
+    <a href="${ECB_RATES_URL}" target="_blank" rel="noopener noreferrer">European Central Bank reference rate</a>
+    published for the day of each transaction.<br />
+    A loan taken and repaid months apart is therefore converted twice.
+  </p>`;
+
 function renderSummary() {
   const mount = document.getElementById('summary-mount');
 
@@ -1782,11 +1811,7 @@ function renderSummary() {
     )}
     ${summaryCard('By currency', currencyTable(r.byCurrency))}
     ${summaryCard('By month closed', monthTable(r.byMonth))}
-    <p class="summary__foot muted">
-      Every figure is in US dollars. Amounts in a currency other than the dollar are
-      converted at the European Central Bank reference rate published for the day of
-      each transaction, so a loan taken and repaid months apart is converted twice.
-    </p>
+    ${SUMMARY_FOOT}
   `;
 }
 

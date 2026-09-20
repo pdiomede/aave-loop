@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.36] - 2026-09-20
+
+### Changed
+
+- **The note under the Summary links to the ECB's rates, and reads as two lines.** It named the European Central Bank reference rate without pointing anywhere, so the one thing it invites you to do - check a figure - needed a search engine first. The phrase now links to the ECB's euro foreign exchange reference rates page, which carries the day's rates and the CSV, XML and SDMX history together; the history is the half that makes a past transaction checkable. The explanation is split after the first sentence, so the consequence starts on its own line rather than trailing off the end of a paragraph.
+- The link is worded as **where these rates are published**, not where they come from, because those are not the same place: the figures are ECB reference rates but the only lookup in this app goes to a mirror. "Checked against the ECB's own tables" is the claim `db.js`, `fx.js` and the README already make, and it is the one that is true.
+
+### Notes
+
+- The note's measure widened with the split. Three lines was a property of `max-width: 68ch` rather than of the sentence, so a break on its own would have made it three lines in a different place. It is two from 900px up, three at 760, and more on a phone, which no version of this sentence avoids.
+- **The app had no link styling at all** outside the footer and the brand, so this one would have fallen through to the browser default and been the single blue underline in the product. It takes the colour of the note it sits in and the dotted underline the explanation markers already use, with the footer's solid underline on hover.
+- Verified by execution: two rendered line boxes at 1440, 1280, 1100 and 900px with the second sentence starting at the left edge of the paragraph, and still starting a fresh line at 375px where both sentences wrap; the link's colour matching the body text at rest in both themes and never the browser blue; `href`, `target` and `rel` as written; the ECB page answering with "Euro foreign exchange reference rates" and a USD quote; and no console error on any of the three views, with the Performance card still three tiles then four.
+
 ## [0.0.35] - 2026-09-20
 
 What ETH costs, in the header on every tab, and a Performance card that ranks a gain two ways.

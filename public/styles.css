@@ -1027,7 +1027,25 @@ th[aria-sort="ascending"] .th-sort__caret {
   margin: 14px 2px 0;
   font-size: 12.5px;
   line-height: 1.6;
-  max-width: 68ch;
+  /* Wide enough to hold the first sentence on one line, so the break written
+     into the note is the only one at this width. Measured, not guessed. */
+  max-width: 108ch;
+}
+
+/* There is no generic link style in this app - only `a.brand` and the three
+   `.footer a` rules, none of which this matches - so without its own rule the
+   note's link falls through to the browser default and is the one blue
+   underline in the product. Quiet at rest, like the footnote it sits in, with
+   the dotted underline `.th-tip` already uses to mean "this can be followed". */
+.summary__foot a {
+  color: inherit;
+  text-decoration: underline dotted var(--text-faint);
+  text-underline-offset: 3px;
+}
+
+.summary__foot a:hover {
+  color: var(--text);
+  text-decoration: underline solid currentColor;
 }
 
 .caret {
