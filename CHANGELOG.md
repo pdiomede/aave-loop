@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.23] - 2026-09-20
+
+The app wears its own mark, and the name comes off the social card.
+
+### Changed
+
+- **The brand mark is Aave Loop's own logo.** The app had been wearing Aave's, in the header, on the landing page and on its 404. `AaveLoop_logo.png` is the master, with `AaveLoop_logo_transparent.png` beside it for backgrounds that are not the violet tile. The pages load a 96px derivative rather than the master: the mark is drawn at 24px and the master is 941KB, which was a megabyte a page load for a tile the size of a fingernail.
+- **`favicon.ico` and the apple-touch icon are regenerated from that logo**, the ico at 16, 32 and 48 with the tile's corners rounded, the touch icon at 180, square and opaque because iOS applies its own mask and composites transparency onto black. Both still carried Aave's mark.
+- **The social card no longer says "Ledger".** `landing/og2.png` is the same 1200x630 card with the old wordmark painted out, and `og:image` and `twitter:image` name it. A new filename rather than an overwrite, because a scraper caches the image by URL; `og.png` stays where it is for the unfurls already pointing at it.
+- **The README is half the length it was**, opens with a link to this file, and drops the "Landing page" and "Running behind a proxy" sections. Every formula, all six `config.env` steps and the layout block are unchanged.
+- This file is a third shorter. The same 22 releases with the same facts; what went was the retelling, mostly in the Notes, which now say what was verified rather than how it felt to verify it.
+
+### Removed
+
+- `public/aaveLogo.png`, Aave's own mark, which nothing references any more.
+- `landing/favicon.svg`, a hand-traced copy of the old glyph which had already drifted from the artwork once. The ico is an exact downscale of the real logo at every size a browser asks for, so the pages name it directly rather than keeping a tracing that has to be redrawn by hand whenever the mark moves.
+
+### Notes
+
+- `MYAAVE_ALLOWED_HOSTS` left the README with the proxy section it was documented in. It is still read and still needed behind nginx; 0.0.10 below is what explains it now.
+- The footers read 0.0.23. The landing page's is hand-maintained, because `/api/version` sits behind auth, and the app's is a static fallback for the same reason.
+
 ## [0.0.22] - 2026-09-20
 
 A trade whose ETH is still held can now say what price it is waiting for, and be told when it gets there.
@@ -28,6 +50,7 @@ A trade whose ETH is still held can now say what price it is waiting for, and be
 - Smaller: the window fetches the alert and a fresh price each time it opens rather than once at page load; `Retry-After` is honoured upward, bounded at an hour; a variable exported empty no longer masks a filled-in `config.env`; a stale preview is discarded; a failed **Remove alert** says so; and the alert keeps no copy of the trade's amount, date or purchase price, any of which an edit can move.
 - The alert window is the first modal, and lives in the page shell rather than in the card that opens it, because the trades table is rebuilt wholesale on every render. `.modal` sets `color` explicitly, since a `dialog` is given near-black `CanvasText`.
 - Verified by execution: the fire path, no second message after firing, two instances against one database, the disarm on sale, cascade delete, a clean shutdown mid-sweep, and both themes at 1440px and 375px.
+
 ## [0.0.21] - 2026-09-20
 
 ### Changed
@@ -74,6 +97,7 @@ Five bugs from an audit of the money path, the date path and the forms.
 
 - Verified by execution: both FX invariants - `loanCostUsd === interestPaidUsd + principalFxUsd`, and `netGainUsd === netGain × rate` under a flat rate - across 40,000 generated trades and 200 portfolios, with stage-rate attribution, null propagation and partial-sale reconciliation.
 - The landing page footer had been left at v0.0.17 through the 0.0.18 release, the same slip 0.0.12 recorded. Audited and found clean: `derive`, the weighted-average maths, the date helpers across DST and leap days, `fx.js` caching and backfill, server-side validation, `esc()` coverage and layout in both themes.
+
 ## [0.0.18] - 2026-09-19
 
 ### Changed
@@ -94,6 +118,7 @@ Five bugs from an audit of the money path, the date path and the forms.
 
 - A card no longer clips its overflow, which is what lets a tooltip on the last row out. The bubble is hidden with `display`, not `visibility`, because a hidden bubble is still laid out and a wide one gave the phone layout a horizontal scrollbar while nothing was hovered.
 - Each bubble anchors to a box wide enough to hold it rather than to the 14px marker, which is why it cannot run off an edge and why there is no caret. Verified in Chromium at 1440px, 1100px and 390px in both themes.
+
 ## [0.0.17] - 2026-09-19
 
 Eight bugs in the exchange rate lookup, found by auditing the path a euro trade's rate takes from the ECB to the dollar totals. No figure on a trade whose rate was already correct changes.
@@ -123,6 +148,7 @@ Eight bugs in the exchange rate lookup, found by auditing the path a euro trade'
 
 - Sorting works on a copy, so the Summary and the hero tiles are unaffected by what the table is showing. Creating a trade jumps to the page it landed on, and changing sort or page closes an open stage editor.
 - Verified against an independently written comparison: all eight columns, both directions, every page, nulls last.
+
 ## [0.0.15] - 2026-09-19
 
 ### Fixed
@@ -152,6 +178,7 @@ Eight bugs in the exchange rate lookup, found by auditing the path a euro trade'
 ### Notes
 
 - Presentation only; `lib/calc.js` is untouched. Verified by asserting that nothing inside the stage cards has `scrollWidth` greater than `clientWidth` at 1440px and 390px in both themes: twelve elements failed before the change, none after.
+
 ## [0.0.13] - 2026-09-19
 
 ### Security
@@ -218,6 +245,7 @@ The four low severity items left open by the 0.0.7 audit, all in the rate lookup
 
 - The page is self contained rather than linking the app's stylesheet: `/styles.css` sits behind basic auth, so a public visitor would get a 401 and an unstyled page. Its text colour is a darker violet than the fills, because `#9896ff` measures 3.6:1 on the soft violet behind the status badges and fails contrast for small bold type.
 - The footer states that this is an independent tool and not affiliated with Aave, since the page borrows enough of their look that the question is worth answering.
+
 ## [0.0.7] - 2026-09-19
 
 Twenty-two defects found by an audit of the maths, the database handling, the security surface, the interface and the error paths. No new features.
