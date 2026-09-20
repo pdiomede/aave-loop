@@ -532,6 +532,20 @@ p {
   font-size: 16.5px;
 }
 
+/* One sentence that should not break, on a panel whose job is to be acted on
+   rather than read down. It comes to 54ch and the measure above is 52, so it
+   wrapped with the last word alone on a line of its own.
+
+   Sized to its content rather than to a wider measure, because a number tuned
+   to fit this exact wording breaks again silently the moment the wording
+   changes. `fit-content` caps itself at the container, so a phone still wraps
+   it and fills the width; nothing here depends on how long the sentence is.
+   The 404 page keeps the reading measure: its copy is a paragraph. */
+.cta__sub--oneline {
+  width: fit-content;
+  max-width: 100%;
+}
+
 /* ------------------------------------------------------------------- 404 */
 
 /* The error page reuses .cta, which is already a centred panel on the hero

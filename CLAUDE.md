@@ -46,11 +46,30 @@ exporting it for one run; the shell always wins over the file.
 npm version patch --no-git-tag-version
 ```
 
-`--no-git-tag-version` is load-bearing: plain `npm version patch` also commits and
-tags, and this repo stopped tagging after v0.0.23. The bump runs
-`scripts/stamp-version.mjs`, which writes the number into `public/index.html` and
-`landing/index.html` and then `git add -u`. Write the `CHANGELOG.md` entry *before*
-the bump so it is staged with everything else, then commit by hand.
+`--no-git-tag-version` is load-bearing. Plain `npm version patch` also commits and
+tags, and neither is wanted: releases have not been tagged since v0.0.19–v0.0.23, and
+the commit message should say what changed rather than repeat the number.
+
+Write the `CHANGELOG.md` entry **before** the bump. The `version` lifecycle ends in
+`git add -u`, so an entry written first is staged with everything else; written after,
+it is left behind. Then commit by hand.
+
+Since 1.0.0 the number means what SemVer says it means, so `major` is the right verb
+for a change to the API, the database or a stored figure — not `patch` out of habit.
+
+The bump runs `scripts/stamp-version.mjs`, which writes the number into the two pages
+that print it, `public/index.html` and `landing/index.html`. **A pattern that no
+longer matches is an error, not a silent skip**, because a version left behind quietly
+is the failure that script exists to prevent — so if you restructure either footer,
+expect the next release to fail loudly and fix the regex rather than working around
+it.
+
+Both pages are stamped because a reader sees both numbers, and for different reasons.
+The landing page has no runtime source at all and nginx serves it directly, so a
+missed edit there simply stands. The app repaints its own footer from `/api/version`
+once the page is up — but that repaint is deliberately not awaited and can fail, so
+the stamped number is what renders on every load and what stays if the call never
+lands.
 
 ## Architecture
 
