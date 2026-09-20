@@ -1271,6 +1271,13 @@ th[aria-sort="ascending"] .th-sort__caret {
   background: var(--negative);
 }
 
+/* A month whose net gain rounds to nothing. It reaches here as a two percent
+   sliver, because the bar has a minimum width, and drawing that sliver red
+   contradicted the flat `$0.00` in the cell beside it. */
+.bar__fill--flat {
+  background: var(--text-faint);
+}
+
 /* -------------------------------------------------------------- expanded */
 
 .detail td {

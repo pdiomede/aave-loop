@@ -210,8 +210,9 @@ const TIPS = {
     'and the loan cost less than the interest alone. Always zero on a dollar loan.',
   totalBorrowed:
     'Everything ever borrowed, open trades included, each loan valued at the rate on its own ' +
-    'borrow date. A running total, not the amount currently at risk. A trade still waiting on ' +
-    'a rate is left out, the same as everywhere else on this card.',
+    'borrow date. A running total, not the amount currently at risk. Only the borrow rate ' +
+    'matters here, so a trade waiting on a later one still counts - it is the result figures ' +
+    'above that leave it out.',
   avgHold:
     'Mean days from borrowing to repaying, over the same closed trades the figures above are ' +
     'built from.',
@@ -262,7 +263,9 @@ const TIPS = {
     direction:
       'Settled when the alert was saved, against what ETH cost at that moment rather than what you paid for it. A goal above the price then is one it has to rise to; below, one it has to fall to.',
     status:
-      'ARMED is still being watched. FIRED means the goal was reached. FAILED means the message could not be delivered after three attempts. A FIRED row can also carry a "not sent" note, which means the goal was reached but Telegram refused the message.',
+      'ARMED is still being watched. FIRED means the goal was reached. FAILED means the message could not be delivered after three attempts. A FIRED row can also carry a "not sent" note, which means the goal was reached but Telegram refused the message, and an ARMED row a "not watched" one.',
+    suspended:
+      'The ETH on this trade has been sold, so the goal is no longer being checked. The alert is kept rather than deleted: restoring the trade to holding puts it back under watch at the same price.',
     set: 'The day the goal was saved.',
     firedAt: 'When the goal was reached, and the price it was reached at. Blank while an alert is still armed.',
   },
@@ -676,6 +679,14 @@ async function loadAlertLog() {
     // on the wire. Either way this answer describes a list that no longer is.
     if (seq !== alertLogSeq || wroteAt !== alertWriteSeq) return;
     state.alertLog = rows;
+    // The log is a superset of the armed map, so rebuild that from the same
+    // answer rather than leaving it as it was at boot. An alert that fired
+    // while this tab sat open read FIRED here and a lit bell on the trade -
+    // one page saying two things about one alert - until the window was
+    // opened or the page reloaded.
+    state.alerts = Object.fromEntries(
+      rows.filter((a) => a.status === 'armed').map((a) => [a.tradeId, a]),
+    );
     state.alertLogError = null;
   } catch (err) {
     // Whatever was on screen is left there. A refresh that could not get
@@ -1215,7 +1226,14 @@ const alertFor = (id) => state.alerts?.[id] ?? null;
  * Armed only, because `state.alerts` is armed only. A fired or failed alert
  * lives in the Alerts view; the card is about what is being waited for.
  */
-function alertRow(row, t) {
+function alertRow(row, t, d) {
+  // The same test the bell applies, and for the same reason. Recording the
+  // sale does not delete the alert - that is deliberate, so undoing the sale
+  // brings it back - but it does take the trade out of the sweep's reach, and
+  // a card still naming the goal was the one thing on screen presenting a
+  // suspended alert as a live one. The bell is gone by then, so there was not
+  // even a way to clear it from here.
+  if (!d.stages.bought || d.stages.sold) return '';
   const a = alertFor(t.id);
   return a ? row('Alert', `${usd(a.goalPrice)} goal`) : '';
 }
@@ -1294,7 +1312,7 @@ function stageSummary(stage, t, d) {
         row('ETH price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING) +
         // Only when there is one. A card that says "Alert: none" on every
         // trade nobody set one on is four words of noise per row.
-        alertRow(row, t)
+        alertRow(row, t, d)
       );
     case 'sell':
       return (
@@ -1583,6 +1601,23 @@ function perfTile(label, value, cls = '', hint = '', sub = '', tileCls = '') {
  * `pct()` left it reading "USDC, 3 Feb 2026 &middot;  annualized" with a hole
  * in the middle of it.
  */
+/**
+ * What to call the second tile of a pair.
+ *
+ * "Biggest loss" is a claim, and it was being made on the strength of `< 0`
+ * alone. That is wrong twice over: on a ledger with nothing closed the entry
+ * is null and the expression fell through to the loss label anyway, so a fresh
+ * ledger announced a biggest loss it had never had; and a trade that came out
+ * level to within half a cent is printed `$0.00` by the same tile that calls
+ * it the biggest loss. The label now agrees with the digits beside it.
+ */
+function worstLabel(entry, key, unit) {
+  const v = entry ? entry[key] : null;
+  return isNum(v) && v < 0 && !printsZero(v, 2)
+    ? `Biggest loss in ${unit}`
+    : `Smallest gain in ${unit}`;
+}
+
 function perfExtreme(label, entry, hint = '', by = 'usd', tileCls = '') {
   if (!entry) return perfTile(label, '', '', hint, '', tileCls);
 
@@ -1642,7 +1677,7 @@ function currencyTable(rows) {
             : dash
         }</td>
         <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain) || dash}</td>
-        <td data-label="Avg annualized" class="num ${gainClass(r.netGain)}">${pct(r.avgPct) || dash}</td>
+        <td data-label="Avg annualized" class="num ${pctClass(r.avgPct)}">${pct(r.avgPct) || dash}</td>
       </tr>`,
         )
         .join('')}
@@ -1668,7 +1703,7 @@ function monthTable(rows) {
         <td data-label="Trades" class="num">${r.trades}</td>
         <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain)}</td>
         <td data-label="Share" class="bar-col">
-          <span class="bar"><span class="bar__fill ${r.netGain >= 0 ? 'bar__fill--pos' : 'bar__fill--neg'}"
+          <span class="bar"><span class="bar__fill bar__fill--${gainClass(r.netGain)}"
             style="width:${Math.max((Math.abs(r.netGain) / peak) * 100, 2)}%"></span></span>
         </td>
       </tr>`,
@@ -1676,26 +1711,6 @@ function monthTable(rows) {
         .join('')}
     </tbody>
   </table>`;
-}
-
-/**
- * Best and worst are ranked on the money made, not on the annualized rate: a
- * two day trade can post 800% on a small gain and would otherwise always win.
- * The label says so, because showing the rate on the same line made it look
- * like the rate was what the ranking was on.
- *
- * When every trade made money "worst" is misleading too, so it says smallest.
- */
-function extremeCard(label, entry, hint = '', cls = '') {
-  const kv = `kv${cls ? ` ${cls}` : ''}`;
-  if (!entry) return `<div class="${kv}"><dt>${label}</dt><dd>${dash}</dd></div>`;
-  return `<div class="${kv}">
-    <dt>${label}${hintMark(hint)}</dt>
-    <dd>
-      <span class="${gainClass(entry.netGain)}">${signedUsd(entry.netGain)}</span>
-      <span class="muted">${esc(entry.currency)}, ${fmtDate(entry.date)} &middot; ${pct(entry.pct)} annualized</span>
-    </dd>
-  </div>`;
 }
 
 /**
@@ -1715,7 +1730,7 @@ function fxBanner(count, provisional = 0) {
   const noun = count === 1 ? 'trade has' : 'trades have';
   const message = count
     ? `${count} ${noun} no exchange rate yet, so ${
-        count === 1 ? 'it is' : 'they are'
+        count === 1 ? 'its result is' : 'their results are'
       } left out of the totals below.`
     : `${provisional} recent ${
         provisional === 1 ? 'trade is' : 'trades are'
@@ -1829,13 +1844,13 @@ function renderSummary() {
           perfExtreme('Biggest gain in USD', r.best, TIPS.best, 'usd', 'perf--row-start')
         }
         ${perfExtreme(
-          r.worst && r.worst.netGain >= 0 ? 'Smallest gain in USD' : 'Biggest loss in USD',
+          worstLabel(r.worst, 'netGain', 'USD'),
           r.worst,
           TIPS.worst,
         )}
         ${perfExtreme('Biggest gain in %', r.bestPct, TIPS.bestPct, 'pct')}
         ${perfExtreme(
-          r.worstPct && r.worstPct.pct >= 0 ? 'Smallest gain in %' : 'Biggest loss in %',
+          worstLabel(r.worstPct, 'pct', '%'),
           r.worstPct,
           TIPS.worstPct,
           'pct',
@@ -1924,13 +1939,24 @@ function alertLogRow(a) {
           isNum(a.firedPrice) ? ` &middot; ${usd(a.firedPrice)}` : ''
         }</small>`;
 
+  // Armed, but on a trade that is no longer holding ETH, so the sweep passes
+  // over it. Nothing is deleted when a sale is recorded - restoring the stage
+  // brings the alert back - which makes this a real state rather than a stray
+  // row, and ARMED on its own claims a watch that is not happening.
+  const st = t ? derive(t).stages : null;
+  const suspended =
+    a.status === 'armed' && st && (!st.bought || st.sold)
+      ? `<span class="cell-note"><span class="chip chip--warn"
+           data-tip="${esc(TIPS.alerts.suspended)}">not watched</span></span>`
+      : '';
+
   const status = esc(String(a.status).toUpperCase());
 
   return `<tr>
     <td data-label="Trade">${trade}</td>
     <td data-label="Goal" class="num">${usd(a.goalPrice)}</td>
     <td data-label="Direction">${ALERT_DIRECTION[a.direction] || esc(a.direction)}</td>
-    <td data-label="Status"><span class="cell-stack"><span class="pill pill--${status}">${status}</span>${notSent}</span></td>
+    <td data-label="Status"><span class="cell-stack"><span class="pill pill--${status}">${status}</span>${notSent}${suspended}</span></td>
     <td data-label="Set" class="num">${fmtDate(localDay(a.createdAt))}</td>
     <td data-label="Fired at" class="num"><span class="cell-stack">${when}${under}</span></td>
     <td data-label="" class="num alerts-table__act">

@@ -3,6 +3,26 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.40] - 2026-09-20
+
+Eight bugs across the three views, each reproduced against a seeded ledger before the fix and checked after. Fewer than the passes allowed for, and the shortfall is the point: the Trades view had one left in it, not five.
+
+### Fixed
+
+- **A sold trade went on advertising a price alert nothing was watching.** `selectArmed` joins to the trade and requires it still be holding ETH, so recording a sale suspends the alert - deliberately, and the comment says so, since undoing the sale brings it back. But `armedAlerts`, which feeds the interface, has no such test: the Bought ETH card kept naming the goal, and the bell is hidden on a sold trade, so there was not even a way to clear it. The card now applies the test the bell already applied, which is `derive`'s own, so the two cannot drift.
+- **The Alerts table called the same alert ARMED.** Verified against the database: with the trade sold the sweep selects nothing while the table still reads ARMED. It carries a "not watched" note now, in the shape the "not sent" note already uses, saying why and that restoring the trade puts it back under watch.
+- **The bell and the Alerts table contradicted each other once an alert fired.** `loadAlertLog` refreshed the log and left `state.alerts` as the boot had it, so a tab open across a sweep showed FIRED in the table and a lit bell on the trade behind it. The log is a superset of the armed map, so the map is rebuilt from the same answer - no second request.
+- **"Biggest loss" was a label the ledger had not earned.** It was chosen on `< 0` alone, which is wrong twice: a trade level to within half a cent is printed `$0.00` by the tile that calls it the biggest loss, and on a ledger with nothing closed the entry is null and the expression fell through to the loss label anyway - so a brand new ledger announced a biggest loss it had never had. Both pairs now agree with the digits beside them.
+- **By currency: Avg annualized took its colour from net gain.** The same defect fixed in the Trades table in 0.0.39, noted then as out of scope, and this is its scope. A rate that rounds to 0.00% is no longer painted green by a dollar figure standing behind it.
+- **By month: the share bar disagreed with the figure beside it.** The bar read the held value where the cell reads the printed one, so a month netting less than half a cent showed a flat `$0.00` next to a red sliver. The bar takes the same class, and `.bar__fill--flat` draws it neutral.
+- **The rate banner said more than it meant.** "so it is left out of the totals below" is false of the borrowed totals: only the borrow leg's rate decides those, and a trade waiting on a later one is counted in both Total borrowed and the By currency column. It is the trade's *result* that is left out, and the banner and `TIPS.totalBorrowed` now say that.
+- **`extremeCard` was dead.** Unreferenced since `perfExtreme` replaced it in 0.0.35, and still carrying the superseded pattern of colouring a rate from a dollar figure - a worked example of the bug above, sitting in the file waiting to be copied.
+
+### Notes
+
+- **Looked for and not counted.** A CANCELLED alert renders a blank "Fired at" where an ARMED one renders a dash - but `cancelled` appears nowhere in the codebase; the seed that produced it was mine. The three real statuses all have a `fired_at`, because the claim that sets one is what any of them passes through. Reported here rather than fixed, since fixing it would mean supporting a state the app cannot reach.
+- **Checked and sound:** the stage draft survives a view switch; the amount suffix follows the borrow currency; field validation fires on blur with the right message; the alert window's preview is written at the goal price and its arithmetic ties out; partial sales state cost of ETH sold, still held and gross gain correctly; a missing sale rate degrades to "no rate" in every place it should and to a dash in the rest.
+- The three views were swept for `NaN`, `undefined`, `Invalid Date` and empty cells, at desktop and phone width, with no console error and no sideways page scroll.
 ## [0.0.39] - 2026-09-20
 
 Four bugs in the Trades view, each reproduced against a seeded ledger before the fix and measured after. A fifth candidate was dropped as unreachable rather than counted.
