@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.28] - 2026-09-20
+
+### Changed
+
+- **The social card is referenced as `landing/og3.png`.** A new filename rather than an overwrite, for the same reason 0.0.23 gave: a scraper caches the image by URL, so a card that has already been unfurled will not be re-fetched under the old name. `og.png` and `og2.png` stay where they are for the unfurls already pointing at them.
+
 ## [0.0.27] - 2026-09-20
 
 ### Removed
