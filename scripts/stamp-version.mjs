@@ -5,17 +5,24 @@
  * bumps the lockfile, runs this, and commits all four together. Nothing here is
  * meant to be run by hand.
  *
- * The app's own footer is repainted from /api/version at boot, so a stale
- * number there is invisible and was never noticed. The landing page has no
- * runtime source at all, and nginx serves it directly in production, so it is
- * the one a visitor reads and the one a missed edit sticks to. Both are
- * stamped, because the invisible one is what makes the visible one easy to
- * forget.
+ * Both pages are stamped because a reader sees both numbers. The landing page
+ * has no runtime source at all and nginx serves it directly in production, so a
+ * missed edit there simply stands. The app's footer is repainted from
+ * /api/version once the page is up, but that repaint is not awaited and can
+ * fail, so the stamped number is the one that renders on every load and the one
+ * that stays when the call never lands.
  *
  * A pattern that no longer matches is an error rather than a silent skip: the
  * failure this replaces is precisely a version that was left behind quietly.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Anchored to this file rather than to the working directory, the way server.js,
+// config.js and db.js all locate a repo file. npm runs lifecycle scripts from the
+// package root, so cwd would work today; this does not depend on it.
+const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 const version = process.env.npm_package_version;
 if (!version) {
@@ -40,14 +47,15 @@ const TARGETS = [
 let failed = false;
 
 for (const { file, find, what } of TARGETS) {
-  const before = readFileSync(file, 'utf8');
+  const target = path.join(root, file);
+  const before = readFileSync(target, 'utf8');
   if (!find.test(before)) {
     console.error(`stamp-version: ${file} - could not find ${what}.`);
     failed = true;
     continue;
   }
   const after = before.replace(find, `$1${version}$2`);
-  if (after !== before) writeFileSync(file, after);
+  if (after !== before) writeFileSync(target, after);
   console.log(`stamp-version: ${file} -> v${version}`);
 }
 

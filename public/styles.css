@@ -98,8 +98,13 @@ body {
    `.nav__link`, `.footer a`, `.footer__line a` - so a link that belongs to none
    of those places, such as the one the Summary note writes, matched nothing and
    fell through to the browser default: the single blue underline in the
-   product. This is the rule for a link that is only a link. All four of those
-   selectors are more specific and keep overriding it unchanged.
+   product. This is the rule for a link that is only a link.
+
+   What keeps those four overriding it is that each sets `text-decoration: none`
+   and sits later in the file - not that they outrank it. Three are the same
+   specificity as `a:hover` (0,1,1) and `.nav__link` is lower, so source order is
+   what settles them. Moving this block below them would change brand and footer
+   hover.
 
    Solid, not the dotted underline of `.th-tip`. Dotted already means "this can
    be asked what it means, and stays where it is", and a dozen of those markers
@@ -1054,9 +1059,9 @@ th[aria-sort="ascending"] .th-sort__caret {
 }
 
 /* Each sentence of the note is its own paragraph, so the measure is free to be
-   a number chosen for reading - 68ch, inside the 45-75ch band, the company of
-   `.hero__sub` - instead of one widened until a hand-written break happened to
-   land in the right place. */
+   a number chosen for reading - 68ch, inside the 45-75ch band prose is set in -
+   instead of one widened until a hand-written break happened to land in the
+   right place. */
 .summary__foot {
   margin: 14px 2px 0;
   font-size: 12.5px;

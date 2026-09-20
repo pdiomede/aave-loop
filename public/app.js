@@ -2868,12 +2868,17 @@ function wire() {
 async function boot() {
   applyTheme(document.documentElement.dataset.theme || 'light', { persist: false });
   wire();
-  try {
-    const { version } = await api('/api/version');
-    document.getElementById('version').textContent = `v${version}`;
-  } catch (e) {
-    /* keep the fallback already in the markup */
-  }
+  // Not awaited, for the same reason the ticker below is not: the number in
+  // the markup is stamped at release and is already right, so this only ever
+  // corrects a page served from an older build than the server it is talking
+  // to. Nothing on screen should wait on it.
+  api('/api/version')
+    .then(({ version }) => {
+      document.getElementById('version').textContent = `v${version}`;
+    })
+    .catch(() => {
+      /* keep the fallback already in the markup */
+    });
   // Alerts ride alongside the ledger rather than gating it: the trades are
   // worth showing even when the alert subsystem cannot be reached, and asking
   // for both at once means one render rather than two.

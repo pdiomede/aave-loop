@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.38] - 2026-09-20
+
+A quality pass over 0.0.37. Four findings, every one in what that release added: two places where a single fact was written down twice, one awaited call that never needed awaiting, and three comments describing something other than the code beneath them.
+
+### Changed
+
+- **The version lifecycle stages what it changed, not a list of what it expected to change.** `package.json` named `public/index.html` and `landing/index.html` for `git add`, and `scripts/stamp-version.mjs` named the same two in `TARGETS` - so a third page that printed the version would have been stamped, logged as stamped, and then left out of the commit. That is the silently stale version the script exists to prevent, reachable again through the staging step. `git add -u` stages what the bump and the stamp touched, and it is safe precisely because `npm version` refuses to run on a dirty tree, so nothing else can be modified when it does.
+- **The footer's version is no longer awaited before the ledger loads.** `boot()` held every other request behind `await api('/api/version')`, in a function whose own comments twice explain why the ticker and the alerts must not gate the trades. Since 0.0.37 stamps the number into the markup, that call only ever corrects a page served from an older build than the server it is talking to, and nothing on screen should wait on it. Measured on localhost: the four requests ran 32.5ms to 40.4ms in series and now start together at 31.5ms. Over a network it is a full round-trip.
+- **`stamp-version.mjs` finds the pages the way the rest of the repo finds a file.** It resolved `public/index.html` against the working directory, where `server.js`, `config.js` and `db.js` all anchor to `import.meta.url`. npm runs lifecycle scripts from the package root, so it worked - but it was the one file in the project relying on that, and the one whose failure mode is a raw `ENOENT` thrown before its own error handling can say which pattern went missing.
+
+### Notes
+
+- Three comments written in 0.0.37 said something the code did not. The stylesheet offered 68ch as "the company of `.hero__sub`", which is 56ch; no rule in either stylesheet uses 68ch, and the 45-75ch band was always the real argument. The base `a` rule claimed all four container selectors "are more specific" - three are the same specificity as `a:hover` and `.nav__link` is lower, so source order settles them, and moving that block below them would change brand and footer hover. And `stamp-version.mjs` justified stamping `public/index.html` as insurance against a person forgetting, which is the discipline the script had just abolished; the real reason is that the stamped number renders on every load and stays if the API call never lands, which the change above makes truer still.
+- Left as it is: the replacement string `$1${version}$2` resolves through the `$10` fallback rather than the two capture groups it appears to use. Verified correct for 0.0.5 through 11.0.0, so it reads worse than it behaves and is not a defect. Same for the double regex pass, which is 0.0022ms against 20ms of node startup and whose removal would break the distinction between "pattern gone" and "already stamped".
+- Verified by execution: the stamp script run from outside the repo, which previously threw `ENOENT`, now reads and writes both pages and restores cleanly; the version repaint still lands in the footer; the old and new boot orders measured side by side; all three views rendering with no console error; and the Summary note still two paragraphs with its link taking the body colour.
+
 ## [0.0.37] - 2026-09-20
 
 The note under the Summary says which figures were converted and which were never near a rate, and the app gets a link style of its own. Fourteen findings from a review of 0.0.36, every one reproduced before the fix and checked after.
