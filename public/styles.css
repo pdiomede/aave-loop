@@ -1397,6 +1397,125 @@ th[aria-sort="ascending"] .th-sort__caret {
   transform: translate(-50%, 0);
 }
 
+/* -------------------------------------------------------- price alerts */
+
+/* The bell sits beside Edit in the Bought ETH card. Square, because it holds
+   an icon rather than a word, and .stage__head is already a flex row with the
+   name pushing everything else to the right. */
+.alert-bell {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+}
+
+.alert-bell.is-armed {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.alert-bell.is-fired {
+  color: var(--positive);
+  background: var(--positive-soft);
+}
+
+.alert-bell.is-failed {
+  color: var(--negative);
+  background: var(--negative-soft);
+}
+
+/* A dialog does not inherit the page's colour. The user agent gives it
+   `CanvasText`, which is near black, and on the dark theme's surface that is
+   black on charcoal. Stating both explicitly is what makes the window
+   themeable at all. */
+.modal {
+  border: 0;
+  padding: 0;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-card);
+  box-shadow: var(--ring-raised);
+}
+
+/* Literal rather than a variable: inheritance into ::backdrop is uneven
+   across engines, and a soft black works against either theme. No z-index
+   anywhere here, because the top layer already sits above the header and the
+   toast. */
+.modal::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
+
+.modal__title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.modal__body {
+  padding: 20px;
+}
+
+.modal__rows {
+  margin-bottom: 18px;
+}
+
+.modal__note {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.modal__note strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The message as it will arrive, so nothing reaches the group unread. */
+.modal__preview {
+  margin: 12px 0 0;
+  padding: 11px 13px;
+  border-radius: var(--radius-field);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.modal .form__actions {
+  margin-top: 18px;
+}
+
+/* Removing an alert is the leftmost thing in the row, away from Save. */
+.modal__remove {
+  margin-right: auto;
+}
+
+/* On a phone a centred box with margins either side reads as an accident.
+   Anchored to the bottom edge it reads as a sheet, and it is where a thumb
+   already is. 760px is the breakpoint the rest of the page turns at. */
+@media (max-width: 760px) {
+  .modal {
+    width: 100vw;
+    max-width: none;
+    margin: auto auto 0;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+  }
+}
+
 /* ------------------------------------------------------------ responsive */
 
 @media (max-width: 900px) {

@@ -74,7 +74,51 @@ db.exec(`
     fetched_at TEXT NOT NULL,
     PRIMARY KEY (base, quote, date)
   ) WITHOUT ROWID;
+
+  CREATE TABLE IF NOT EXISTS alerts (
+    trade_id    INTEGER PRIMARY KEY REFERENCES trades(id) ON DELETE CASCADE,
+    goal_price  REAL    NOT NULL,
+    direction   TEXT    NOT NULL,
+    status      TEXT    NOT NULL,
+    basis_price REAL,
+    fired_at    TEXT,
+    fired_price REAL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    last_error  TEXT,
+    created_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts (status);
+
+  CREATE TABLE IF NOT EXISTS eth_price (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    price      REAL    NOT NULL,
+    fetched_at TEXT    NOT NULL
+  );
 `);
+
+/**
+ * A price alert, and the last ETH price anyone looked up.
+ *
+ * `trade_id` is the primary key rather than a column beside one, which is the
+ * whole of the rule that a trade has one alert: a second one cannot be
+ * inserted, and saving is a plain upsert instead of a read, a branch and a
+ * write. Deleting the trade takes the alert with it, for real, because
+ * `foreign_keys` is ON above.
+ *
+ * What is *not* here is as deliberate. The alert window shows the amount, the
+ * date and the price the ETH was bought at, and none of the three are stored:
+ * they live on the trade, an edit can move any of them, and a copy taken when
+ * the alert was set would quietly start disagreeing with the card beside it.
+ * The two prices that are stored, `basis_price` and `fired_price`, are the
+ * exception for the same reason the `*_fx` columns are: a price observed at a
+ * moment cannot be recomputed later, so not keeping it loses it.
+ *
+ * `eth_price` holds exactly one row. It is on disk rather than in a module
+ * variable so a restart starts warm and a second copy of the app sees the same
+ * figure, which matters because both poll.
+ */
 
 /**
  * The rate cache is keyed on the peg rather than on the coin, so EUR is looked

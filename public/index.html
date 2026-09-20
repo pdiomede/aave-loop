@@ -95,13 +95,21 @@
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v0.0.21</span> - Built by
+          &copy; 2026 &middot; <span id="version">v0.0.22</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>
     </footer>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <!--
+      The price alert window. Empty here and written from JS, for the same
+      reason the toast above it is: the trades table is re-rendered wholesale
+      on every change, and anything living inside it would be torn out from
+      under the user mid-typing.
+    -->
+    <dialog class="modal" id="alert-dialog" aria-labelledby="alert-dialog-title"></dialog>
 
     <script type="module" src="/app.js"></script>
   </body>

@@ -12,8 +12,21 @@ import {
   todayISO,
   CURRENCIES,
   FX_STAGES,
+  STATUS,
 } from './lib/calc.js';
 import { fillFxColumns, staleFxColumns, backfillRates, resolveRate, fxStatus } from './fx.js';
+import { telegramConfig, reportConfig } from './config.js';
+import { ethPrice, cachedEthPrice, ethStatus } from './eth.js';
+import { sendTelegramMessage } from './telegram.js';
+import {
+  allAlerts,
+  saveAlert,
+  deleteAlert,
+  previewMessage,
+  alertPollMs,
+  startAlertPoller,
+  stopAlertPoller,
+} from './alerts.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -458,6 +471,132 @@ app.post('/api/fx/backfill', async (req, res, next) => {
   }
 });
 
+/* ------------------------------------------------------------ price alerts */
+
+/**
+ * Everything the alert window needs, in one call: whether there is anywhere to
+ * send a message, what ETH last cost, and every alert keyed by its trade.
+ *
+ * The bot token and the chat id are not in here and must never be. The browser
+ * needs to know that sending works and what the group is called; it has no use
+ * for the credentials, and this server answers anything that can reach
+ * loopback.
+ */
+app.get('/api/alerts', async (req, res, next) => {
+  try {
+    // `refresh` asks for a price fetched now rather than whatever the last
+    // sweep left behind. The window opening is the one moment that figure is
+    // read by a person and compared against a goal, and on a ledger with no
+    // armed alerts nothing has asked for a price in hours. Page load does not
+    // send it, because a boot should not wait on an outside service.
+    if (req.query.refresh === '1') await ethPrice();
+
+    const { configured, groupName, reason } = telegramConfig();
+    const quote = cachedEthPrice();
+    res.json({
+      config: { configured, groupName, reason },
+      eth: quote
+        ? { price: quote.price, fetchedAt: quote.fetchedAt, stale: quote.ageMs > alertPollMs }
+        : { price: null, fetchedAt: null, stale: true, reason: ethStatus().lastError },
+      alerts: allAlerts(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Set the goal price for a trade. The id is the trade's, because a trade has
+ * one alert, which is also why this is a PUT: saving the same goal twice is
+ * the same ledger either way.
+ */
+app.put('/api/alerts/:id', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const trade = selectOne.get(id);
+    if (!trade) return res.status(404).json({ error: 'Trade not found.' });
+
+    if (derive(trade).status !== STATUS.HOLDING) {
+      throw new BadRequest('A price alert only applies while the ETH is held.', 'goal_price');
+    }
+
+    // The same parser the browser uses, so "3,000" cannot mean one thing in
+    // the form and another here.
+    const goal = toNumber(req.body?.goal_price, 'goal_price', 'ETH goal price');
+    if (goal > 1_000_000) {
+      throw new BadRequest('That looks like a slipped digit. The price is in dollars.', 'goal_price');
+    }
+
+    // Before the save, not after: the direction is decided from this price, so
+    // a goal set while the last quote is hours old would be read against the
+    // wrong side of the market. `ethPrice` never throws and falls back to the
+    // cache, so an unreachable service costs a moment and nothing else.
+    const quote = await ethPrice();
+
+    res.json(saveAlert(trade, goal, quote?.price ?? null));
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/alerts/:id', (req, res) => {
+  if (!deleteAlert(Number(req.params.id))) {
+    return res.status(404).json({ error: 'No alert on that trade.' });
+  }
+  res.status(204).end();
+});
+
+/*
+ * A dry run. Proving the token and the chat id are right by waiting for ETH to
+ * move is no way to find out they are wrong, so this sends one message now.
+ *
+ * It answers 200 even when the send fails, for the same reason the rate
+ * endpoints above do: "Telegram would not take it" is a result this interface
+ * is built to show, not a fault in this server.
+ */
+let lastTestAt = 0;
+const TEST_EVERY_MS = 10_000;
+
+app.post('/api/alerts/test', async (req, res, next) => {
+  try {
+    const since = Date.now() - lastTestAt;
+    if (since < TEST_EVERY_MS) {
+      return res.json({ ok: false, error: 'Give it a few seconds before testing again.' });
+    }
+    lastTestAt = Date.now();
+
+    const { groupName } = telegramConfig();
+    const sent = await sendTelegramMessage(
+      `Test message from the Aave Loop ledger. Price alerts will arrive here, in ${groupName}.`,
+    );
+    res.json({ ok: sent.ok, error: sent.error });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * The message a goal would send, shown in the window while it is being typed.
+ *
+ * Takes the goal as a query rather than reading a saved alert, because the
+ * moment it is most worth reading is before anything has been saved. Answers
+ * 200 with a null text when the goal is not a number yet, since a half typed
+ * figure is an ordinary state of a form and not an error.
+ */
+app.get('/api/alerts/:id/preview', (req, res) => {
+  const id = Number(req.params.id);
+  const trade = selectOne.get(id);
+  if (!trade) return res.status(404).json({ error: 'Trade not found.' });
+
+  const goal = parseAmount(req.query.goal);
+  if (goal === null || goal <= 0) return res.json({ text: null });
+
+  // The live price only settles which way the alert reads; the message itself
+  // is written at the goal, because that is the position it will describe when
+  // it goes out. Quoting today's price in it read as a contradiction.
+  res.json({ text: previewMessage(trade, goal, cachedEthPrice()?.price ?? null) });
+});
+
 app.delete('/api/trades/:id', (req, res) => {
   const info = prepare('DELETE FROM trades WHERE id = ?').run(Number(req.params.id));
   if (info.changes === 0) return res.status(404).json({ error: 'Trade not found.' });
@@ -515,6 +654,10 @@ app.use((err, _req, res, _next) => {
 // no business being reachable from the rest of the network.
 const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`Aave Loop v${pkg.version} running at http://localhost:${PORT}`);
+  // Started here rather than at import, so the port being taken below cannot
+  // leave a poller running in a process that is on its way out.
+  reportConfig();
+  startAlertPoller();
 });
 
 server.on('error', (err) => {
@@ -523,6 +666,7 @@ server.on('error', (err) => {
   } else {
     console.error(err);
   }
+  stopAlertPoller();
   closeDb();
   process.exit(1);
 });
@@ -532,6 +676,9 @@ function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`\n${signal} received, shutting down.`);
+  // Before the database closes, or a tick landing mid-shutdown finds the
+  // connection gone.
+  stopAlertPoller();
   server.close(() => {
     closeDb();
     process.exit(0);
@@ -546,6 +693,7 @@ function shutdown(signal) {
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => shutdown(signal));
 process.on('uncaughtException', (err) => {
   console.error(err);
+  stopAlertPoller();
   closeDb();
   process.exit(1);
 });

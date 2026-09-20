@@ -97,6 +97,44 @@ at work is not shown until the loan is repaid.
 
 The percentage is annualized, so a 3 day trade netting 7% shows as roughly 877%.
 
+## Price alerts
+
+While a trade is HOLDING - the ETH is bought and not yet sold - the **Bought ETH** card
+carries a bell. It opens a window showing what the trade cost, when, and what ETH is
+worth now, and takes one figure: the price you want to be told about. The window shows
+the message that will be sent, in full, before anything is saved.
+
+One alert per trade. Saving again replaces it and re-arms it; **Remove alert** deletes
+it. Which way it reads is settled when you save, against what ETH costs at that moment:
+a goal above alerts when ETH rises to it, a goal below alerts when it falls. Selling the
+ETH, or undoing the purchase, stops the alert being checked without deleting it - put
+the stage back and it picks up where it was.
+
+The price comes from CoinGecko, which answers without a key, and is checked every
+fifteen minutes - but only when at least one alert is armed, so a ledger with none on it
+never calls out. An alert fires once. A second copy of the app running against the same
+database cannot send the same message twice.
+
+Sending needs a Telegram bot. Copy the template and fill it in:
+
+```bash
+cp config.env.example config.env && chmod 600 config.env
+```
+
+| Key | What it is |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | from [@BotFather](https://t.me/BotFather), after `/newbot` |
+| `TELEGRAM_CHAT_ID` | the group's id; negative, and starting `-100` for a supergroup |
+| `TELEGRAM_GROUP_NAME` | display only, shown in the alert window and at startup |
+
+Add the bot to the group before reading its chat id from
+`https://api.telegram.org/bot<token>/getUpdates`. `config.env` is gitignored and anything
+in it can be overridden for one run by exporting it in the shell.
+
+Without the file the app runs exactly as before: the bell works, goals are saved, and
+the window says what is missing. `POST /api/alerts/test` sends one message now, which is
+the quick way to find out whether the token and the chat id are right.
+
 ## Layout
 
 ```
@@ -104,6 +142,10 @@ landing/       public marketing page, served by nginx rather than by the app
 server.js      Express API and static host
 db.js          SQLite connection and schema
 fx.js          exchange rate lookup and cache, server only
+eth.js         ETH spot price lookup and cache, server only
+telegram.js    sending one message to a group, server only
+alerts.js      price alerts and the timer that checks them, server only
+config.js      reads config.env, server only
 lib/calc.js    all formulas, shared by the server and the browser
 public/        interface
 data/          SQLite file, not committed

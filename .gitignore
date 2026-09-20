@@ -14,6 +14,10 @@ data/
 .env
 .env.*
 !.env.example
+# The Telegram credentials. `.env.*` does not match this name, so it is listed
+# in full: a bot token committed once is a bot token leaked forever.
+config.env
+!config.env.example
 
 # logs
 *.log

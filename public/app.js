@@ -462,6 +462,13 @@ const state = {
   // of it is disorienting.
   sort: loadSort(),
   page: 1,
+  // Price alerts, keyed by trade id, plus what the server knows about where an
+  // alert would go and what ETH last cost. All three are fetched once at boot
+  // and kept in step by the writes themselves, so a card can read them
+  // synchronously while it renders.
+  alerts: {},
+  alertConfig: null,
+  ethPrice: null,
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -479,6 +486,9 @@ async function api(path, options = {}) {
   if (!res.ok) {
     const err = new Error(body.error || 'Request failed.');
     err.field = body.field;
+    // Carried so a caller can tell "there was nothing there" from "the request
+    // did not get through", which are the same sentence otherwise.
+    err.status = res.status;
     throw err;
   }
   return body;
@@ -515,6 +525,25 @@ async function loadTrades() {
   return true;
 }
 
+/**
+ * The alerts, in their own request rather than riding along on each trade row.
+ *
+ * `/api/trades` is fetched again after every single write, and an alert is
+ * read by one card on one row; taxing every load for it would be the wrong
+ * trade. The configuration and the ETH price have no home on a trade row at
+ * all, and this is the only call that needs them.
+ *
+ * Nothing here is refetched after a save. The write answers with the alert it
+ * just stored, which is put straight into `state.alerts`, so there is no
+ * second reply that can arrive late and undo it.
+ */
+async function loadAlerts({ refresh = false } = {}) {
+  const body = await api(`/api/alerts${refresh ? '?refresh=1' : ''}`);
+  state.alerts = body.alerts || {};
+  state.alertConfig = body.config || null;
+  state.ethPrice = body.eth || null;
+}
+
 /* ----------------------------------------------------- input and validation */
 
 // Ethereum's genesis block. Nothing in this ledger can predate it.
@@ -549,6 +578,7 @@ function sanitizeNumeric(text, { pasted = false } = {}) {
 const WHOLE_VALUE_INPUT = new Set(['insertFromPaste', 'insertFromDrop', 'insertReplacementText']);
 
 const FIELD_LABELS = {
+  goal_price: 'ETH goal price',
   borrow_date: 'Borrow date',
   borrow_amount: 'Amount borrowed',
   borrow_apr: 'Borrow APR',
@@ -613,6 +643,12 @@ function validateField(name, raw, trade = {}) {
   }
 
   if (value <= 0) return `${label} must be greater than zero.`;
+
+  // Matched to the server's own ceiling, so a slipped digit is caught here
+  // rather than after a round trip.
+  if (name === 'goal_price') {
+    return value > 1_000_000 ? 'That looks like a slipped digit. The price is in dollars.' : null;
+  }
 
   if (name === 'sell_eth' && isNum(trade.buy_eth) && value > trade.buy_eth * 1.0001) {
     return `You only bought ${ethQty(trade.buy_eth)} ETH.`;
@@ -878,6 +914,59 @@ function refreshHints(form, trade, stage) {
   }
 }
 
+/* ---------------------------------------------------------- price alerts */
+
+/**
+ * The alert on a trade, or null. Read from the state directly rather than
+ * passed down, the same way the stage cards already read `state.editing`.
+ */
+const alertFor = (id) => state.alerts?.[id] ?? null;
+
+/** The summary row the Bought ETH card grows once an alert is set. */
+function alertRow(row, t) {
+  const a = alertFor(t.id);
+  if (!a) return '';
+  if (a.status === 'fired') {
+    // `fired_at` is a UTC instant like `created_at`, so it needs the same
+    // conversion to a local calendar day that the footer note does.
+    const when = fmtDate(localDay(a.firedAt));
+    const at = isNum(a.firedPrice) ? usd(a.firedPrice) : '';
+    return row('Alert', a.lastError ? `${at} reached, not sent` : `sent at ${at}${when ? ` on ${when}` : ''}`,
+      a.lastError ? 'neg' : 'pos');
+  }
+  if (a.status === 'failed') return row('Alert', 'could not be sent', 'neg');
+  return row('Alert', `${usd(a.goalPrice)} goal`);
+}
+
+const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
+  </svg>`;
+
+/**
+ * The bell, beside Edit on the Bought ETH card.
+ *
+ * Shown only while the ETH is held, which is the only time a target price is
+ * a question: before the purchase there is nothing to watch and after the sale
+ * there is nothing to decide. That is the same test `derive` applies to call a
+ * trade HOLDING, written from the stage flags the card already has.
+ */
+function alertBell(t, d) {
+  if (!d.stages.bought || d.stages.sold) return '';
+  const a = alertFor(t.id);
+  const cls = a ? `is-${a.status === 'armed' ? 'armed' : a.status}` : '';
+  const label = !a
+    ? 'Set a price alert'
+    : a.status === 'armed'
+      ? `Price alert at ${usd(a.goalPrice)}`
+      : a.status === 'failed'
+        ? 'Price alert could not be sent'
+        : `Alert sent at ${usd(a.firedPrice)}`;
+
+  return `<button class="btn btn--ghost btn--sm alert-bell ${cls}" type="button"
+    data-alert-trade="${t.id}" aria-label="${esc(label)}" title="${esc(label)}">${BELL_SVG}</button>`;
+}
+
 /* ------------------------------------------------------------ stage cards */
 
 const STAGES = [
@@ -927,7 +1016,10 @@ function stageSummary(stage, t, d) {
         // ETH is quoted in dollars, so this column is converted. Dividing a
         // euro amount by a quantity of ETH gives euros per ETH, which this
         // used to print under a dollar sign.
-        row('ETH price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING)
+        row('ETH price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING) +
+        // Only when there is one. A card that says "Alert: none" on every
+        // trade nobody set one on is four words of noise per row.
+        alertRow(row, t)
       );
     case 'sell':
       return (
@@ -1003,6 +1095,7 @@ function stageCard(stage, t, d) {
           ? ''
           : `<button class="btn btn--ghost btn--sm" type="button" data-edit-stage="${stage.key}" data-trade="${t.id}">${done ? 'Edit' : '+ Add'}</button>`
       }
+      ${stage.key === 'buy' && !editing ? alertBell(t, d) : ''}
     </header>
     ${body}
   </article>`;
@@ -1537,6 +1630,220 @@ async function submitBorrow(form) {
   }
 }
 
+/* ----------------------------------------------------------- alert window */
+
+/*
+ * The window that sets a goal price.
+ *
+ * It lives in the page shell rather than inside the card that opens it. The
+ * trades table is rebuilt from scratch on every render, and a render can be
+ * triggered by a save in another tab landing while this is open; anything
+ * inside that table would vanish mid-sentence. The toast has sat outside it
+ * for the same reason since the beginning.
+ */
+const alertDialog = () => document.getElementById('alert-dialog');
+
+function alertDialogBody(t, d, a) {
+  const c = t.borrow_currency;
+  const cfg = state.alertConfig;
+  const goal = a ? String(a.goalPrice) : '';
+
+  // The figures the goal is being judged against, in the same order and the
+  // same words the card behind the window uses.
+  const rows = [
+    ['Trade amount', money(t.buy_amount, c)],
+    ['Trade date', fmtDate(t.buy_date)],
+    ['ETH purchase price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING],
+    ['ETH now', isNum(state.ethPrice?.price) ? usd(state.ethPrice.price) : '<span class="muted">not known yet</span>'],
+  ]
+    .map(([k, v]) => `<div class="stage__row"><dt>${k}</dt><dd>${v}</dd></div>`)
+    .join('');
+
+  // Which way the alert reads is settled against ETH's current price, and with
+  // neither that nor a purchase price to compare against it can only read
+  // upward. Rare, and worth saying rather than leaving to be discovered.
+  const noBasis =
+    !isNum(state.ethPrice?.price) && !isNum(d.buyPriceUsd)
+      ? `<p class="modal__note">The ETH price could not be fetched, so this will alert when ETH
+         <strong>rises</strong> to the goal.</p>`
+      : '';
+
+  const note = cfg?.configured
+    ? `<p class="modal__note">We will message the Telegram group
+        <strong>${esc(cfg.groupName)}</strong> once, when ETH reaches this price. It will read:</p>`
+    : `<p class="modal__note"><span class="chip chip--warn">not connected</span>
+        ${esc(cfg?.reason || 'Nothing is configured to send an alert.')}
+        The goal is still saved, and will be sent once config.env is filled in.</p>`;
+
+  const remove = a
+    ? `<button class="btn btn--sm btn--danger modal__remove" type="button"
+         data-alert-remove="${t.id}">Remove alert</button>`
+    : '';
+
+  const fired =
+    a && a.status !== 'armed'
+      ? `<p class="modal__note">${
+          a.lastError
+            ? `Reached ${usd(a.firedPrice)}, but the message could not be sent: ${esc(a.lastError)}`
+            : `Sent at ${usd(a.firedPrice)} on ${fmtDate(localDay(a.firedAt))}. Saving again re-arms it.`
+        }</p>`
+      : '';
+
+  return `<div class="modal__head">
+      <h3 class="modal__title" id="alert-dialog-title">Price alert</h3>
+    </div>
+    <div class="modal__body">
+      <dl class="stage__rows modal__rows">${rows}</dl>
+      <form data-alert-form="${t.id}" novalidate>
+        ${field({
+          name: 'goal_price',
+          label: 'ETH goal price',
+          type: 'number',
+          value: goal,
+          prefix: '$',
+          placeholder: '3000',
+          autofocus: true,
+        })}
+        ${noBasis}
+        ${fired}
+        ${note}
+        <p class="modal__preview" data-alert-preview hidden></p>
+        <div class="form__actions">
+          ${remove}
+          <span class="form__error" data-form-error></span>
+          <button class="btn btn--ghost btn--sm" type="button" data-close-alert>Cancel</button>
+          <button class="btn btn--primary btn--sm" type="submit">Save alert</button>
+        </div>
+      </form>
+    </div>`;
+}
+
+/**
+ * Both figures this window turns on - what ETH costs and whether the alert has
+ * already fired - were fetched once when the page loaded and never again. A
+ * tab left open for an afternoon offered a goal to set against a morning
+ * price, and went on calling a fired alert armed until it was reloaded. So the
+ * window asks first, and asks for a price fetched now rather than a cached
+ * one.
+ *
+ * Refused answers are ignored on purpose: a window opened against slightly old
+ * figures is better than a bell that does nothing because the server is down.
+ * Asked for before the markup is built rather than after, because rewriting it
+ * underneath someone would take away whatever they had begun to type.
+ */
+async function openAlertDialog(id) {
+  await loadAlerts({ refresh: true }).catch(() => {});
+  const t = state.trades.find((x) => x.id === id);
+  if (!t) return;
+
+  // The card behind the window may have been saying the wrong thing too.
+  render();
+
+  const dlg = alertDialog();
+  // Deliberately not touching `state.editing`. Escape closes a dialog by
+  // itself, and the page's own Escape handler collapses an open stage form, so
+  // claiming to be editing would make one key do two things.
+  dlg.innerHTML = alertDialogBody(t, derive(t), alertFor(id));
+  dlg.showModal();
+  const input = dlg.querySelector('input[name="goal_price"]');
+  input?.focus();
+  input?.select();
+  refreshAlertPreview(id);
+}
+
+function closeAlertDialog() {
+  // The `close` listener does the emptying, so Escape and this leave the
+  // window in the same state.
+  const dlg = alertDialog();
+  if (dlg?.open) dlg.close();
+}
+
+/**
+ * The message as it will arrive, built by the server so that what is shown
+ * here and what is sent cannot drift apart. Debounced, because it is rebuilt
+ * as the price is typed.
+ */
+let previewTimer;
+let previewSeq = 0;
+
+function refreshAlertPreview(id, { delay = 0 } = {}) {
+  clearTimeout(previewTimer);
+  // Clearing the timer only stops a request that has not left yet. One already
+  // on the wire arrives regardless, and `dlg.open` is true again by then if
+  // the window has been closed and reopened on another trade, so the check
+  // that used to guard this let one trade's figures be shown under another
+  // trade's heading. Only the newest request may write.
+  const seq = ++previewSeq;
+
+  previewTimer = setTimeout(async () => {
+    const dlg = alertDialog();
+    const slot = dlg?.querySelector('[data-alert-preview]');
+    const goal = dlg?.querySelector('input[name="goal_price"]')?.value ?? '';
+    if (!slot) return;
+    if (goal.trim() === '') {
+      slot.hidden = true;
+      return;
+    }
+    try {
+      const { text } = await api(`/api/alerts/${id}/preview?goal=${encodeURIComponent(goal)}`);
+      if (seq !== previewSeq || !dlg.open) return;
+      // Re-read the slot: the window may have been rebuilt while this was away.
+      const live = dlg.querySelector('[data-alert-preview]');
+      if (!live) return;
+      live.textContent = text || '';
+      live.hidden = !text;
+    } catch (err) {
+      if (seq === previewSeq) slot.hidden = true;
+    }
+  }, delay);
+}
+
+async function submitAlert(form) {
+  const id = Number(form.dataset.alertForm);
+  if (!validateForm(form)) return;
+  const done = beginSubmit(form);
+  if (!done) return;
+  try {
+    const alert = await api(`/api/alerts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ goal_price: form.querySelector('input[name="goal_price"]').value }),
+    });
+    state.alerts = { ...state.alerts, [id]: alert };
+    // Closed before the toast, which would otherwise be painted over: a
+    // dialog renders in the browser's top layer, above everything.
+    closeAlertDialog();
+    render();
+    toast(`Alert set for ${usd(alert.goalPrice)}.`);
+  } catch (err) {
+    showFormError(form, err.message, err.field);
+  } finally {
+    done();
+  }
+}
+
+async function removeAlert(id) {
+  try {
+    await api(`/api/alerts/${id}`, { method: 'DELETE' });
+  } catch (err) {
+    // A 404 is the state we were after: it is already gone. Anything else -
+    // a server that is not answering above all - is a delete that did not
+    // happen, and saying "Alert removed" to that left the alert armed and the
+    // person who asked for it gone none the wiser.
+    if (err.status !== 404) {
+      // No status at all means `fetch` itself threw and the request never got
+      // a reply, so the raw "Failed to fetch" would be both unhelpful and
+      // ambiguous about whether the alert is still there. It is.
+      toast(err.status ? err.message : 'Could not reach the server, so the alert is still set.');
+      return;
+    }
+  }
+  const { [id]: _gone, ...rest } = state.alerts;
+  state.alerts = rest;
+  closeAlertDialog();
+  render();
+  toast('Alert removed.');
+}
+
 /* ------------------------------------------------------------------ toast */
 
 let toastTimer;
@@ -1638,6 +1945,23 @@ function wire() {
       state.editing = { id: Number(edit.dataset.trade), stage: edit.dataset.editStage };
       state.openId = Number(edit.dataset.trade);
       render();
+      return;
+    }
+
+    const bell = e.target.closest('[data-alert-trade]');
+    if (bell) {
+      openAlertDialog(Number(bell.dataset.alertTrade));
+      return;
+    }
+
+    if (e.target.closest('[data-close-alert]')) {
+      closeAlertDialog();
+      return;
+    }
+
+    const removeBell = e.target.closest('[data-alert-remove]');
+    if (removeBell) {
+      removeAlert(Number(removeBell.dataset.alertRemove));
       return;
     }
 
@@ -1823,10 +2147,48 @@ function wire() {
   );
 
   document.body.addEventListener('submit', (e) => {
+    const alertForm = e.target.closest('[data-alert-form]');
+    if (alertForm) {
+      e.preventDefault();
+      submitAlert(alertForm);
+      return;
+    }
     const form = e.target.closest('[data-stage-form]');
     if (!form) return;
     e.preventDefault();
     submitStage(form);
+  });
+
+  const dlg = document.getElementById('alert-dialog');
+
+  // A click on the backdrop lands on the dialog element itself rather than on
+  // anything inside it, which is the only way to tell the two apart.
+  dlg.addEventListener('click', (e) => {
+    if (e.target === dlg) closeAlertDialog();
+  });
+
+  // Every way out of the window ends here, so the markup is emptied in one
+  // place rather than at each of them.
+  dlg.addEventListener('close', () => {
+    dlg.innerHTML = '';
+  });
+
+  // Escape closes a modal dialog by itself in a browser, but only while the
+  // focus is inside it, and the page's own Escape handler is listening on the
+  // body for the stage editor. Closing it here makes the key do one thing
+  // wherever the focus happens to be.
+  dlg.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    closeAlertDialog();
+  });
+
+  // The message is rebuilt as the goal is typed, a beat behind the keystrokes.
+  dlg.addEventListener('input', (e) => {
+    const form = e.target.closest('[data-alert-form]');
+    if (form && e.target.name === 'goal_price') {
+      refreshAlertPreview(Number(form.dataset.alertForm), { delay: 350 });
+    }
   });
 }
 
@@ -1841,6 +2203,11 @@ async function boot() {
   } catch (e) {
     /* keep the fallback already in the markup */
   }
+  // Alerts ride alongside the ledger rather than gating it: the trades are
+  // worth showing even when the alert subsystem cannot be reached, and asking
+  // for both at once means one render rather than two.
+  const alerts = loadAlerts().catch(() => {});
+
   try {
     await loadTrades();
   } catch (err) {
@@ -1851,6 +2218,8 @@ async function boot() {
     renderStats();
     return;
   }
+
+  await alerts;
   setView(viewFromHash(), { updateHash: false });
 }
 

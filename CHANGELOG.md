@@ -3,6 +3,40 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.22] - 2026-09-20
+
+A trade whose ETH is still held can now say what price it is waiting for, and be told when it gets there.
+
+### Added
+
+- **Price alerts.** While a trade is HOLDING, the **Bought ETH** card carries a bell beside Edit. It opens a window with what the trade cost, when, what was paid per ETH and what ETH is worth now, and takes one figure: the goal price. The card then carries the goal, and the message is sent to a Telegram group once ETH reaches it. One alert per trade; saving again replaces and re-arms it, and **Remove alert** deletes it.
+- **The message is shown before it is sent.** The window renders the exact text that will arrive, built by the server from the same function that sends it, and rebuilds it as the price is typed. A group is a room full of other people and the message carries the trade's figures, so nothing goes into it unread.
+- **`config.env`, and `config.js` to read it.** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and a display-only `TELEGRAM_GROUP_NAME`. `process.env` still wins over the file, as it does for every other setting. Gitignored by name, with `config.env.example` committed in its place, and the app warns once at startup if the file is readable by other users.
+- **`eth.js`**, the ETH spot price, from CoinGecko because it answers without a key. Shaped like `fx.js`: a timeout, a cooldown after a failure, a cached value and a status object the interface can show. A 429 gets its own ten-minute cooldown and honours `Retry-After`, since walking straight back into a shared rate limit earns a longer one.
+- **`telegram.js`**, one message, plain text and no `parse_mode` - a group name with an underscore in it would otherwise fail the whole send silently. Every error string leaving it has the token redacted, because Node puts the URL in some network errors.
+- **`alerts.js`**, the alerts themselves and the timer that checks them, every fifteen minutes. The tick counts what is armed before anything else, so a ledger with no alerts on it never touches the network however long it is left running.
+- `GET /api/alerts`, `PUT` and `DELETE /api/alerts/:id`, `GET /api/alerts/:id/preview` and `POST /api/alerts/test`. The bot token and the chat id are in none of them.
+
+### Notes
+
+- **An alert is claimed before the message is sent, not after.** `run_myAave.sh` will start a second copy of the app on the next free port against the same database file, and both copies poll. The claim is a conditional `UPDATE ... WHERE status = 'armed'`, so only one of them can win it. Verified with two instances at a fast poll against one database: one message, over nine ticks.
+- **Selling the ETH stops the alert being checked**, because the sweep joins the trade and requires `sell_date IS NULL`. Nothing has to remember to switch it off, and undoing the sale brings the alert back. Verified by re-arming an alert on a sold trade by hand and confirming four ticks past the goal sent nothing.
+- A transport failure and a refusal are handled apart. A timeout leaves delivery genuinely unknown, so the alert goes back to armed and is retried up to three times; Telegram answering "no such chat" will say the same thing next time, so the alert stays fired and the card carries the reason.
+- **Without `config.env` the app is what it was.** It boots, logs one line, the bell works and goals are saved; the window says what is missing and offers to send them once it is filled in. That was the negative test the whole thing was built around.
+- **Which way an alert reads is decided against ETH's current price, not against what was paid for it.** A goal is a crossing that has not happened yet: with ETH at 3,000 and a purchase at 2,500, a goal of 2,600 means "tell me if it falls back to 2,600". Judged against the purchase price that is an upward goal already met, and the next tick fired it, with a message announcing that ETH had hit a price it had in fact fallen from. The price it was decided from is stored beside the goal. The purchase price is now only the fallback, for a ledger that cannot reach the price service at all; with neither known the alert reads upward and the window says so.
+- The goal is always in dollars. Where the purchase price is used as the fallback it is `buyPriceUsd` and never `buyPrice`, which on a EURC loan is euros per ETH while CoinGecko quotes dollars.
+- **An armed alert is only checked while the trade is still holding ETH**, which means the purchase recorded in full as well as no sale. Asking only whether it had been sold missed the other way a trade leaves HOLDING: every stage here can be cleared, and an alert left armed on a trade whose purchase had been undone sent a message reading "Bought 0.0000 ETH for 0.00 USDC".
+- The alert window asks the server for the alert and a freshly fetched price each time it opens. Both were previously read once at page load, so a tab left open offered a goal to set against a morning price and went on calling a fired alert armed until it was reloaded. Page load itself does not ask for a fresh price: a boot should not wait on an outside service.
+- A transport failure keeps the price the goal was reached at rather than blanking it, so an alert that gives up after three tries can still say what it was trying to tell you. A row back at `armed` ignores those columns and re-firing overwrites them.
+- A rate limited price lookup honours `Retry-After` upward, bounded at an hour. Taking the smaller of the header and our own ten minutes meant a service asking for an hour was heard as ten minutes, which walks straight back into the limit it had just been told about.
+- `config.env` values are no longer masked by a variable exported empty - what `TELEGRAM_CHAT_ID=` in a wrapper script leaves behind - which counted as a value and reported the alerts unconfigured while the file sat there correctly filled in.
+- A preview that arrives after the window has been reopened on another trade is discarded, rather than showing one trade's figures under another trade's heading. Clearing the debounce timer only stops a request that has not left yet.
+- A **Remove alert** that does not reach the server says so and leaves the window open, rather than reporting the alert removed while it is still armed.
+- The alert stores neither the trade's amount nor its date nor its purchase price, though the window shows all three. They live on the trade, an edit can move any of them, and a copy taken when the alert was set would start disagreeing with the card beside it. The two prices it does store are prices observed at a moment, which is the same reason the `*_fx` columns are stored.
+- **`.gitignore` did not cover `config.env`.** `.env.*` matches a file beginning `.env.`, not this one, so the file would have been committed with a live token in it. Listed in full now.
+- The alert window is the first modal in the app. It lives in the page shell rather than inside the card that opens it, because the trades table is rebuilt wholesale on every render and anything inside it would be torn out mid-typing - the same reason the toast has sat outside it since the beginning. `.modal` sets `color` explicitly: a `dialog` is given `CanvasText` by the browser, which is near black on the dark theme's surface.
+- Verified by execution throughout: the fire path, no second message after firing, two instances against one database, the disarm on sale, cascade delete, a clean shutdown mid-sweep, and the window in both themes at 1440px and 375px.
+
 ## [0.0.21] - 2026-09-20
 
 ### Changed
