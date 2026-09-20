@@ -752,6 +752,13 @@ a.brand {
 .pill--SOLD { background: var(--accent-soft); color: var(--accent); }
 .pill--CLOSED { background: var(--positive-soft); color: var(--positive); }
 
+/* An alert's own three states. Armed takes the accent, like a position still
+   running; fired is green because the message went; failed is the one that
+   wants a person. The dot comes from .pill::before with everything else. */
+.pill--ARMED { background: var(--accent-soft); color: var(--accent); }
+.pill--FIRED { background: var(--positive-soft); color: var(--positive); }
+.pill--FAILED { background: var(--negative-soft); color: var(--negative); }
+
 /* ------------------------------------------------------- sorting + paging */
 
 /* The header text is a real button so it is reachable by keyboard and
@@ -910,6 +917,16 @@ th[aria-sort="ascending"] .th-sort__caret {
   font-weight: 500;
 }
 
+/* The same quiet second line as .fx-note, for a cell whose subtitle is a time
+   and a price rather than an exchange rate. */
+.cell-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 /* The converted figure, then the rate that produced it, one per line. */
 .fx-note__usd {
   display: block;
@@ -980,6 +997,56 @@ th[aria-sort="ascending"] .th-sort__caret {
      belonged to the next pair's label. */
   gap: 0 40px;
   grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
+}
+
+/* The six figures on the Performance card, as tiles.
+   Six read better as a grid than as two columns of a list, and a tile leaves
+   room for the line under a figure that qualifies it - the split of a win rate,
+   or which trade a gain belongs to - without it looking like a second value.
+   auto-fit means three across on a wide screen, two on a tablet, one on a
+   phone, with no breakpoint of its own. */
+.perf-grid {
+  display: grid;
+  gap: 12px;
+  /* 300px settles at three across on a desktop, so six tiles are two clean
+     rows rather than four and a gap; two on a tablet, one on a phone. */
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+}
+
+.perf {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  border-radius: var(--radius-card);
+  background: var(--surface-sunken);
+}
+
+.perf__label {
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.perf__value {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+.perf__sub {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* The tooltip anchors to the tile, which is wide enough to hold the bubble and
+   is what keeps it from running off an edge. */
+.perf {
+  position: relative;
+}
+
+.perf .kv__hint[data-tip]::after {
+  left: 0;
 }
 
 /* The best and worst trade read as a pair, so the second one is pinned to the
@@ -1421,14 +1488,19 @@ th[aria-sort="ascending"] .th-sort__caret {
   background: var(--accent-soft);
 }
 
-.alert-bell.is-fired {
-  color: var(--positive);
-  background: var(--positive-soft);
+/* The delete column carries a button and no figure, so it takes only the width
+   it needs and leaves the rest to the columns that are read. */
+.alerts-table th:last-child,
+.alerts-table__act {
+  width: 1%;
+  white-space: nowrap;
 }
 
-.alert-bell.is-failed {
-  color: var(--negative);
-  background: var(--negative-soft);
+/* The question itself, which is the sentence rather than a footnote under one. */
+.modal__note--lead {
+  margin-top: 0;
+  color: var(--text);
+  font-size: 13.5px;
 }
 
 /* A dialog does not inherit the page's colour. The user agent gives it
@@ -1673,6 +1745,17 @@ th[aria-sort="ascending"] .th-sort__caret {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+  }
+
+  /* The delete cell has no label, so it takes the whole row rather than
+     sitting against an empty one. */
+  .alerts-table__act {
+    justify-content: flex-end;
+    width: auto;
+  }
+
+  .alerts-table__act::before {
+    content: none;
   }
 
   .bar-col {

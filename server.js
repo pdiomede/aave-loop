@@ -19,9 +19,11 @@ import { telegramConfig, reportConfig } from './config.js';
 import { ethPrice, cachedEthPrice, ethStatus } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
 import {
-  allAlerts,
+  armedAlerts,
+  alertLog,
   saveAlert,
   deleteAlert,
+  deleteAllAlerts,
   previewMessage,
   alertPollMs,
   startAlertPoller,
@@ -475,8 +477,13 @@ app.post('/api/fx/backfill', async (req, res, next) => {
  * Everything the alert window needs, in one call: whether there is anywhere to
  * send a message, what ETH last cost, and every alert keyed by its trade.
  *
+ * `alerts` is the *armed* ones, keyed by trade, which is what the bell on a
+ * card reads. A trade can have many alerts now that a fired one is kept, so a
+ * map keyed by trade is only well defined for the one status it can have at
+ * most one of. The whole list lives at /api/alerts/log.
+ *
  * The bot token and the chat id are not in here and must never be. The browser
- * needs to know that sending works and what the group is called; it has no use
+ * needs to know that sending works and what the chat is called; it has no use
  * for the credentials, and this server answers anything that can reach
  * loopback.
  */
@@ -496,7 +503,7 @@ app.get('/api/alerts', async (req, res, next) => {
       eth: quote
         ? { price: quote.price, fetchedAt: quote.fetchedAt, stale: quote.ageMs > alertPollMs }
         : { price: null, fetchedAt: null, stale: true, reason: ethStatus().lastError },
-      alerts: allAlerts(),
+      alerts: armedAlerts(),
     });
   } catch (err) {
     next(err);
@@ -504,11 +511,28 @@ app.get('/api/alerts', async (req, res, next) => {
 });
 
 /**
- * Set the goal price for a trade. The id is the trade's, because a trade has
- * one alert, which is also why this is a PUT: saving the same goal twice is
- * the same ledger either way.
+ * Every alert ever set, newest first, for the Alerts view.
+ *
+ * Its own call rather than a field on the one above: that one is fetched at
+ * boot and again every time the alert window opens, where `refresh` sends it
+ * to the price service, and a tab sitting on the Alerts view has no business
+ * doing that. Its map is also keyed by trade, which a history of several
+ * alerts on one trade cannot be.
  */
-app.put('/api/alerts/:id', async (req, res, next) => {
+app.get('/api/alerts/log', (_req, res) => res.json({ alerts: alertLog() }));
+
+/**
+ * Set the goal price for a trade. Scoped to the trade, because that is what a
+ * goal belongs to, and a PUT because a trade has one *armed* alert: saving the
+ * same goal twice is the same ledger either way.
+ *
+ * Everything under /api/alerts is scoped to an alert instead, now that they
+ * have ids of their own. Moving this rather than redefining
+ * `DELETE /api/alerts/:id` is deliberate: a browser tab left open from before
+ * the change still holds the old script, and its delete would otherwise have
+ * removed a different trade's alert and answered 204. This way it 404s.
+ */
+app.put('/api/trades/:id/alert', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const trade = selectOne.get(id);
@@ -537,12 +561,24 @@ app.put('/api/alerts/:id', async (req, res, next) => {
   }
 });
 
+/** One alert, by its own id. */
 app.delete('/api/alerts/:id', (req, res) => {
   if (!deleteAlert(Number(req.params.id))) {
-    return res.status(404).json({ error: 'No alert on that trade.' });
+    return res.status(404).json({ error: 'No such alert.' });
   }
   res.status(204).end();
 });
+
+/**
+ * Everything, armed ones included. Answers with the count rather than 204,
+ * because the only honest thing the interface can say afterwards is how many
+ * went.
+ *
+ * A sweep can be away at Telegram while this lands. Its follow-up write then
+ * matches nothing, which is correct: the message was already sent, and there is
+ * no row left to record that on.
+ */
+app.delete('/api/alerts', (_req, res) => res.json({ deleted: deleteAllAlerts() }));
 
 /*
  * A dry run. Proving the token and the chat id are right by waiting for ETH to
@@ -581,7 +617,7 @@ app.post('/api/alerts/test', async (req, res, next) => {
  * 200 with a null text when the goal is not a number yet, since a half typed
  * figure is an ordinary state of a form and not an error.
  */
-app.get('/api/alerts/:id/preview', (req, res) => {
+app.get('/api/trades/:id/alert/preview', (req, res) => {
   const id = Number(req.params.id);
   const trade = selectOne.get(id);
   if (!trade) return res.status(404).json({ error: 'Trade not found.' });

@@ -78,7 +78,8 @@ db.exec(`
   ) WITHOUT ROWID;
 
   CREATE TABLE IF NOT EXISTS alerts (
-    trade_id    INTEGER PRIMARY KEY REFERENCES trades(id) ON DELETE CASCADE,
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_id    INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
     goal_price  REAL    NOT NULL,
     direction   TEXT    NOT NULL,
     status      TEXT    NOT NULL,
@@ -90,8 +91,6 @@ db.exec(`
     created_at  TEXT    NOT NULL,
     updated_at  TEXT    NOT NULL
   );
-
-  CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts (status);
 
   CREATE TABLE IF NOT EXISTS eth_price (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
@@ -144,11 +143,18 @@ db.exec(`
 /**
  * A price alert, and the last ETH price anyone looked up.
  *
- * `trade_id` is the primary key rather than a column beside one, which is the
- * whole of the rule that a trade has one alert: a second one cannot be
- * inserted, and saving is a plain upsert instead of a read, a branch and a
- * write. Deleting the trade takes the alert with it, for real, because
- * `foreign_keys` is ON above.
+ * An alert has an id of its own, and a trade can have many. That is what lets a
+ * fired one be kept: the bell on the card reads only the armed alert, so it
+ * goes back to unselected once the message has gone and a new goal can be set,
+ * while the one that fired stays in the Alerts view with the time it was sent.
+ *
+ * The rule that a trade has at most one *armed* alert is the partial unique
+ * index below rather than the key. It is not decoration: the sweep and the
+ * holding report both join alerts to trades by trade id with no limit, so a
+ * second armed row would send one message twice and count one position twice.
+ *
+ * Deleting the trade takes every alert on it, for real, because `foreign_keys`
+ * is ON above.
  *
  * What is *not* here is as deliberate. The alert window shows the amount, the
  * date and the price the ETH was bought at, and none of the three are stored:
@@ -169,6 +175,99 @@ db.exec(`
  * asked about and `rate_date` the day the rate was published on. On a weekend
  * those differ, which is the whole reason both are kept.
  */
+
+/**
+ * The one migration here that ALTER TABLE cannot do.
+ *
+ * `trade_id` used to be the primary key, which was the whole of the rule that a
+ * trade had one alert - and so the reason a fired one had to be overwritten to
+ * set another goal. Keeping it as history needs a key of its own, and SQLite
+ * has no way to add one to a table that already exists. So the table is rebuilt
+ * once: create, copy, drop, rename.
+ *
+ * Detected by shape rather than by a version number. A column named `id` is
+ * exactly what the new table has and the old one cannot, which answers for a
+ * fresh database (the CREATE TABLE above already made the new shape), an old
+ * one (CREATE TABLE IF NOT EXISTS left it alone) and one already migrated, with
+ * one predicate and nothing to keep in step.
+ *
+ * Foreign keys stay ON throughout. The usual advice to switch them off is for
+ * renaming a *parent* table, where other tables' REFERENCES clauses have to be
+ * rewritten; nothing in this schema references alerts, so there is nothing to
+ * protect - and SQLite ignores a change to that pragma inside a transaction
+ * anyway. Leaving them on is what checks each copied row against its trade.
+ */
+const ALERT_COLUMNS =
+  'trade_id, goal_price, direction, status, basis_price, fired_at, ' +
+  'fired_price, attempts, last_error, created_at, updated_at';
+
+function alertsNeedRebuild() {
+  const cols = db.pragma('table_info(alerts)');
+  return cols.length > 0 && !cols.some((c) => c.name === 'id');
+}
+
+function rebuildAlerts() {
+  // Read the shape again, now that the write lock is held. Two copies of this
+  // app can boot against the same file at the same moment, and both would have
+  // seen the old shape outside it; the loser must not rebuild what the winner
+  // has just finished.
+  if (!alertsNeedRebuild()) return false;
+
+  db.exec(`
+    CREATE TABLE alerts_rebuild (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      trade_id    INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+      goal_price  REAL    NOT NULL,
+      direction   TEXT    NOT NULL,
+      status      TEXT    NOT NULL,
+      basis_price REAL,
+      fired_at    TEXT,
+      fired_price REAL,
+      attempts    INTEGER NOT NULL DEFAULT 0,
+      last_error  TEXT,
+      created_at  TEXT    NOT NULL,
+      updated_at  TEXT    NOT NULL
+    )
+  `);
+
+  // Oldest first, so the new ids run in the order the alerts were set.
+  //
+  // The old rowid is deliberately not carried across: `trade_id` *was* the
+  // rowid, so copying it would make every alert id equal to a trade id, which
+  // is the one confusion the routes are now shaped to avoid.
+  //
+  // The WHERE drops a row whose trade is gone. ON DELETE CASCADE should mean
+  // there are none, but a file edited with foreign keys off would otherwise
+  // abort the migration, and a boot that fails on an orphan is worse than one
+  // that leaves it behind.
+  db.exec(`
+    INSERT INTO alerts_rebuild (${ALERT_COLUMNS})
+    SELECT ${ALERT_COLUMNS} FROM alerts
+     WHERE trade_id IN (SELECT id FROM trades)
+     ORDER BY created_at, trade_id
+  `);
+
+  db.exec('DROP TABLE alerts');
+  db.exec('ALTER TABLE alerts_rebuild RENAME TO alerts');
+  return true;
+}
+
+// `.immediate()` takes the write lock on the first statement rather than on the
+// first write, which is what puts the re-check above inside it.
+if (db.transaction(rebuildAlerts).immediate()) {
+  console.log('Alerts rebuilt: each one now has its own id, so a fired alert is kept.');
+}
+
+/**
+ * After the rebuild, so a fresh database and a migrated one arrive here by the
+ * same path.
+ */
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts (status);
+  CREATE INDEX IF NOT EXISTS idx_alerts_trade  ON alerts (trade_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_one_armed
+    ON alerts (trade_id) WHERE status = 'armed';
+`);
 
 /**
  * SQLite has no 'ADD COLUMN IF NOT EXISTS', and CREATE TABLE IF NOT EXISTS

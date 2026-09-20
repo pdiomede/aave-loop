@@ -67,7 +67,9 @@ The loan cost can be negative: if the euro fell between borrowing and repaying, 
 
 While a trade is HOLDING - the ETH is bought and not yet sold - the **Bought ETH** card carries a bell. It opens a window showing what the trade cost, when, and what ETH is worth now, and takes one figure: the price you want to be told about. The message that will be sent is shown in full before anything is saved.
 
-One alert per trade. Saving again replaces it and re-arms it; **Remove alert** deletes it. Which way it reads is settled when you save, against what ETH costs at that moment: a goal above alerts when ETH rises to it, a goal below alerts when it falls. Selling the ETH, or undoing the purchase, stops the alert being checked without deleting it - put the stage back and it picks up where it was.
+One *armed* alert per trade. Saving again replaces it; **Remove alert** deletes it. Which way it reads is settled when you save, against what ETH costs at that moment: a goal above alerts when ETH rises to it, a goal below alerts when it falls. Selling the ETH, or undoing the purchase, stops the alert being checked without deleting it - put the stage back and it picks up where it was.
+
+**A fired alert is kept.** The bell goes back to unselected once the message has gone, so a new goal can be set on the same trade, and the one that fired stays in the **Alerts** view with the time it was sent and the price it fired at. That view lists every alert ever set, fifteen to a page, and each row can be deleted - as can the whole list at once.
 
 The price comes from CoinGecko, which answers without a key, and is checked every fifteen minutes - but only when at least one alert is armed, so a ledger with none on it never calls out. An alert fires once, and a second copy of the app running against the same database cannot send the same message twice.
 

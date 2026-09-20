@@ -3,6 +3,34 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.33] - 2026-09-20
+
+An Alerts view, and a fired alert that is kept rather than overwritten.
+
+### Added
+
+- **An Alerts view**, third after Summary. Every alert ever set, newest first, fifteen to a page: the trade, the goal, which way it reads, its status, the day it was set and - for one that has fired - the date, time and price it fired at. Each row deletes, and **Delete all alerts** clears the list; both ask first, and the delete-all sentence names how many are still armed, because those are the ones whose deletion has a consequence beyond the list.
+- **A fired alert is kept.** The bell reads only the armed alert, so it returns to unselected once the message has gone and a new goal can be set on the same trade - while the one that fired stays in the Alerts view. That was the point of the change: setting a second goal used to overwrite the only record that the first had ever fired.
+- `GET /api/alerts/log`, `DELETE /api/alerts` and a `confirmDialog()` in a second `<dialog>`, which the Delete trade confirmation now uses as well. The app no longer opens a browser `confirm()` box anywhere.
+
+### Changed
+
+- **Alerts have an id of their own.** `trade_id` was the primary key, which was the whole of the rule that a trade had one alert. The table is rebuilt once on open - create, copy, drop, rename - detected by shape rather than a version number, re-checked inside an immediate transaction so two copies of the app booting together cannot both do it. The rule that a trade has at most one *armed* alert is now a partial unique index, which the sweep and the `/holding` report both depend on: each joins alerts by trade with no limit, so a second armed row would send one message twice and count one position twice.
+- **The alert routes are scoped to an alert; the two trade-scoped ones moved** to `PUT /api/trades/:id/alert` and `GET /api/trades/:id/alert/preview`. Redefining `DELETE /api/alerts/:id` in place would have left a tab loaded before the upgrade deleting a different trade's alert and answering 204; this way it 404s.
+- **The Performance card is six tiles.** Realized net gain and Blended annualized are the first two figures above the table on every view, so the card was stating them twice on one screen; "Of which currency" goes with them. What is left is the six that are only there.
+- **The landing page hero carries the real logo** rather than a hand-traced glyph of it - the same drift 0.0.23 removed from the favicon. The 96px derivative, not the 1254px master, for a tile drawn at 46.
+
+### Fixed
+
+- **A failed send would have rewritten a trade's whole alert history.** The two follow-up statements in `fire()` were `WHERE trade_id` with no status filter - harmless while a trade had one row, and the moment history existed they would have put every fired alert on that trade back to `armed` and sent them all again on the next sweep. Both key on the alert's own id, which is also what the claim now locks on.
+- **Two clicks on Delete in one tick left no confirmation at all.** `close()` queues its event rather than firing it, so the handler ran after the window had already reopened for the second question, wiped it and closed it again - no dialog, no message, nothing deleted.
+- **Neither dialog ever cleared its markup.** Both leaned on the `close` event for that, and an engine need not dispatch it for a `close()` from script, so the goal somebody had typed stayed in the document after the window shut. Both clear on the way out instead, with the event kept as a second line of defence.
+
+### Notes
+
+- Verified by execution: the migration against a database built on the previous schema, twice and from three concurrent boots, with `foreign_key_check` clean and the new ids deliberately not equal to the trade ids; the armed invariant refusing a second armed row and accepting any number of fired ones; an alert firing, the bell going unselected, and a new goal adding a row rather than replacing the old one; two instances against one database sending exactly one message on the new claim; a retryable failure climbing to FAILED while an older alert on the same trade kept its own `fired_at`; a confirmation stacking above the alert window with the typed goal surviving a cancel; pagination falling back a page when the last row of the last one goes; and `PUT /api/alerts/1` now answering 404.
+- The bell shows armed alerts only, so a failed one has no trace on the trade card and lives in the Alerts view. A FIRED row whose message Telegram refused carries a "not sent" chip with the reason, because that case is not a status of its own.
+
 ## [0.0.32] - 2026-09-20
 
 An audit of every file. Twenty-two findings across twelve of them; `alerts.js`, `lib/calc.js` and both HTML files had nothing worth changing.

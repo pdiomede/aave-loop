@@ -293,14 +293,16 @@ p {
   letter-spacing: -0.02em;
 }
 
+/* The logo itself, not a tracing of it. The artwork already carries the violet
+   tile and its rounded corners, so there is no background to paint behind it.
+   The 96px derivative rather than the 1254px master: this is drawn at 46, and
+   the full-size file is 941KB for a tile the size of a thumbnail. */
 .hero__glyph {
-  display: grid;
-  place-items: center;
   width: 46px;
   height: 46px;
+  flex: none;
   border-radius: 13px;
-  background: var(--violet);
-  color: #ffffff;
+  object-fit: cover;
 }
 
 .hero__title {

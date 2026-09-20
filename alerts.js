@@ -18,6 +18,12 @@
  * whether it is still holding ETH. Selling it, or undoing the purchase, ends
  * the reason for the alert, and this way nothing has to remember to go and
  * switch it off.
+ *
+ * The third is that an alert is kept after it fires. A trade can therefore have
+ * many, so every statement here keys on the alert's own id and never on the
+ * trade - a statement that says `WHERE trade_id` would reach the history as
+ * well as the live one. The rule that a trade has at most one *armed* alert is
+ * a partial unique index in db.js.
  */
 import { db, prepare } from './db.js';
 import { derive, unrealisedUsd } from './lib/calc.js';
@@ -41,9 +47,18 @@ const MAX_ATTEMPTS = 3;
 
 /* ------------------------------------------------------------------ queries */
 
-const selectAlert = () => prepare('SELECT * FROM alerts WHERE trade_id = ?');
+const selectAlertById = () => prepare('SELECT * FROM alerts WHERE id = ?');
 
-const selectAllAlerts = () => prepare('SELECT * FROM alerts');
+const selectArmedForTrade = () =>
+  prepare(`SELECT * FROM alerts WHERE trade_id = ? AND status = 'armed'`);
+
+const selectAllArmed = () => prepare(`SELECT * FROM alerts WHERE status = 'armed'`);
+
+/**
+ * Every alert ever set, newest first. `id` rather than `created_at` because it
+ * is monotonic by construction and never ties, and the two orders are the same.
+ */
+const selectLog = () => prepare('SELECT * FROM alerts ORDER BY id DESC');
 
 /**
  * Alerts still worth evaluating, with the trade they belong to.
@@ -76,26 +91,35 @@ export const alertView = (row) =>
   row == null
     ? null
     : {
+        id: row.id,
         tradeId: row.trade_id,
         goalPrice: row.goal_price,
         direction: row.direction,
         status: row.status,
         basisPrice: row.basis_price,
+        createdAt: row.created_at,
         firedAt: row.fired_at,
         firedPrice: row.fired_price,
         lastError: row.last_error,
       };
 
-export function getAlert(tradeId) {
-  return alertView(selectAlert().get(tradeId));
-}
+export const getAlertById = (id) => alertView(selectAlertById().get(id));
 
-/** Every alert, keyed by trade id, so the browser looks one up rather than scanning. */
-export function allAlerts() {
+export const getArmedAlert = (tradeId) => alertView(selectArmedForTrade().get(tradeId));
+
+/**
+ * The armed alerts, keyed by trade, so a card looks one up rather than
+ * scanning. Armed only: with history in the table, keying by trade is well
+ * defined for the one status a trade can have at most one of, and nothing else.
+ */
+export function armedAlerts() {
   const out = {};
-  for (const row of selectAllAlerts().all()) out[row.trade_id] = alertView(row);
+  for (const row of selectAllArmed().all()) out[row.trade_id] = alertView(row);
   return out;
 }
+
+/** Every alert ever set, newest first, for the Alerts view. */
+export const alertLog = () => selectLog().all().map(alertView);
 
 /**
  * Which way the price has to move to reach the goal.
@@ -133,37 +157,58 @@ const reached = (alert, price) =>
  * Save the goal for a trade, replacing whatever was there. `price` is ETH's
  * current price, which decides the direction; null when it could not be had.
  */
-export function saveAlert(trade, goalPrice, price = null) {
-  const basis = referenceFor(trade, price);
-  const now = new Date().toISOString();
+const clearArmed = () => prepare(`DELETE FROM alerts WHERE trade_id = ? AND status = 'armed'`);
 
+const insertAlert = () =>
   prepare(`
     INSERT INTO alerts (trade_id, goal_price, direction, status, basis_price,
                         fired_at, fired_price, attempts, last_error, created_at, updated_at)
     VALUES (@trade_id, @goal_price, @direction, 'armed', @basis_price,
             NULL, NULL, 0, NULL, @now, @now)
-    ON CONFLICT (trade_id) DO UPDATE SET
-      goal_price = excluded.goal_price,
-      direction = excluded.direction,
-      basis_price = excluded.basis_price,
-      -- Re-arming is the whole point of saving again, so everything the last
-      -- run left behind is cleared rather than carried forward.
-      status = 'armed', fired_at = NULL, fired_price = NULL,
-      attempts = 0, last_error = NULL,
-      updated_at = excluded.updated_at
-  `).run({
+  `);
+
+/**
+ * Replace the armed alert on a trade, leaving its history where it is.
+ *
+ * Two statements, so one transaction: a crash between them would leave the
+ * trade with no alert and no record that one had been replaced.
+ *
+ * Deliberately not an upsert. `ON CONFLICT ... DO UPDATE` would keep the old
+ * row's `created_at`, and the Alerts view has a Set column - saving a goal
+ * again should read as one set today, not as the old one wearing a new figure.
+ * A fired or failed row on the same trade is not touched either way.
+ */
+const replaceArmed = db.transaction((p) => {
+  clearArmed().run(p.trade_id);
+  return insertAlert().run(p).lastInsertRowid;
+});
+
+/**
+ * Save the goal for a trade. `price` is ETH's current price, which decides the
+ * direction; null when it could not be had.
+ */
+export function saveAlert(trade, goalPrice, price = null) {
+  const basis = referenceFor(trade, price);
+  const id = replaceArmed({
     trade_id: trade.id,
     goal_price: goalPrice,
     direction: directionFor(goalPrice, basis),
     basis_price: basis,
-    now,
+    now: new Date().toISOString(),
   });
-
-  return getAlert(trade.id);
+  return getAlertById(id);
 }
 
-export function deleteAlert(tradeId) {
-  return prepare('DELETE FROM alerts WHERE trade_id = ?').run(tradeId).changes > 0;
+export function deleteAlert(id) {
+  return prepare('DELETE FROM alerts WHERE id = ?').run(id).changes > 0;
+}
+
+/**
+ * Everything, armed included. Answers how many went, because the only honest
+ * thing the interface can say afterwards is the number.
+ */
+export function deleteAllAlerts() {
+  return prepare('DELETE FROM alerts').run().changes;
 }
 
 /* ------------------------------------------------------------------ message */
@@ -253,8 +298,8 @@ async function fire(row, price) {
   const now = new Date().toISOString();
   const claimed = prepare(`
     UPDATE alerts SET status = 'fired', fired_at = @now, fired_price = @price, updated_at = @now
-    WHERE trade_id = @id AND status = 'armed'
-  `).run({ id: row.trade_id, price, now });
+    WHERE id = @id AND status = 'armed'
+  `).run({ id: row.id, price, now });
 
   if (claimed.changes !== 1) return;
 
@@ -279,12 +324,16 @@ async function fire(row, price) {
     // trying to tell you - blanking them left the window reading "Reached ,
     // but the message could not be sent". A row back at 'armed' ignores them,
     // and re-firing overwrites them.
+    // Keyed on the alert, not the trade. With history in the table a trade can
+    // have many, and `WHERE trade_id` would rewrite the status and the error
+    // across every alert ever set on it - putting fired ones back to armed and
+    // sending them again on the next sweep.
     prepare(`
       UPDATE alerts SET status = @status, attempts = @attempts, last_error = @error,
                         updated_at = @now
-      WHERE trade_id = @id
+      WHERE id = @id
     `).run({
-      id: row.trade_id,
+      id: row.id,
       status: attempts >= MAX_ATTEMPTS ? 'failed' : 'armed',
       attempts,
       error: sent.error,
@@ -293,8 +342,8 @@ async function fire(row, price) {
   } else {
     // Telegram understood us and said no. It will say the same thing next
     // time, so the alert stays fired and the card carries the reason.
-    prepare('UPDATE alerts SET last_error = @error, updated_at = @now WHERE trade_id = @id').run({
-      id: row.trade_id,
+    prepare('UPDATE alerts SET last_error = @error, updated_at = @now WHERE id = @id').run({
+      id: row.id,
       error: sent.error,
       now: new Date().toISOString(),
     });

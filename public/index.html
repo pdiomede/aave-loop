@@ -35,6 +35,7 @@
         <nav class="nav">
           <a class="nav__link is-active" href="#trades" data-view="trades">Trades</a>
           <a class="nav__link" href="#summary" data-view="summary">Summary</a>
+          <a class="nav__link" href="#alerts" data-view="alerts">Alerts</a>
         </nav>
         <button class="btn btn--icon" id="theme-toggle" type="button" title="Switch theme">
           <span class="sr-only">Switch theme</span>
@@ -89,13 +90,30 @@
           </div>
           <div id="summary-mount"></div>
         </section>
+
+        <section id="view-alerts" hidden>
+          <div class="toolbar">
+            <h2 class="toolbar__title">Alerts</h2>
+            <!--
+              In the toolbar rather than under the table, so an action that
+              empties the table does not scroll away with it. Hidden until
+              there is something to delete; renderAlerts owns that.
+            -->
+            <button class="btn btn--sm btn--danger" id="delete-all-alerts" type="button" hidden>
+              Delete all alerts
+            </button>
+          </div>
+          <section class="card">
+            <div id="alerts-mount"></div>
+          </section>
+        </section>
       </div>
     </main>
 
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v0.0.32</span> - Built by
+          &copy; 2026 &middot; <span id="version">v0.0.33</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>
@@ -110,6 +128,13 @@
       under the user mid-typing.
     -->
     <dialog class="modal" id="alert-dialog" aria-labelledby="alert-dialog-title"></dialog>
+
+    <!--
+      The confirmation window. A second dialog rather than a mode of the one
+      above, because a delete can be confirmed from inside that one, and a
+      dialog cannot be opened on top of itself.
+    -->
+    <dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-dialog-title"></dialog>
 
     <script type="module" src="/app.js"></script>
   </body>

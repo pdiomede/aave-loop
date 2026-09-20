@@ -93,6 +93,19 @@ function localDay(instant) {
   return `${t.getFullYear()}-${mo}-${d}`;
 }
 
+/**
+ * The local wall clock time of an ISO instant, to the minute.
+ *
+ * `fired_at` is stored in UTC like `created_at`, so slicing the string prints
+ * the wrong hour for everyone whose clock is not UTC - the same trap `localDay`
+ * above exists for.
+ */
+function localTime(instant) {
+  const t = instant ? new Date(instant) : null;
+  if (!t || Number.isNaN(t.getTime())) return '';
+  return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+}
+
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;',
@@ -189,6 +202,16 @@ const TIPS = {
       'compared at a glance.',
   },
   noRate: 'No exchange rate for this date yet. Use Fetch rates on the Summary.',
+  alerts: {
+    trade: 'The trade the goal was set on. A trade can appear more than once: an alert is kept after it fires, so setting a new goal adds a row rather than replacing one.',
+    goal: 'The ETH price the alert is waiting for, in dollars.',
+    direction:
+      'Settled when the alert was saved, against what ETH cost at that moment rather than what you paid for it. A goal above the price then is one it has to rise to; below, one it has to fall to.',
+    status:
+      'ARMED is still being watched. FIRED means the goal was reached. FAILED means the message could not be delivered after three attempts. A FIRED row can also carry a "not sent" note, which means the goal was reached but Telegram refused the message.',
+    set: 'The day the goal was saved.',
+    firedAt: 'When the goal was reached, and the price it was reached at. Blank while an alert is still armed.',
+  },
 };
 
 // Artwork for the stablecoins we have it for. The rest fall back to a
@@ -346,11 +369,26 @@ function pageOfTrade(id) {
   return i < 0 ? state.page : Math.floor(i / PAGE_SIZE) + 1;
 }
 
+/**
+ * Two tables paginate now, and they sit on different views. The markup is
+ * shared verbatim; only which counter it reads and what it scrolls back to
+ * differ, so those are the two things named here.
+ */
+const PAGERS = {
+  trades: { key: 'page', mount: 'table-mount', label: 'Trade pages' },
+  alerts: { key: 'alertsPage', mount: 'alerts-mount', label: 'Alert pages' },
+};
+
+const pageOf = (scope) => state[PAGERS[scope].key];
+const setPage = (scope, n) => {
+  state[PAGERS[scope].key] = n;
+};
+
 /** Keep the page inside the range, so deleting the last row of the last page
  *  lands on the one before it rather than on an empty table. */
-function clampPage(total) {
-  state.page = Math.min(Math.max(1, state.page), pageCount(total));
-  return state.page;
+function clampPage(total, scope = 'trades') {
+  setPage(scope, Math.min(Math.max(1, pageOf(scope)), pageCount(total)));
+  return pageOf(scope);
 }
 
 /**
@@ -370,13 +408,13 @@ function pageItems(pages, current) {
   return out;
 }
 
-function pager(total) {
+function pager(total, scope = 'trades') {
   const pages = pageCount(total);
-  // Nothing appears until the ledger is actually long enough to need it.
+  // Nothing appears until the table is actually long enough to need it.
   if (pages <= 1) return '';
-  const current = state.page;
+  const current = pageOf(scope);
   const step = (to, label, glyph, disabled) =>
-    `<button class="pager__btn" type="button" data-page="${to}" aria-label="${label}"${
+    `<button class="pager__btn" type="button" data-page="${to}" data-page-scope="${scope}" aria-label="${label}"${
       disabled ? ' disabled' : ''
     }>${glyph}</button>`;
 
@@ -384,7 +422,7 @@ function pager(total) {
     .map((n) =>
       n === 'gap'
         ? '<span class="pager__gap" aria-hidden="true">&hellip;</span>'
-        : `<button class="pager__btn ${n === current ? 'is-active' : ''}" type="button" data-page="${n}" aria-label="Page ${n}"${
+        : `<button class="pager__btn ${n === current ? 'is-active' : ''}" type="button" data-page="${n}" data-page-scope="${scope}" aria-label="Page ${n}"${
             n === current ? ' aria-current="page"' : ''
           }>${n}</button>`,
     )
@@ -393,7 +431,7 @@ function pager(total) {
   const first = (current - 1) * PAGE_SIZE + 1;
   const last = Math.min(current * PAGE_SIZE, total);
 
-  return `<nav class="pager" aria-label="Trade pages">
+  return `<nav class="pager" aria-label="${PAGERS[scope].label}">
     <span class="pager__count">${first}-${last} of ${total}</span>
     <span class="pager__nums">
       ${step(current - 1, 'Previous page', '&lsaquo;', current === 1)}
@@ -468,6 +506,12 @@ const state = {
   alerts: {},
   alertConfig: null,
   ethPrice: null,
+  // Every alert ever set, for the Alerts view. Null until that view has been
+  // opened once, which is what lets the table tell "not fetched yet" from
+  // "there are none".
+  alertLog: null,
+  alertLogError: null,
+  alertsPage: 1,
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -541,6 +585,22 @@ async function loadAlerts({ refresh = false } = {}) {
   state.alerts = body.alerts || {};
   state.alertConfig = body.config || null;
   state.ethPrice = body.eth || null;
+}
+
+/**
+ * The whole log, for the Alerts view. Its own call: `/api/alerts` is fetched at
+ * boot and every time the alert window opens, and with `refresh` it goes to the
+ * price service - which a table of past alerts has no business triggering.
+ */
+async function loadAlertLog() {
+  try {
+    state.alertLog = (await api('/api/alerts/log')).alerts || [];
+    state.alertLogError = null;
+  } catch (err) {
+    // Whatever was on screen is left there. A refresh that could not get
+    // through should not blank a table that is still true.
+    state.alertLogError = err.message || 'Could not reach the server.';
+  }
 }
 
 /* ----------------------------------------------------- input and validation */
@@ -919,20 +979,15 @@ function refreshHints(form, trade, stage) {
  */
 const alertFor = (id) => state.alerts?.[id] ?? null;
 
-/** The summary row the Bought ETH card grows once an alert is set. */
+/**
+ * The summary row the Bought ETH card grows once an alert is set.
+ *
+ * Armed only, because `state.alerts` is armed only. A fired or failed alert
+ * lives in the Alerts view; the card is about what is being waited for.
+ */
 function alertRow(row, t) {
   const a = alertFor(t.id);
-  if (!a) return '';
-  if (a.status === 'fired') {
-    // `fired_at` is a UTC instant like `created_at`, so it needs the same
-    // conversion to a local calendar day that the footer note does.
-    const when = fmtDate(localDay(a.firedAt));
-    const at = isNum(a.firedPrice) ? usd(a.firedPrice) : '';
-    return row('Alert', a.lastError ? `${at} reached, not sent` : `sent at ${at}${when ? ` on ${when}` : ''}`,
-      a.lastError ? 'neg' : 'pos');
-  }
-  if (a.status === 'failed') return row('Alert', 'could not be sent', 'neg');
-  return row('Alert', `${usd(a.goalPrice)} goal`);
+  return a ? row('Alert', `${usd(a.goalPrice)} goal`) : '';
 }
 
 const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -951,16 +1006,9 @@ const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" st
 function alertBell(t, d) {
   if (!d.stages.bought || d.stages.sold) return '';
   const a = alertFor(t.id);
-  const cls = a ? `is-${a.status === 'armed' ? 'armed' : a.status}` : '';
-  const label = !a
-    ? 'Set a price alert'
-    : a.status === 'armed'
-      ? `Price alert at ${usd(a.goalPrice)}`
-      : a.status === 'failed'
-        ? 'Price alert could not be sent'
-        : `Alert sent at ${usd(a.firedPrice)}`;
+  const label = a ? `Price alert at ${usd(a.goalPrice)}` : 'Set a price alert';
 
-  return `<button class="btn btn--ghost btn--sm alert-bell ${cls}" type="button"
+  return `<button class="btn btn--ghost btn--sm alert-bell ${a ? 'is-armed' : ''}" type="button"
     data-alert-trade="${t.id}" aria-label="${esc(label)}" title="${esc(label)}">${BELL_SVG}</button>`;
 }
 
@@ -1263,6 +1311,34 @@ function statRow(label, value, cls = '', hint = '') {
   </div>`;
 }
 
+/**
+ * One figure on the Performance card, as a tile.
+ *
+ * The two figures that used to head this card, the realized gain and the
+ * blended rate, are the first two tiles above the table on every view, so they
+ * were being stated twice on the same screen. What is left is the six that are
+ * only here, and six read better as a grid than as two columns of a list.
+ */
+function perfTile(label, value, cls = '', hint = '', sub = '') {
+  return `<div class="perf">
+    <div class="perf__label">${label}${hintMark(hint)}</div>
+    <div class="perf__value ${cls}">${value || dash}</div>
+    ${sub ? `<div class="perf__sub muted">${sub}</div>` : ''}
+  </div>`;
+}
+
+/** The biggest gain and its opposite, in the same tile shape. */
+function perfExtreme(label, entry, hint = '') {
+  if (!entry) return perfTile(label, '', '', hint);
+  return perfTile(
+    label,
+    signedUsd(entry.netGain),
+    gainClass(entry.netGain),
+    hint,
+    `${esc(entry.currency)}, ${fmtDate(entry.date)} &middot; ${pct(entry.pct)} annualized`,
+  );
+}
+
 function summaryCard(title, body, note = '') {
   return `<section class="card">
     <div class="card__head"><h3 class="card__title">${title}</h3>${
@@ -1408,39 +1484,24 @@ function renderSummary() {
     ${fxBanner(r.missingFx, r.provisionalFx)}
     ${summaryCard(
       'Performance',
-      `<div class="kv-grid">
-        ${statRow('Realized net gain', signedUsd(r.netGain), gainClass(r.netGain), TIPS.netGain)}
-        ${statRow('Blended annualized', pct(r.avgPct), gainClass(r.avgPct), TIPS.avgPct)}
-        ${statRow('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', TIPS.interestPaid)}
-        ${
-          isNum(r.currencyEffect) && Math.abs(r.currencyEffect) >= 0.005
-            ? // The figure is a component of what the loan cost, so a negative one means the
-              // currency made the loan cheaper. The gain palette would paint that saving red,
-              // which is why the colour is taken from the sign reversed while the number
-              // itself is left alone: it still sums with Interest paid to the total cost.
-              statRow('Of which currency', signedUsd(r.currencyEffect), gainClass(-r.currencyEffect), TIPS.currencyEffect)
-            : ''
-        }
-        ${statRow(
+      `<div class="perf-grid">
+        ${perfTile('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', TIPS.interestPaid)}
+        ${perfTile('Total borrowed', valuedAny ? usd(r.totalBorrowed) : '', '', TIPS.totalBorrowed)}
+        ${perfTile(
           'Win rate',
-          valuedAny ? `${pct(r.winRate, 0)} <span class="muted">(${r.wins} up, ${r.losses} down)</span>` : '',
+          valuedAny ? pct(r.winRate, 0) : '',
           '',
           TIPS.winRate,
+          valuedAny ? `${r.wins} up, ${r.losses} down` : '',
         )}
-        ${statRow('Total borrowed', valuedAny ? usd(r.totalBorrowed) : '', '', TIPS.totalBorrowed)}
-        ${statRow(
+        ${perfTile(
           'Average hold',
           r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`,
           '',
           TIPS.avgHold,
         )}
-        ${extremeCard('Biggest gain', r.best, TIPS.best)}
-        ${extremeCard(
-          r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss',
-          r.worst,
-          TIPS.worst,
-          'kv--tail',
-        )}
+        ${perfExtreme('Biggest gain', r.best, TIPS.best)}
+        ${perfExtreme(r.worst && r.worst.netGain >= 0 ? 'Smallest gain' : 'Biggest loss', r.worst, TIPS.worst)}
       </div>`,
       valuedAny
         ? `${r.closedCount} closed of ${r.tradeCount}`
@@ -1490,10 +1551,105 @@ function renderStats() {
     .join('');
 }
 
+/* ------------------------------------------------------------ alerts view */
+
+const ALERT_DIRECTION = { above: 'rises to', below: 'falls to' };
+
+/**
+ * One alert.
+ *
+ * Deliberately not `class="row"` carrying a `data-trade`: the handler that
+ * opens a trade's stages matches any `.row` outside a button, so a row here
+ * wearing those would silently expand a trade on the other view.
+ */
+function alertLogRow(a) {
+  const t = state.trades.find((x) => x.id === a.tradeId);
+  const trade = t
+    ? `<span class="row__asset">${coin(t.borrow_currency)}<span class="row__stack">
+         <span>Trade #${t.id}</span><small>${fmtDate(t.borrow_date)}</small></span></span>`
+    : `Trade #${a.tradeId}`;
+
+  // Derived from the error rather than from the status, because the case that
+  // matters most is not a status of its own: a FIRED alert whose message
+  // Telegram refused reached its goal and was never sent.
+  const notSent = a.lastError
+    ? ` <span class="chip chip--warn" data-tip="${esc(a.lastError)}">not sent</span>`
+    : '';
+
+  const when = a.status === 'armed' ? dash : fmtDate(localDay(a.firedAt));
+  const under =
+    a.status === 'armed'
+      ? ''
+      : `<small class="cell-note">${esc(localTime(a.firedAt))}${
+          isNum(a.firedPrice) ? ` &middot; ${usd(a.firedPrice)}` : ''
+        }</small>`;
+
+  const status = esc(String(a.status).toUpperCase());
+
+  return `<tr>
+    <td data-label="Trade">${trade}</td>
+    <td data-label="Goal" class="num">${usd(a.goalPrice)}</td>
+    <td data-label="Direction">${ALERT_DIRECTION[a.direction] || esc(a.direction)}</td>
+    <td data-label="Status"><span class="pill pill--${status}">${status}</span>${notSent}</td>
+    <td data-label="Set" class="num">${fmtDate(localDay(a.createdAt))}</td>
+    <td data-label="Fired at" class="num">${when}${under}</td>
+    <td data-label="" class="num alerts-table__act">
+      <button class="btn btn--ghost btn--sm btn--danger" type="button"
+        data-alert-delete="${a.id}" aria-label="Delete this alert">Delete</button>
+    </td>
+  </tr>`;
+}
+
+function renderAlerts() {
+  const mount = document.getElementById('alerts-mount');
+  const all = document.getElementById('delete-all-alerts');
+  all.hidden = true;
+
+  if (state.alertLog === null) {
+    mount.innerHTML = state.alertLogError
+      ? `<div class="empty"><h3>Could not load the alerts</h3><p>${esc(state.alertLogError)}</p></div>`
+      : `<div class="empty"><h3>Loading alerts</h3></div>`;
+    return;
+  }
+
+  if (state.alertLog.length === 0) {
+    mount.innerHTML = `<div class="empty">
+      <h3>No alerts yet</h3>
+      <p>Set a goal price from the bell on a trade that is still holding ETH.
+         Every alert is kept here, including the ones already sent.</p>
+    </div>`;
+    return;
+  }
+
+  all.hidden = false;
+
+  const total = state.alertLog.length;
+  const page = clampPage(total, 'alerts');
+  const start = (page - 1) * PAGE_SIZE;
+
+  // `table--flush`, not a plain `table`: below 760px the mobile card labels are
+  // drawn by `.table--flush tbody td::before` and by nothing else, so a plain
+  // table silently loses every one of them.
+  mount.innerHTML = `<table class="table table--flush alerts-table">
+    <thead><tr>
+      ${hintHead('Trade', TIPS.alerts.trade)}
+      ${hintHead('Goal', TIPS.alerts.goal)}
+      ${hintHead('Direction', TIPS.alerts.direction)}
+      ${hintHead('Status', TIPS.alerts.status)}
+      ${hintHead('Set', TIPS.alerts.set)}
+      ${hintHead('Fired at', TIPS.alerts.firedAt)}
+      <th><span class="sr-only">Delete</span></th>
+    </tr></thead>
+    <tbody>${state.alertLog.slice(start, start + PAGE_SIZE).map(alertLogRow).join('')}</tbody>
+  </table>
+  ${pager(total, 'alerts')}`;
+}
+
 function render() {
   state.draft = captureDraft();
   renderStats();
   if (state.view === 'summary') renderSummary();
+  else if (state.view === 'alerts') renderAlerts();
   else renderTable();
 }
 
@@ -1675,17 +1831,8 @@ function alertDialogBody(t, d, a) {
 
   const remove = a
     ? `<button class="btn btn--sm btn--danger modal__remove" type="button"
-         data-alert-remove="${t.id}">Remove alert</button>`
+         data-alert-delete="${a.id}">Remove alert</button>`
     : '';
-
-  const fired =
-    a && a.status !== 'armed'
-      ? `<p class="modal__note">${
-          a.lastError
-            ? `Reached ${usd(a.firedPrice)}, but the message could not be sent: ${esc(a.lastError)}`
-            : `Sent at ${usd(a.firedPrice)} on ${fmtDate(localDay(a.firedAt))}. Saving again re-arms it.`
-        }</p>`
-      : '';
 
   return `<div class="modal__head">
       <h3 class="modal__title" id="alert-dialog-title">Price alert</h3>
@@ -1703,7 +1850,6 @@ function alertDialogBody(t, d, a) {
           autofocus: true,
         })}
         ${noBasis}
-        ${fired}
         ${note}
         <p class="modal__preview" data-alert-preview hidden></p>
         <div class="form__actions">
@@ -1750,10 +1896,12 @@ async function openAlertDialog(id) {
 }
 
 function closeAlertDialog() {
-  // The `close` listener does the emptying, so Escape and this leave the
-  // window in the same state.
   const dlg = alertDialog();
   if (dlg?.open) dlg.close();
+  // Emptied here rather than left to the `close` event, for the reason given
+  // in `settleConfirm`: that event cannot be relied on, and leaning on it left
+  // the goal somebody had typed sitting in the document after the window shut.
+  if (dlg) dlg.innerHTML = '';
 }
 
 /**
@@ -1783,7 +1931,7 @@ function refreshAlertPreview(id, { delay = 0 } = {}) {
       return;
     }
     try {
-      const { text } = await api(`/api/alerts/${id}/preview?goal=${encodeURIComponent(goal)}`);
+      const { text } = await api(`/api/trades/${id}/alert/preview?goal=${encodeURIComponent(goal)}`);
       if (seq !== previewSeq || !dlg.open) return;
       // Re-read the slot: the window may have been rebuilt while this was away.
       const live = dlg.querySelector('[data-alert-preview]');
@@ -1802,11 +1950,21 @@ async function submitAlert(form) {
   const done = beginSubmit(form);
   if (!done) return;
   try {
-    const alert = await api(`/api/alerts/${id}`, {
+    const alert = await api(`/api/trades/${id}/alert`, {
       method: 'PUT',
       body: JSON.stringify({ goal_price: form.querySelector('input[name="goal_price"]').value }),
     });
     state.alerts = { ...state.alerts, [id]: alert };
+    // The save replaces whatever armed alert was on this trade and adds this
+    // one, which is exactly what this does. Same reasoning as the map above:
+    // the write answers with what it stored, so there is no second reply that
+    // can arrive late and undo it.
+    if (state.alertLog) {
+      state.alertLog = [
+        alert,
+        ...state.alertLog.filter((a) => !(a.tradeId === id && a.status === 'armed')),
+      ];
+    }
     // Closed before the toast, which would otherwise be painted over: a
     // dialog renders in the browser's top layer, above everything.
     closeAlertDialog();
@@ -1819,14 +1977,24 @@ async function submitAlert(form) {
   }
 }
 
+/**
+ * Delete one alert, by its own id. Called from the table and from the button
+ * inside the alert window, which is why it closes that window too - a no-op
+ * when it was not open.
+ */
 async function removeAlert(id) {
+  const ok = await confirmDialog({
+    title: 'Delete this alert?',
+    body: 'It goes from the Alerts list as well. If it is still armed, nothing will be sent for it.',
+  });
+  if (!ok) return;
+
   try {
     await api(`/api/alerts/${id}`, { method: 'DELETE' });
   } catch (err) {
     // A 404 is the state we were after: it is already gone. Anything else -
     // a server that is not answering above all - is a delete that did not
-    // happen, and saying "Alert removed" to that left the alert armed and the
-    // person who asked for it gone none the wiser.
+    // happen, and saying it was removed would leave an armed alert behind.
     if (err.status !== 404) {
       // No status at all means `fetch` itself threw and the request never got
       // a reply, so the raw "Failed to fetch" would be both unhelpful and
@@ -1835,11 +2003,107 @@ async function removeAlert(id) {
       return;
     }
   }
-  const { [id]: _gone, ...rest } = state.alerts;
-  state.alerts = rest;
+
+  // Both collections, since the same alert can appear in each: the map the bell
+  // reads, keyed by trade, and the log the Alerts table renders.
+  state.alerts = Object.fromEntries(Object.entries(state.alerts).filter(([, a]) => a.id !== id));
+  if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.id !== id);
+
   closeAlertDialog();
   render();
   toast('Alert removed.');
+}
+
+/**
+ * Every alert, armed ones included. The sentence names how many are still
+ * being watched, because those are the ones whose deletion has a consequence
+ * beyond the list.
+ */
+async function deleteAllAlerts() {
+  const total = state.alertLog?.length ?? 0;
+  if (total === 0) return;
+  const armed = state.alertLog.filter((a) => a.status === 'armed').length;
+
+  const ok = await confirmDialog({
+    title: `Delete all ${total} alert${total === 1 ? '' : 's'}?`,
+    body:
+      armed > 0
+        ? `This clears the whole list, including <strong>${armed}</strong> still armed and waiting.
+           Those stop being watched and nothing will be sent for them. It cannot be undone.`
+        : 'This clears the whole list. It cannot be undone.',
+    confirmLabel: 'Delete all',
+  });
+  if (!ok) return;
+
+  try {
+    const { deleted } = await api('/api/alerts', { method: 'DELETE' });
+    state.alerts = {};
+    state.alertLog = [];
+    state.alertsPage = 1;
+    render();
+    toast(`${deleted} alert${deleted === 1 ? '' : 's'} deleted.`);
+  } catch (err) {
+    toast(err.status ? err.message : 'Could not reach the server, so nothing was deleted.');
+  }
+}
+
+/* ----------------------------------------------------------- confirmation */
+
+/*
+ * A second dialog rather than a mode of the alert window.
+ *
+ * A delete can be confirmed from inside that window, and a dialog cannot be
+ * opened on top of itself; rewriting its markup would destroy the form and the
+ * goal already typed into it. Two dialogs stack in the top layer, which is the
+ * right picture anyway.
+ */
+let confirmResolve = null;
+
+const confirmEl = () => document.getElementById('confirm-dialog');
+
+/**
+ * Ask, and answer true or false. Everything that is not yes - Cancel, Escape,
+ * the backdrop, a second question arriving on top of this one - is no.
+ *
+ * `body` is HTML the caller builds, so anything dynamic in it is escaped there.
+ */
+function confirmDialog({ title, body, confirmLabel = 'Delete', danger = true }) {
+  const dlg = confirmEl();
+  settleConfirm(false); // never leave an earlier promise pending
+  dlg.innerHTML = `<div class="modal__head">
+      <h3 class="modal__title" id="confirm-dialog-title">${esc(title)}</h3>
+    </div>
+    <div class="modal__body">
+      <p class="modal__note modal__note--lead">${body}</p>
+      <div class="form__actions">
+        <span class="form__error"></span>
+        <button class="btn btn--ghost btn--sm" type="button" data-confirm="no">Cancel</button>
+        <button class="btn btn--sm ${danger ? 'btn--danger' : 'btn--primary'}" type="button"
+          data-confirm="yes">${esc(confirmLabel)}</button>
+      </div>
+    </div>`;
+  dlg.showModal();
+  // Cancel takes the focus, so Enter on a window that appeared under someone's
+  // hands does not delete anything.
+  dlg.querySelector('[data-confirm="no"]')?.focus();
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+  });
+}
+
+function settleConfirm(answer) {
+  const resolve = confirmResolve;
+  // Cleared before close(), in case the `close` listener runs and lands back
+  // in here; with the slot already empty that second pass does nothing.
+  confirmResolve = null;
+  const dlg = confirmEl();
+  if (dlg?.open) dlg.close();
+  // Emptied here rather than left to the `close` event. That event is queued
+  // rather than fired, and an engine may not dispatch it at all for a close()
+  // from script - so a window that leans on it for cleanup simply keeps its
+  // markup, and with it whatever was typed into the last one.
+  if (dlg) dlg.innerHTML = '';
+  resolve?.(answer);
 }
 
 /* ------------------------------------------------------------------ toast */
@@ -1855,7 +2119,7 @@ function toast(message) {
 
 /* ------------------------------------------------------------------ views */
 
-const VIEWS = ['trades', 'summary'];
+const VIEWS = ['trades', 'summary', 'alerts'];
 
 function viewFromHash() {
   const name = (location.hash || '').replace(/^#/, '');
@@ -1881,6 +2145,11 @@ function setView(view, { updateHash = true } = {}) {
   }
 
   render();
+
+  // Asked for on every visit, not only the first. An alert can fire while this
+  // tab sits open, and a table that goes on calling it ARMED until a reload is
+  // worse than one request against a local file.
+  if (state.view === 'alerts') loadAlertLog().then(render);
 }
 
 /* ------------------------------------------------------------------ theme */
@@ -1926,6 +2195,8 @@ function wire() {
   const card = document.getElementById('new-trade-card');
   const borrowForm = document.getElementById('borrow-form');
 
+  document.getElementById('delete-all-alerts').addEventListener('click', deleteAllAlerts);
+
   document.getElementById('new-trade').addEventListener('click', () => {
     state.creating = !state.creating;
     card.hidden = !state.creating;
@@ -1967,9 +2238,9 @@ function wire() {
       return;
     }
 
-    const removeBell = e.target.closest('[data-alert-remove]');
-    if (removeBell) {
-      removeAlert(Number(removeBell.dataset.alertRemove));
+    const del = e.target.closest('[data-alert-delete]');
+    if (del) {
+      removeAlert(Number(del.dataset.alertDelete));
       return;
     }
 
@@ -1988,14 +2259,15 @@ function wire() {
 
     const pageBtn = e.target.closest('[data-page]');
     if (pageBtn && !pageBtn.disabled) {
+      const scope = pageBtn.dataset.pageScope || 'trades';
       const to = Number(pageBtn.dataset.page);
-      if (Number.isFinite(to) && to !== state.page) {
-        state.page = to;
+      if (Number.isFinite(to) && to !== pageOf(scope)) {
+        setPage(scope, to);
         // Same reasoning as a sort change: an open editor may belong to a row
-        // that is no longer on screen.
-        state.editing = null;
+        // that is no longer on screen. Only the trades table has one.
+        if (scope === 'trades') state.editing = null;
         render();
-        document.getElementById('table-mount')?.scrollIntoView({ block: 'start' });
+        document.getElementById(PAGERS[scope].mount)?.scrollIntoView({ block: 'start' });
       }
       return;
     }
@@ -2041,20 +2313,10 @@ function wire() {
       return;
     }
 
-    const del = e.target.closest('[data-delete]');
-    if (del) {
-      const id = Number(del.dataset.delete);
-      if (!confirm('Delete this trade and its whole history? This cannot be undone.')) return;
-      api(`/api/trades/${id}`, { method: 'DELETE' })
-        .then(() => {
-          state.trades = state.trades.filter((t) => t.id !== id);
-          writeSeq += 1;
-          state.openId = null;
-          state.editing = null;
-          render();
-          toast('Trade deleted.');
-        })
-        .catch((err) => toast(err.message || 'Could not delete that trade.'));
+    const delTrade = e.target.closest('[data-delete]');
+    if (delTrade) {
+      const id = Number(delTrade.dataset.delete);
+      confirmDeleteTrade(id);
       return;
     }
 
@@ -2066,6 +2328,30 @@ function wire() {
       render();
     }
   });
+
+  async function confirmDeleteTrade(id) {
+    const ok = await confirmDialog({
+      title: 'Delete this trade?',
+      body: 'Its whole history goes with it, alerts included. This cannot be undone.',
+    });
+    if (ok) {
+      api(`/api/trades/${id}`, { method: 'DELETE' })
+        .then(() => {
+          state.trades = state.trades.filter((t) => t.id !== id);
+          writeSeq += 1;
+          state.openId = null;
+          state.editing = null;
+          // The trade's alerts went with it, so both collections lose them.
+          state.alerts = Object.fromEntries(
+            Object.entries(state.alerts).filter(([tradeId]) => Number(tradeId) !== id),
+          );
+          if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.tradeId !== id);
+          render();
+          toast('Trade deleted.');
+        })
+        .catch((err) => toast(err.message || 'Could not delete that trade.'));
+    }
+  }
 
   document.body.addEventListener('keydown', (e) => {
     const row = e.target.closest('.row');
@@ -2175,10 +2461,11 @@ function wire() {
     if (e.target === dlg) closeAlertDialog();
   });
 
-  // Every way out of the window ends here, so the markup is emptied in one
-  // place rather than at each of them.
+  // A second line of defence for a close that did not come through
+  // `closeAlertDialog` - the form submitting, say. Not the only one, because
+  // this event is not dispatched everywhere.
   dlg.addEventListener('close', () => {
-    dlg.innerHTML = '';
+    if (!dlg.open) dlg.innerHTML = '';
   });
 
   // Escape closes a modal dialog by itself in a browser, but only while the
@@ -2189,6 +2476,35 @@ function wire() {
     if (e.key !== 'Escape') return;
     e.preventDefault();
     closeAlertDialog();
+  });
+
+  const confirmDlg = document.getElementById('confirm-dialog');
+
+  confirmDlg.addEventListener('click', (e) => {
+    if (e.target === confirmDlg) return settleConfirm(false); // the backdrop
+    const btn = e.target.closest('[data-confirm]');
+    if (btn) settleConfirm(btn.dataset.confirm === 'yes');
+  });
+
+  confirmDlg.addEventListener('close', () => {
+    // `close()` queues this rather than firing it, so by the time it runs the
+    // dialog may already have been reopened for a second question - which is
+    // what two clicks on Delete in one tick does. Clearing then wiped the
+    // window that was on screen and closed it again, leaving no confirmation
+    // at all and nothing to say why.
+    if (confirmDlg.open) return;
+    confirmDlg.innerHTML = '';
+    settleConfirm(false);
+  });
+
+  confirmDlg.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    // Stopped as well as prevented, unlike the alert window above: the body's
+    // own Escape handler collapses an open stage form, and a confirmation
+    // raised over the table must not close the editor behind it.
+    e.stopPropagation();
+    settleConfirm(false);
   });
 
   // The message is rebuilt as the goal is typed, a beat behind the keystrokes.
