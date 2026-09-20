@@ -4,7 +4,7 @@ Track leveraged trade cycles on Aave: borrow a stablecoin, buy ETH, sell it, rep
 
 Local web app, SQLite storage, no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is reported in US dollars, shown to two decimals with ETH to four.
 
-Release notes for every version are in [CHANGELOG.md](CHANGELOG.md).
+Release notes for every version are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
 
 ## Run
 
@@ -189,18 +189,6 @@ lib/calc.js    all formulas, shared by the server and the browser
 public/        interface
 data/          SQLite file, not committed
 ```
-
-## Releasing
-
-```bash
-npm version patch --no-git-tag-version
-```
-
-Bumps `package.json` and the lockfile, then runs `scripts/stamp-version.mjs`, which writes the new number into the two pages that print it - `public/index.html` and `landing/index.html` - and stages everything the bump touched. A pattern that no longer matches is an error rather than a silent skip, because a version left behind quietly is the failure the script exists to prevent.
-
-`--no-git-tag-version` is the part worth remembering. Plain `npm version patch` also commits and tags, and neither is wanted here: releases have not been tagged since v0.0.19-v0.0.23, and the commit message should say what changed rather than repeat the number. Write the [CHANGELOG.md](CHANGELOG.md) entry before the bump, so it is staged along with everything else, then commit by hand.
-
-Both pages are stamped because a reader sees both numbers. The landing page has no runtime source at all and nginx serves it directly, so a missed edit there simply stands; the app repaints its own footer from `/api/version` once the page is up, but that repaint is not awaited and can fail, so the stamped number is what renders on every load.
 
 ## License
 
