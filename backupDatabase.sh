@@ -40,6 +40,11 @@ else
 fi
 LOG=""
 KEEP=12
+# Whether --db was given, as opposed to defaulted. The default and MYAAVE_DB
+# are relative to the checkout - `data/myaave.db` only means anything there,
+# and resetDatabase.sh reads them the same way. A path typed on the command
+# line is not that: it means what it means from where it was typed.
+DB_GIVEN=0
 
 usage() {
   cat <<'USAGE'
@@ -84,8 +89,8 @@ while [ $# -gt 0 ]; do
     --dest=*) DEST="${1#*=}"; shift ;;
     --keep) [ $# -ge 2 ] || die "--keep needs a number."; KEEP="$2"; shift 2 ;;
     --keep=*) KEEP="${1#*=}"; shift ;;
-    --db) [ $# -ge 2 ] || die "--db needs a path."; DB="$2"; shift 2 ;;
-    --db=*) DB="${1#*=}"; shift ;;
+    --db) [ $# -ge 2 ] || die "--db needs a path."; DB="$2"; DB_GIVEN=1; shift 2 ;;
+    --db=*) DB="${1#*=}"; DB_GIVEN=1; shift ;;
     --log) [ $# -ge 2 ] || die "--log needs a path."; LOG="$2"; shift 2 ;;
     --log=*) LOG="${1#*=}"; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -96,12 +101,28 @@ done
 case "$KEEP" in
   ''|*[!0-9]*) die "--keep must be a number, got '$KEEP'." ;;
 esac
+# Digits alone are not enough: a value past what bash can compare made `[` fail
+# with "integer expression expected" and skipped the prune entirely, loudly
+# enough to be confusing and quietly enough to leave every backup in place.
+[ "${#KEEP}" -le 9 ] || die "--keep is absurdly large, got '$KEEP'. Use 0 to keep everything."
 
 [ -n "$DEST" ] || die "No destination. HOME is not set here, so pass --dest."
 
+# Named now rather than reaching the copy and reporting a bare failure. cron
+# runs with a short PATH - often just /usr/bin:/bin - so a node installed by
+# nvm or under /usr/local is on the PATH of the person who tested this by hand
+# and absent from the one the schedule uses.
+command -v node >/dev/null 2>&1 || die "node is not on PATH. Under cron, set PATH in the crontab to include it."
+
 # Relative to where this was run from, not to the checkout it lives in.
+# Without this for --db, standing in a folder with its own data/myaave.db and
+# passing `--db data/myaave.db` backed up the checkout's database instead, and
+# said it had succeeded: the wrong ledger, copied and reported as the right one.
 case "$DEST" in /*) ;; *) DEST="$INVOKED_FROM/$DEST" ;; esac
 case "$LOG" in ''|/*) ;; *) LOG="$INVOKED_FROM/$LOG" ;; esac
+if [ "$DB_GIVEN" -eq 1 ]; then
+  case "$DB" in /*) ;; *) DB="$INVOKED_FROM/$DB" ;; esac
+fi
 
 # The script owns its log rather than leaving it to a `>>` in the crontab.
 # A redirect the shell cannot open fails before the script starts, so the
