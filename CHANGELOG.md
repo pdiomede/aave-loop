@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.0.0] - 2026-09-20
+
+The first stable release.
+
+Not a rewrite and not a feature: the version number catches up with what the app already is. Forty-one releases of building it, auditing it and fixing what the audits found - the last of them a pass over every source file in the repository. The schema migrates itself forward from any version that has ever existed, and the four figures the interface leads with come from the same `lib/calc.js` the server uses, so the page and the Telegram report cannot drift apart. From here the version means what SemVer says it means: a change to the API, the database or a stored figure is a major one.
+
+### Changed
+
+- **Ten rows a page, on both tables.** History and Alerts read the same `PAGE_SIZE`, so the two pagers cannot disagree about how long a page is. Fifteen filled a laptop screen and then some; ten leaves the pager visible without scrolling, which is the point of having one.
+- **The Summary note is one sentence again.** The second paragraph - that a loan in another currency is converted twice, once at each end - explained a mechanism the figures already carry, on a page where four of the five currencies are pegged and most ledgers never convert anything. The sentence that remains is the one doing the work: what the figures are in, and where the rate came from. `.summary__foot + .summary__foot` went with it, since nothing can match it now.
+
 ## [0.0.41] - 2026-09-20
 
 A recursive audit of every source file in the repository - 21 files, about 10,900 lines - excluding documentation, dependencies and the database. Three bugs, each reproduced before the fix and re-run after. The count is the finding: most of this tree came back clean, and two further suspicions were dropped once testing disproved them.

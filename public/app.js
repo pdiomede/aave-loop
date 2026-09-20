@@ -322,7 +322,9 @@ const ethMark = `<img class="eth-mark" src="/eth.svg" alt="" width="15" height="
 
 /* ------------------------------------------------------- sorting + paging */
 
-const PAGE_SIZE = 15;
+// Both tables, the trades and the alerts: they read the same constant, so the
+// two pagers always agree about how long a page is.
+const PAGE_SIZE = 10;
 const SORT_KEY = 'myaave-sort';
 
 // Newest borrow date first, which is the order the server already sends and
@@ -1759,17 +1761,11 @@ const ECB_RATES_URL =
 /**
  * The note under the Summary.
  *
- * Two paragraphs rather than one with a break written into it. A hand-placed
- * `<br />` only falls between the sentences while the measure happens to hold
- * the first one on a single line, which left a number in the stylesheet and
- * this wording tuned to each other with nothing in either place saying so.
- *
- * The scope of the first sentence is the whole of the second one. Four of the
- * five currencies are pegged, and `rateOf` in lib/calc.js hands a pegged coin a
- * literal 1, so no figure on a USDC ledger is converted at any rate at all.
- * Saying every figure is converted, and then that a loan is converted twice,
- * is false of the default currency and sends the reader looking for a currency
- * component that cannot exist.
+ * One sentence, scoped. Four of the five currencies are pegged, and `rateOf`
+ * in lib/calc.js hands a pegged coin a literal 1, so on a USDC ledger - the
+ * default - no figure is converted at any rate at all. "Amounts in a currency
+ * other than the dollar" is what keeps that true, and it is why the note does
+ * not open by saying every figure is converted.
  *
  * "Or the last business day before it" is not a hedge: the ECB publishes on
  * business days only, and db.js stores Friday's rate against a Sunday trade.
@@ -1785,11 +1781,6 @@ const SUMMARY_FOOT = `<p class="summary__foot muted">
     <a href="${ECB_RATES_URL}" target="_blank" rel="noopener noreferrer">European
     Central Bank reference rate<span class="sr-only"> (opens in a new tab)</span></a>
     for the day of each transaction, or for the last business day before it.
-  </p>
-  <p class="summary__foot muted">
-    A loan in one of those currencies, taken and repaid months apart, is
-    therefore converted twice - once at each end - so the rate's movement
-    between them is part of what it cost.
   </p>`;
 
 function renderSummary() {

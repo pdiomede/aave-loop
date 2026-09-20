@@ -1077,9 +1077,6 @@ th[aria-sort="ascending"] .th-sort__caret {
   max-width: 68ch;
 }
 
-.summary__foot + .summary__foot {
-  margin-top: 6px;
-}
 
 .caret {
   display: inline-block;
