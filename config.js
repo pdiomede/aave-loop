@@ -98,7 +98,7 @@ function checkPermissions() {
   }
 }
 
-const FALLBACK_GROUP = 'your Telegram group';
+const FALLBACK_NAME = 'your Telegram chat';
 
 /**
  * What the alert subsystem needs, and a sentence explaining what is missing
@@ -107,10 +107,11 @@ const FALLBACK_GROUP = 'your Telegram group';
  *
  * The token and the chat ids are in here because the sender needs them. They
  * never leave the process: the API deliberately serves only `configured` and
- * `groupName`.
+ * `chatName`.
  *
  * `ownerId` is optional and changes nothing when it is absent. Set to your own
- * user id it lets the bot answer you in a private chat as well as in the group,
+ * user id it lets the bot answer you in a private chat as well as in the chat
+ * alerts go to,
  * which is the only way to get Telegram's Menu button: that button is drawn in
  * private chats and nowhere else, so in a group there is nothing to turn on.
  * Alerts are unaffected and still go to the group alone.
@@ -119,7 +120,12 @@ export function telegramConfig() {
   const token = get('TELEGRAM_BOT_TOKEN');
   const chatId = get('TELEGRAM_CHAT_ID');
   const ownerId = get('TELEGRAM_OWNER_ID');
-  const groupName = get('TELEGRAM_GROUP_NAME') || FALLBACK_GROUP;
+  // Where alerts go does not have to be a group. A user id sends them to that
+  // person's private chat with the bot, which is the whole setup for someone
+  // who is the only reader. `TELEGRAM_CHAT_NAME` is the name that says so;
+  // `TELEGRAM_GROUP_NAME` is still read, because it is in every config.env
+  // written before there was a reason to call it anything else.
+  const chatName = get('TELEGRAM_CHAT_NAME') || get('TELEGRAM_GROUP_NAME') || FALLBACK_NAME;
 
   let reason = null;
   if (!token && !chatId) {
@@ -132,14 +138,14 @@ export function telegramConfig() {
     reason = 'TELEGRAM_CHAT_ID is missing from config.env.';
   }
 
-  return { configured: Boolean(token && chatId), token, chatId, ownerId, groupName, reason };
+  return { configured: Boolean(token && chatId), token, chatId, ownerId, chatName, reason };
 }
 
 /** One line at startup. Said once, so it is read rather than scrolled past. */
 export function reportConfig() {
   checkPermissions();
-  const { configured, reason, groupName } = telegramConfig();
-  if (configured) console.log(`Price alerts will message ${groupName}.`);
+  const { configured, reason, chatName } = telegramConfig();
+  if (configured) console.log(`Price alerts will message ${chatName}.`);
   else console.log(`Price alerts are not configured: ${reason}`);
 }
 

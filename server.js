@@ -492,10 +492,10 @@ app.get('/api/alerts', async (req, res, next) => {
     // send it, because a boot should not wait on an outside service.
     if (req.query.refresh === '1') await ethPrice();
 
-    const { configured, groupName, reason } = telegramConfig();
+    const { configured, chatName, reason } = telegramConfig();
     const quote = cachedEthPrice();
     res.json({
-      config: { configured, groupName, reason },
+      config: { configured, chatName, reason },
       eth: quote
         ? { price: quote.price, fetchedAt: quote.fetchedAt, stale: quote.ageMs > alertPollMs }
         : { price: null, fetchedAt: null, stale: true, reason: ethStatus().lastError },
@@ -566,9 +566,9 @@ app.post('/api/alerts/test', async (req, res, next) => {
     }
     lastTestAt = Date.now();
 
-    const { groupName } = telegramConfig();
+    const { chatName } = telegramConfig();
     const sent = await sendTelegramMessage(
-      `Test message from the Aave Loop ledger. Price alerts will arrive here, in ${groupName}.`,
+      `Test message from the Aave Loop ledger. Price alerts will arrive here, in ${chatName}.`,
     );
     res.json({ ok: sent.ok, error: sent.error });
   } catch (err) {

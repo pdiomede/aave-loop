@@ -1669,8 +1669,9 @@ function alertDialogBody(t, d, a) {
       : '';
 
   const note = cfg?.configured
-    ? `<p class="modal__note">We will message the Telegram group
-        <strong>${esc(cfg.groupName)}</strong> once, when ETH reaches this price. It will read:</p>`
+    ? `<p class="modal__note">We will send this to
+        <strong>${esc(cfg.chatName)}</strong> on Telegram once, when ETH reaches this price.
+        It will read:</p>`
     : `<p class="modal__note"><span class="chip chip--warn">not connected</span>
         ${esc(cfg?.reason || 'Nothing is configured to send an alert.')}
         The goal is still saved, and will be sent once config.env is filled in.</p>`;
@@ -1890,9 +1891,19 @@ function setView(view, { updateHash = true } = {}) {
 const SUN = `<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>`;
 const MOON = `<path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>`;
 
-function applyTheme(theme) {
+/**
+ * `persist` is off at boot, where this runs only to draw the toggle's glyph:
+ * the head script has already set the theme, and nobody has chosen anything.
+ *
+ * Writing the key there recorded a choice that was never made. The landing
+ * page reads the same key and follows the system only while it is empty, so
+ * one visit to the ledger left that page stuck in light on a dark machine,
+ * with a toggle the visitor had never touched.
+ */
+function applyTheme(theme, { persist = true } = {}) {
   document.documentElement.dataset.theme = theme;
   document.getElementById('theme-icon').innerHTML = theme === 'dark' ? SUN : MOON;
+  if (!persist) return;
   try {
     localStorage.setItem('myaave-theme', theme);
   } catch (e) {
@@ -2195,7 +2206,7 @@ function wire() {
 /* ------------------------------------------------------------------- boot */
 
 async function boot() {
-  applyTheme(document.documentElement.dataset.theme || 'light');
+  applyTheme(document.documentElement.dataset.theme || 'light', { persist: false });
   wire();
   try {
     const { version } = await api('/api/version');

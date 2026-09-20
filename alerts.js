@@ -311,11 +311,19 @@ export async function runAlertSweep() {
   // A tick can arrive while the last one is still away, and again after the
   // database has been closed on the way out.
   if (sweeping || !db.open) return { checked: 0, fired: 0 };
-  const armed = selectArmed().all();
-  if (armed.length === 0) return { checked: 0, fired: 0 };
 
   sweeping = true;
+  let checked = 0;
   try {
+    // Inside the try with everything else. Reading the armed list can throw
+    // like any other statement - a second copy of the app checkpointing this
+    // same file holds an exclusive lock, and a read that waits longer than the
+    // busy timeout is refused - and this ran on a timer, so the rejection
+    // became an uncaughtException and took the whole server down with it.
+    const armed = selectArmed().all();
+    checked = armed.length;
+    if (armed.length === 0) return { checked: 0, fired: 0 };
+
     const quote = await ethPrice({ maxAgeMs: Math.min(POLL_MS, 300_000) });
     if (!quote || !db.open) return { checked: armed.length, fired: 0 };
 
@@ -331,7 +339,7 @@ export async function runAlertSweep() {
     // A sweep is unattended. It must never be the thing that takes the
     // process down, so anything unexpected is logged and the timer carries on.
     console.error('Price alert check failed:', err.message);
-    return { checked: armed.length, fired: 0 };
+    return { checked, fired: 0 };
   } finally {
     sweeping = false;
   }

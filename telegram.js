@@ -35,8 +35,13 @@ const redact = (text) => String(text ?? '').replace(/bot\d+:[A-Za-z0-9_-]+/g, 'b
  * columns only line up inside a `<pre>`, and a report nobody can read down is
  * not much of a report. Whatever asks for it escapes its own content and has a
  * plain-text fallback ready.
+ *
+ * `chatId` names a chat other than TELEGRAM_CHAT_ID, and only the bot replying
+ * to a command passes it: an answer belongs in the chat that asked, which is
+ * not the group when the question was typed in a private chat. Everything sent
+ * on a timer - alerts above all - leaves it out and goes to the group.
  */
-export async function sendTelegramMessage(text, { parseMode = null } = {}) {
+export async function sendTelegramMessage(text, { parseMode = null, chatId: to = null } = {}) {
   const { configured, token, chatId, reason } = telegramConfig();
   if (!configured) return { ok: false, retryable: false, error: reason };
 
@@ -45,7 +50,7 @@ export async function sendTelegramMessage(text, { parseMode = null } = {}) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
-        chat_id: chatId,
+        chat_id: to ?? chatId,
         text,
         disable_web_page_preview: true,
         ...(parseMode ? { parse_mode: parseMode } : {}),

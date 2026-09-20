@@ -182,14 +182,22 @@ export function botStatus() {
  * One reply. HTML, because the tables only line up inside a `pre`, with a
  * plain-text retry if Telegram will not parse it: a report that silently never
  * arrives is the failure nobody notices.
+ *
+ * `to` is the chat that asked. Without it every answer went to
+ * TELEGRAM_CHAT_ID, so a command typed in the private chat with the bot - the
+ * whole reason TELEGRAM_OWNER_ID exists, since Telegram draws its Menu button
+ * there and nowhere else - was answered in the group instead, which both left
+ * the private chat silent and put a position report in a room full of other
+ * people. The price report on the timer has no chat that asked, so it leaves
+ * this out and goes to the group as it always has.
  */
-async function reply(html) {
-  const sent = await sendTelegramMessage(html, { parseMode: 'HTML' });
+async function reply(html, to = null) {
+  const sent = await sendTelegramMessage(html, { parseMode: 'HTML', chatId: to });
   if (sent.ok) return;
 
   if (!sent.retryable && /pars|entity|tag/i.test(sent.error || '')) {
     const plain = html.replace(/<[^>]+>/g, '');
-    const second = await sendTelegramMessage(plain);
+    const second = await sendTelegramMessage(plain, { chatId: to });
     if (second.ok) {
       console.error('A bot reply would not parse as HTML and was sent as plain text.');
       return;
@@ -400,7 +408,7 @@ async function handle(updates) {
 
     handled += 1;
     try {
-      await reply(await textFor(command));
+      await reply(await textFor(command), from);
     } catch (err) {
       console.error(`Could not answer /${command}:`, redact(err.message));
     }
@@ -441,7 +449,7 @@ export function startBotPoller() {
     console.log('Bot commands are off: MYAAVE_BOT_OFF is set.');
     return;
   }
-  const { configured, groupName, reason } = telegramConfig();
+  const { configured, chatName, reason } = telegramConfig();
   if (!configured) {
     console.log(`Bot commands are off: ${reason}`);
     return;
@@ -450,7 +458,7 @@ export function startBotPoller() {
   running = true;
   state.stopped = false;
   const alsoDm = telegramConfig().ownerId ? ' and in your private chat' : '';
-  console.log(`Bot commands are listening in ${groupName}${alsoDm}.`);
+  console.log(`Bot commands are listening in ${chatName}${alsoDm}.`);
   loop();
 }
 

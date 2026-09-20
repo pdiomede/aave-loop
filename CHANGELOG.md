@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.26] - 2026-09-20
+
+Three bugs from an audit of the bot, the alert sweep and the theme, and the wording stops assuming there is a group.
+
+### Fixed
+
+- **The bot answered a private command in the group.** 0.0.25 taught `handle()` to accept commands from `TELEGRAM_OWNER_ID`'s private chat, but `reply()` had no way to name a destination and every answer went to `TELEGRAM_CHAT_ID`. So a `/holding` typed in the private chat - the only place Telegram draws the Menu button, which is the whole reason that key exists - left that chat silent and put the position report in a room full of other people. `sendTelegramMessage` takes an optional `chatId` and the answer goes to the chat that asked.
+- **A refused database read in the alert sweep took the server down.** `selectArmed()` sat outside the try whose stated job is that a sweep must never be the thing that stops the process. The sweep runs from a timer, so nothing handles its promise: a read refused for longer than the busy timeout - a second copy of the app checkpointing this same file will do it - became an unhandled rejection, which `uncaughtException` turned into `process.exit(1)`. The read is inside the try now, and a failed sweep logs and waits for the next tick.
+- **Opening the ledger stopped the landing page following the system theme.** `boot()` called `applyTheme` only to draw the toggle's glyph, but that also writes `myaave-theme`, and the landing page follows the system only while that key is empty. One visit left the landing page and the 404 light on a dark machine, through a toggle nobody had touched. Boot draws the glyph without recording a choice; the toggle still persists.
+
+### Changed
+
+- **The wording no longer assumes a group.** Alerts go wherever `TELEGRAM_CHAT_ID` points, and a user id points at a private chat with the bot, which is the whole setup for someone who is the only one reading it - and the only arrangement that gets Telegram's menu button, since that is drawn in private chats and nowhere else. The alert window said "We will message the Telegram group X" regardless; it now says "We will send this to X on Telegram", and the startup and test-message lines lost the same assumption.
+- **`TELEGRAM_CHAT_NAME` is the name of the display-only setting.** `TELEGRAM_GROUP_NAME` is still read and still works, so no existing `config.env` needs touching. The unset fallback is "your Telegram chat".
+- `config.env.example` says what a chat id actually is, both ways round, and warns that a group's id is rewritten when it becomes a supergroup - which making the bot an administrator is enough to trigger, leaving the configured id matching nothing. The log already prints the id of every chat it ignores, which is where the new one can be read.
+- The README says the private chat is an option rather than walking only through a group, and notes that pinning a message listing the commands gives a group something a menu button cannot: Telegram makes each `/command` in a message tappable.
+
+### Notes
+
+- Alerts, the test message and the `/watch` report are unchanged and still go to `TELEGRAM_CHAT_ID` alone. The watch switch is one row with no chat on it, so a `/watch` asked for privately is confirmed privately and still reports to `TELEGRAM_CHAT_ID`.
+- Verified by execution: a stubbed Telegram API answering a batch of four messages - the group, the private chat twice, and a third chat - with every reply's `chat_id` checked; the sweep driven from a timer with its table dropped, which crashed the process before and logged after; and the whole server through create, each stage, a partial sale, repay, the alert endpoints, the 400/403/404/413 paths and SIGTERM.
+
 ## [0.0.25] - 2026-09-20
 
 ### Added

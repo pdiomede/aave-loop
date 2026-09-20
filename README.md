@@ -87,7 +87,9 @@ The bot answers in the group named by `TELEGRAM_CHAT_ID`, and only there. It can
 
 `/help` lists them; `/start` does the same, because Telegram sends it by itself the first time a chat with a bot is opened. Anything unrecognised gets the same list. A `@name` suffix, capitals and trailing arguments are all fine: `/Price@aave_loop_bot now` is `/price`.
 
-**The Menu button is a private-chat feature.** Telegram draws it in a one-to-one chat with a bot and nowhere else; in a group the equivalent is the `/` icon in the message box, which appears once a bot with commands is a member. If you want the button, set the optional `TELEGRAM_OWNER_ID` to your own user id - a positive number, found the same way as the group's - and the bot will answer you privately as well. Everyone else is still ignored, and alerts still go to the group alone.
+**The Menu button is a private-chat feature.** Telegram draws it in a one-to-one chat with a bot and nowhere else; in a group the equivalent is the `/` icon in the message box, which appears once a bot with commands is a member. Set `TELEGRAM_CHAT_ID` to your own user id and everything happens in that private chat, button included. If you want the group *and* the button, set `TELEGRAM_OWNER_ID` to your user id as well and the bot answers in both; alerts still go to the group alone.
+
+A group has one more way to reach the commands, and it needs no setup at all: post them in the chat and pin it. Telegram makes each `/command` in a message tappable, and a tap sends it.
 
 Nothing registers these with Telegram, so the menu that appears as you type `/` is yours to set. Send `/setcommands` to [@BotFather](https://t.me/BotFather), pick the bot, and paste:
 
@@ -106,6 +108,8 @@ help - what this bot can do
 
 Alerts are the one part of this app that speaks to the outside world on your behalf, so they need a bot and somewhere to send to. Five minutes, once.
 
+**Somewhere to send to is a chat id, and it does not have to be a group.** Your own user id sends everything to your private chat with the bot, which is the whole setup if you are the only one reading it - and the only arrangement that gets Telegram's Menu button, since that is drawn in private chats and nowhere else. Use a group when other people should see the alerts. Steps 2 and 3 below are the group route; for a private chat, send `/start` to the bot and use your own id from [@userinfobot](https://t.me/userinfobot) instead.
+
 **1. Make a bot.** Message [@BotFather](https://t.me/BotFather) and send `/newbot`. It asks for a display name, then a username ending in `bot`, and answers with a token like `123456789:AAE...`. That token *is* the bot: anyone holding it can post as it, so treat it the way you would a password.
 
 **2. Put the bot in the group.** Open the group, add a member, search for the username you just chose. A bot can post to a group without being an administrator.
@@ -117,6 +121,8 @@ curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*
 ```
 
 It has to be a `/` message: a bot in a group gets Telegram's privacy mode by default and is shown only commands and replies to itself, so ordinary chat leaves `getUpdates` empty and looks like a failure. The id is negative, and begins `-100` for a supergroup. Privacy mode has no bearing on anything after this step.
+
+**A group's id changes when it becomes a supergroup**, which making the bot an administrator is enough to trigger, and the old id then matches nothing. If the bot goes quiet after working, this is the first thing to check - the log prints the id of every chat it ignores, so the new one is already there.
 
 **Do this before the app is running**, or start it with `MYAAVE_BOT_OFF=1` while you do. The app reads commands from the same queue this curl reads, and only one reader is allowed: with it running, this either answers `409 Conflict` or hands back an empty list it has already taken.
 
@@ -130,14 +136,14 @@ cp config.env.example config.env && chmod 600 config.env
 | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | the token from step 1 |
 | `TELEGRAM_CHAT_ID` | the id from step 3 |
-| `TELEGRAM_GROUP_NAME` | display only: shown in the alert window and at startup |
-| `TELEGRAM_OWNER_ID` | optional: your own user id, so the bot answers you privately too |
+| `TELEGRAM_CHAT_NAME` | display only: shown in the alert window and at startup. `TELEGRAM_GROUP_NAME` is the old name and still read |
+| `TELEGRAM_OWNER_ID` | optional, and only useful when the id above is a group: your own user id, so the bot answers you privately too |
 
 **5. Restart, and read the line it prints.** The file is read once, when the process starts, so an app already running will not notice an edit. On the way up it says one of:
 
 ```
-Price alerts will message Aave Loop Alerts.
-Bot commands are listening in Aave Loop Alerts.
+Price alerts will message Aave Loop.
+Bot commands are listening in Aave Loop.
 ```
 
 or, if something is missing:
