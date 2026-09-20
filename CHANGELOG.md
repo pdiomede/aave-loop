@@ -3,6 +3,29 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.34] - 2026-09-20
+
+An audit of the three views. Nine findings, every one reproduced before it was fixed and again after: five in the Alerts view, two in the Summary and two in the Trades table. Nothing was invented to reach a number, and the Trades table's own count is two because that is what was there.
+
+### Fixed
+
+- **A deleted alert came back.** The Alerts view asks for the whole log on every visit, so one of those requests is in flight for as long as the round trip takes - and a delete landing inside that window was undone by the reply. The row reappeared, deleted from the database, and pressing Delete on it again answered 404, which this app reads as "already gone" and reports as a second successful removal. `loadAlertLog` now discards a reply a newer load has overtaken or a write has superseded, the guard `loadTrades` has carried since 0.0.20.
+- **A message that never went could be filed as sent.** Claiming an alert is what unselects the bell, so the whole of a send - ten seconds, when Telegram does not answer - is a window in which the card offers to set a new goal on that trade. Setting one and then failing in a way worth retrying put the old alert back to `armed` beside the new one, which the partial unique index added in 0.0.33 refuses. The sweep caught the throw, and left the row marked `fired` with no error on it: an ordinary green FIRED in the Alerts view for a message nobody received, and every alert still to be checked in that pass skipped. Re-arming is now refused in the same statement when a newer goal is already watching the trade, so the row keeps its reason and shows the "not sent" note it should always have had.
+- **One bad alert cost the whole sweep.** The `catch` that keeps an unattended pass from taking the process down also swallowed the rest of the pass, so anything thrown while sending one alert skipped every alert after it for the next quarter of an hour. Each one is now tried on its own.
+- **The sweep and the page disagreed about what "still holding" means.** `stages()` calls a sale recorded only when the date, the amount and the ETH are all there, and the query asked about `sell_date` alone. A row carrying a bare sale date - which the API accepts, and which the sale form cannot produce - was therefore HOLDING to `derive`, so the bell lit and a goal saved, while the sweep never looked at it again. Both halves of the test are spelled out now, here and in the `/holding` report, which had the same clause.
+- **On a tablet held upright, Delete was off the edge of the screen.** The "not sent" note sat beside the status pill and made Status the widest column in the table, which pushed the whole page sideways between the card layout taking over at 760px and a width that has room for it. The note goes under the pill, as the fired price already goes under the fired date, and the table's padding tightens in that band. The trades table is wider still at those widths; that is not new and every cell in it is text.
+- **"Total borrowed" said it did not know.** It counts open trades as well as closed ones - its own explanation says so, and the Borrowed column below it and the Open positions tile above it both state the same money - but it was only shown once some trade had been repaid. On a ledger with capital out and nothing closed yet it was the one place on the screen calling that figure unknown. The same inconsistency 0.0.15 fixed in the arithmetic, left in the gate.
+- **A zero was written two ways in one table.** *By currency* printed "0" under Closed and a dash under Open, side by side, for the same absence.
+- **Escape in the price alert window threw away the form behind it.** The bell sits on the Bought ETH card while another stage of the same trade can be open for editing, and Escape closed the window and then carried on to the page's own handler, which discarded the edit and everything typed into it. The confirmation window has stopped the key for exactly this reason since 0.0.33; the alert window now does too.
+
+### Changed
+
+- **The expanded row names the trade's own id.** `#N` is the id everywhere else - the Alerts table, every Telegram message - and in this one place it was the row's position in the current sort, so one trade called itself #4, #9 or #2 depending on which column the table was ordered by. It reads `Trade #7 · row 4 of 10 · added 1 Aug 2026`, with the position said in words.
+
+### Notes
+
+- Verified by execution, each failure reproduced first: the deleted alert returning under a delayed log fetch and staying gone after; `UNIQUE constraint failed: alerts.trade_id` in the log with the row left clean, against the same race afterwards logging the real reason and keeping the newer goal armed - with the ordinary retry ladder still climbing 1, 2, 3 to FAILED when nothing supersedes it; the old and new holding predicates run side by side over a trade with a bare sale date, and over the same trade once the sale is complete; the page measured at 761, 768, 800 and 1440px and at 375px in both themes, with no sideways scroll left on the Alerts view; a ledger of open trades only, where the tile, the column and the hero now agree on $75,000; and the whole round trip of creating a trade, adding a purchase, setting a goal, firing it against a stubbed Telegram, deleting one alert and deleting them all, with no console error and every endpoint answering as before.
+
 ## [0.0.33] - 2026-09-20
 
 An Alerts view, and a fired alert that is kept rather than overwritten.

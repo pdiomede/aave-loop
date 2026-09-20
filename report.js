@@ -65,8 +65,10 @@ export function priceText(quote) {
  *
  * The WHERE clause is the one the alert sweep uses, spelled out rather than
  * asking whether the ETH has been sold: a purchase can be undone as well as
- * followed by a sale, and both take a trade out of HOLDING. Only an armed alert
- * earns a bell; a fired one is not something still being waited for.
+ * followed by a sale, and both take a trade out of HOLDING. Both halves name
+ * all three columns, because `stages()` does, and a bare `sell_date` is a row
+ * the page still calls HOLDING. Only an armed alert earns a bell; a fired one
+ * is not something still being waited for.
  *
  * Oldest first, which is the opposite of the table on the page. A chat report
  * is read downwards from the position you have held longest.
@@ -79,7 +81,7 @@ const selectHolding = () =>
      WHERE t.buy_date IS NOT NULL
        AND t.buy_amount IS NOT NULL
        AND t.buy_eth IS NOT NULL
-       AND t.sell_date IS NULL
+       AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)
      ORDER BY t.borrow_date, t.id
   `);
 

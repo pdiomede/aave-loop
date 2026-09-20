@@ -1496,6 +1496,19 @@ th[aria-sort="ascending"] .th-sort__caret {
   white-space: nowrap;
 }
 
+/* A cell whose second line sits under its first rather than beside it: the
+   status and its "not sent" note, the fired date and the time and price it
+   fired at. Side by side, Status alone was wide enough to push the table past
+   the right edge of a 768px screen, where the card layout has not taken over
+   yet and the Delete button is the thing that goes over the edge. It is also
+   what keeps the two lines together as one flex item in card mode, instead of
+   the label and both lines being spread across the row. */
+.cell-stack {
+  display: inline-block;
+  vertical-align: top;
+  text-align: right;
+}
+
 /* The question itself, which is the sentence rather than a footnote under one. */
 .modal__note--lead {
   margin-top: 0;
@@ -1596,6 +1609,28 @@ th[aria-sort="ascending"] .th-sort__caret {
 /* ------------------------------------------------------------ responsive */
 
 @media (max-width: 900px) {
+  /* The band between the card layout taking over and a table having room for
+     its own padding. Seven columns at 14px a side is 196px of air, which on a
+     768px screen is what put the Delete button past the right edge and gave
+     the whole page a sideways scrollbar. Only this table: the others are read
+     rather than pressed, and the trades table is wider than this band whatever
+     its padding. */
+  .alerts-table thead th,
+  .alerts-table tbody td {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .alerts-table thead th:first-child,
+  .alerts-table tbody td:first-child {
+    padding-left: 14px;
+  }
+
+  .alerts-table thead th:last-child,
+  .alerts-table tbody td:last-child {
+    padding-right: 14px;
+  }
+
   .hero__inner {
     align-items: flex-start;
   }

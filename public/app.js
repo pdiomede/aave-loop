@@ -591,14 +591,31 @@ async function loadAlerts({ refresh = false } = {}) {
  * The whole log, for the Alerts view. Its own call: `/api/alerts` is fetched at
  * boot and every time the alert window opens, and with `refresh` it goes to the
  * price service - which a table of past alerts has no business triggering.
+ *
+ * Guarded the same way `loadTrades` is, and for the same reason. This runs on
+ * every visit to the view, so one of these is in flight for as long as the
+ * round trip takes, and a delete landing inside that window was undone by the
+ * reply: the row came back on screen, deleted from the database, and pressing
+ * Delete on it again answered 404 - which this app reads as "already gone" and
+ * reports as a second successful removal.
  */
+let alertLogSeq = 0;
+let alertWriteSeq = 0;
+
 async function loadAlertLog() {
+  const seq = ++alertLogSeq;
+  const wroteAt = alertWriteSeq;
   try {
-    state.alertLog = (await api('/api/alerts/log')).alerts || [];
+    const rows = (await api('/api/alerts/log')).alerts || [];
+    // Overtaken by a newer load, or superseded by a write made while this was
+    // on the wire. Either way this answer describes a list that no longer is.
+    if (seq !== alertLogSeq || wroteAt !== alertWriteSeq) return;
+    state.alertLog = rows;
     state.alertLogError = null;
   } catch (err) {
     // Whatever was on screen is left there. A refresh that could not get
     // through should not blank a table that is still true.
+    if (seq !== alertLogSeq) return;
     state.alertLogError = err.message || 'Could not reach the server.';
   }
 }
@@ -1219,7 +1236,14 @@ function tradeRow(t, index, total) {
       ? `<tr class="detail"><td colspan="8">
           <div class="stages">${STAGES.map((s) => stageCard(s, t, d)).join('')}</div>
           <div class="detail__foot">
-            <span class="detail__note">Trade #${index} of ${total}, added ${fmtDate(localDay(t.created_at))}.</span>
+            <span class="detail__note">${
+              // The id first, and the position said in words. `#N` is the
+              // trade's own id everywhere else in this app - the Alerts table,
+              // every Telegram message - and here it was the row's place in
+              // the current sort, so one trade called itself #4, #9 or #2
+              // depending on which column the table happened to be ordered by.
+              `Trade #${t.id} &middot; row ${index} of ${total} &middot; added ${fmtDate(localDay(t.created_at))}`
+            }</span>
             <button class="btn btn--sm btn--danger" type="button" data-delete="${t.id}">Delete trade</button>
           </div>
         </td></tr>`
@@ -1368,7 +1392,7 @@ function currencyTable(rows) {
         <td data-label="Currency"><span class="row__asset">${coin(r.currency)}<span>${esc(r.currency)}</span>${
           r.missingFx ? ` ${RATE_MISSING}` : ''
         }</span></td>
-        <td data-label="Closed" class="num">${r.closed}</td>
+        <td data-label="Closed" class="num">${r.closed || dash}</td>
         <td data-label="Open" class="num">${r.open || dash}</td>
         <td data-label="Borrowed" class="num">${
           isNum(r.borrowed)
@@ -1486,7 +1510,20 @@ function renderSummary() {
       'Performance',
       `<div class="perf-grid">
         ${perfTile('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', TIPS.interestPaid)}
-        ${perfTile('Total borrowed', valuedAny ? usd(r.totalBorrowed) : '', '', TIPS.totalBorrowed)}
+        ${
+          // Not gated on a closed trade, unlike every other tile here. This one
+          // counts open trades too - the tooltip says so, and the Borrowed
+          // column below and the Open positions tile above both state the same
+          // money - so on a ledger with nothing repaid yet it was the only
+          // place on the screen calling that figure unknown. Shown whenever
+          // some trade contributed to it; zero means no trade has a rate.
+          perfTile(
+            'Total borrowed',
+            r.totalBorrowed > 0 ? usd(r.totalBorrowed) : '',
+            '',
+            TIPS.totalBorrowed,
+          )
+        }
         ${perfTile(
           'Win rate',
           valuedAny ? pct(r.winRate, 0) : '',
@@ -1572,8 +1609,14 @@ function alertLogRow(a) {
   // Derived from the error rather than from the status, because the case that
   // matters most is not a status of its own: a FIRED alert whose message
   // Telegram refused reached its goal and was never sent.
+  //
+  // Under the pill rather than beside it, the same way the fired price sits
+  // under the fired date. Side by side it made Status the widest column in the
+  // table, and the table then ran past the right edge of a tablet held upright
+  // - taking the Delete button with it, which is the only control in here.
   const notSent = a.lastError
-    ? ` <span class="chip chip--warn" data-tip="${esc(a.lastError)}">not sent</span>`
+    ? `<span class="cell-note"><span class="chip chip--warn"
+         data-tip="${esc(a.lastError)}">not sent</span></span>`
     : '';
 
   const when = a.status === 'armed' ? dash : fmtDate(localDay(a.firedAt));
@@ -1590,9 +1633,9 @@ function alertLogRow(a) {
     <td data-label="Trade">${trade}</td>
     <td data-label="Goal" class="num">${usd(a.goalPrice)}</td>
     <td data-label="Direction">${ALERT_DIRECTION[a.direction] || esc(a.direction)}</td>
-    <td data-label="Status"><span class="pill pill--${status}">${status}</span>${notSent}</td>
+    <td data-label="Status"><span class="cell-stack"><span class="pill pill--${status}">${status}</span>${notSent}</span></td>
     <td data-label="Set" class="num">${fmtDate(localDay(a.createdAt))}</td>
-    <td data-label="Fired at" class="num">${when}${under}</td>
+    <td data-label="Fired at" class="num"><span class="cell-stack">${when}${under}</span></td>
     <td data-label="" class="num alerts-table__act">
       <button class="btn btn--ghost btn--sm btn--danger" type="button"
         data-alert-delete="${a.id}" aria-label="Delete this alert">Delete</button>
@@ -1965,6 +2008,7 @@ async function submitAlert(form) {
         ...state.alertLog.filter((a) => !(a.tradeId === id && a.status === 'armed')),
       ];
     }
+    alertWriteSeq += 1;
     // Closed before the toast, which would otherwise be painted over: a
     // dialog renders in the browser's top layer, above everything.
     closeAlertDialog();
@@ -2008,6 +2052,7 @@ async function removeAlert(id) {
   // reads, keyed by trade, and the log the Alerts table renders.
   state.alerts = Object.fromEntries(Object.entries(state.alerts).filter(([, a]) => a.id !== id));
   if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.id !== id);
+  alertWriteSeq += 1;
 
   closeAlertDialog();
   render();
@@ -2040,6 +2085,7 @@ async function deleteAllAlerts() {
     state.alerts = {};
     state.alertLog = [];
     state.alertsPage = 1;
+    alertWriteSeq += 1;
     render();
     toast(`${deleted} alert${deleted === 1 ? '' : 's'} deleted.`);
   } catch (err) {
@@ -2346,6 +2392,7 @@ function wire() {
             Object.entries(state.alerts).filter(([tradeId]) => Number(tradeId) !== id),
           );
           if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.tradeId !== id);
+          alertWriteSeq += 1;
           render();
           toast('Trade deleted.');
         })
@@ -2472,9 +2519,16 @@ function wire() {
   // focus is inside it, and the page's own Escape handler is listening on the
   // body for the stage editor. Closing it here makes the key do one thing
   // wherever the focus happens to be.
+  //
+  // Stopped as well as prevented, as the confirmation below is. The bell sits
+  // on the Bought ETH card while another stage on the same trade is being
+  // edited - the two cards are side by side - so Escape closed this window and
+  // then went on to the body, where it threw away the half filled form behind
+  // it and whatever had been typed into it.
   dlg.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     e.preventDefault();
+    e.stopPropagation();
     closeAlertDialog();
   });
 

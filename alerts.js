@@ -70,6 +70,15 @@ const selectLog = () => prepare('SELECT * FROM alerts ORDER BY id DESC');
  * a message reading "Bought 0.0000 ETH for 0.00 USDC", because the figures it
  * quotes had all been emptied.
  *
+ * Both halves are spelled out the same way, which is the point of writing it
+ * out at all. `stages()` calls a sale recorded only when the date, the amount
+ * and the ETH are all there, so a row carrying a bare `sell_date` - which the
+ * API accepts, and which the sale form cannot produce - is still HOLDING to
+ * `derive`, and therefore to the bell on the card and to the check the PUT
+ * makes before saving a goal. Asking about `sell_date` alone here disagreed
+ * with all three: the goal saved, the bell lit, and this query never looked at
+ * it again.
+ *
  * Nothing is deleted either way. Both edits can themselves be undone, and
  * restoring the stage brings the alert back with it.
  */
@@ -81,7 +90,7 @@ const selectArmed = () =>
       AND t.buy_date IS NOT NULL
       AND t.buy_amount IS NOT NULL
       AND t.buy_eth IS NOT NULL
-      AND t.sell_date IS NULL
+      AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)
   `);
 
 const selectTrade = () => prepare('SELECT * FROM trades WHERE id = ?');
@@ -328,9 +337,32 @@ async function fire(row, price) {
     // have many, and `WHERE trade_id` would rewrite the status and the error
     // across every alert ever set on it - putting fired ones back to armed and
     // sending them again on the next sweep.
+    //
+    // Re-arming is refused when a newer goal is already watching this trade.
+    // Claiming the alert is what unselects the bell, so the whole of the send -
+    // ten seconds, when Telegram does not answer - is a window in which the
+    // card offers to set another one. Re-arming regardless broke the partial
+    // unique index that allows a trade one armed alert, and the throw was
+    // caught by the sweep: this row kept `status = 'fired'` with no error on
+    // it, so the Alerts view showed an ordinary sent alert for a message that
+    // never went, and every alert still to be checked in that pass was skipped.
+    //
+    // One statement rather than a read and a write, because two copies of this
+    // app poll the same file and anything in between is a race. Superseded, the
+    // row stays as the claim left it and carries the reason, which is what the
+    // "not sent" note on the card is derived from.
     prepare(`
-      UPDATE alerts SET status = @status, attempts = @attempts, last_error = @error,
-                        updated_at = @now
+      UPDATE alerts SET
+        status = CASE
+          WHEN @status = 'armed' AND EXISTS (
+            SELECT 1 FROM alerts other
+             WHERE other.trade_id = alerts.trade_id
+               AND other.status = 'armed'
+               AND other.id <> alerts.id
+          ) THEN 'fired'
+          ELSE @status
+        END,
+        attempts = @attempts, last_error = @error, updated_at = @now
       WHERE id = @id
     `).run({
       id: row.id,
@@ -379,8 +411,17 @@ export async function runAlertSweep() {
     let fired = 0;
     for (const row of armed) {
       if (!reached(row, quote.price)) continue;
-      await fire(row, quote.price);
-      fired += 1;
+      // Each one on its own. The catch below covers the pass, so anything
+      // thrown here used to abandon every alert still to be looked at - and
+      // the one that threw had already been claimed, which is to say marked
+      // as sent. One bad row should cost one message, not the rest of the
+      // quarter hour.
+      try {
+        await fire(row, quote.price);
+        fired += 1;
+      } catch (err) {
+        console.error(`Alert ${row.id} on trade #${row.trade_id} failed:`, err.message);
+      }
       if (!db.open) break;
     }
     return { checked: armed.length, fired, price: quote.price };
