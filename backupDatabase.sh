@@ -70,9 +70,27 @@ case "$KEEP" in
   ''|*[!0-9]*) die "--keep must be a number, got '$KEEP'." ;;
 esac
 
-[ -f "$DB" ] || die "No database at $DB. Nothing to back up."
+# A file that is not there and a file that cannot be looked at are the same
+# `[ -f ]` and are not the same problem. `data/` is mode 700 owned by the
+# account the service runs as, so running this as anyone else fails the test
+# above with the database sitting right there - and "No database" sends you
+# looking for a missing file instead of for the right user. config.js draws
+# the same distinction for config.env, for the same reason.
+DBDIR="$(dirname "$DB")"
+if [ ! -d "$DBDIR" ]; then
+  die "No folder at $DBDIR, so there is no database to back up."
+elif [ ! -r "$DBDIR" ] || [ ! -x "$DBDIR" ]; then
+  die "Cannot look inside $DBDIR - it belongs to $(ls -ld "$DBDIR" | awk '{print $3}'). Run this as that user."
+elif [ ! -f "$DB" ]; then
+  die "No database at $DB. Nothing to back up."
+elif [ ! -r "$DB" ]; then
+  die "$DB is there but this account cannot read it - it belongs to $(ls -l "$DB" | awk '{print $3}'). Run this as that user."
+fi
 
-mkdir -p "$DEST" || die "Could not create $DEST."
+# Named in the failure, because the default is a home folder and a service
+# account often has none: the account the ledger runs as may be unable to
+# create its own, which is a destination to choose rather than a fault to fix.
+mkdir -p "$DEST" 2>/dev/null || die "Could not create $DEST. Pass --dest with somewhere this account can write."
 
 # Every file this script writes, reads back or removes is matched on this
 # prefix and never on a bare `*.db`. Two things went wrong without it, and
