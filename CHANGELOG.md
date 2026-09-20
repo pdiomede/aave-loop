@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.39] - 2026-09-20
+
+Four bugs in the Trades view, each reproduced against a seeded ledger before the fix and measured after. A fifth candidate was dropped as unreachable rather than counted.
+
+### Fixed
+
+- **A figure too small to show carried a minus and a colour.** Sign and class were both read from the number as held, so a trade that came out level to within half a cent printed `-$0.00` in red - a loss, stated twice, on a trade that had not lost anything. Reproduced with a partial sale: 30,000 USDC at 4%, seven ETH bought, one sold for 4,482.97, repaid at 30,197.26, which nets -0.0043. `signedPct` and `pctClass` had said since 0.0.35 that the printed figure decides this; `usd`, `signedUsd`, `money`, `signedMoney`, `pct` and `gainClass` now share the one helper that says it.
+- **Annualized took its colour from the dollar gain, not from the rate beside it.** A cent made on a 30,000 loan over sixty days is a real gain and a green `+$0.01` - but annualized it is 0.0002%, which prints 0.00%, and a row of zeros wearing a green is a claim the digits do not make. The column and the card row read `pctClass(d.pct)` now, which is the figure they show.
+- **A saved stage did not follow its row to another page.** Adding a sale gives a trade a net gain it did not have, and under any sort but the default that can put the row on a different page; the toast said saved while the row and its open detail disappeared. Verified: with 23 trades sorted oldest first, moving one trade date to today sent it from page 1 to page 2, and the view now goes with it. `submitBorrow` has done this since paging arrived - editing never did.
+- **The table pushed the whole page sideways on a tablet.** The eight columns need about 980px, and the card layout that replaces the table does not arrive until 760, so between those two the table was wider than the page: 982px inside a 705px card at 768px, an iPad held upright, dragging the header, hero and footer 252px with it. 0.0.34 saw this and left it, correctly noting that padding cannot close a gap that size - trimming it and letting the cells wrap still leaves 800px. The table scrolls inside its own card instead, only between 761 and 1080px. Above that the container is not created at all, because an unused `overflow` still clips, and a tooltip hanging under a cell would pay for it.
+
+### Notes
+
+- **Not counted, because it cannot happen.** The Days cell falls back to an empty string where every other column writes a dash, which on a phone leaves a labelled row with nothing after it. But `days` runs to today while a loan is open and to the repayment once it is closed, so it is null only for a borrow date that could not be stored. A sweep of every column across all eight sorts, both directions and both pages found no empty cell and no `NaN`, `undefined` or `Invalid Date`.
+- **Checked and sound:** every sort orders correctly in both directions with valueless rows last in each; deleting all seven rows of the last page collapses to a single page rather than an empty table; the chronology rules make a repayment dated before a purchase unreachable, since a repayment already requires a sale and a sale requires a purchase.
+- The same colour-from-the-wrong-figure pattern sits in the Summary's by-currency table, where average annualized is coloured from net gain. Left alone: this was a Trades pass, and the two figures there almost always agree in sign.
+- `.flat` now has a rule of its own. `pctClass` has returned it since 0.0.35 and nothing in the stylesheet matched, so "neither up nor down" worked by no rule applying rather than by one saying so.
 ## [0.0.38] - 2026-09-20
 
 A quality pass over 0.0.37. Four findings, every one in what that release added: two places where a single fact was written down twice, one awaited call that never needed awaiting, and three comments describing something other than the code beneath them.

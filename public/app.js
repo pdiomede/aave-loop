@@ -30,14 +30,25 @@ function amount(v, dp) {
   });
 }
 
+/**
+ * Whether a figure rounds to all zeros at the precision it is printed to.
+ *
+ * Sign and colour are both decided on the figure as printed rather than as
+ * held, because a minus or a red on digits that are all zero reads as a loss
+ * that did not happen: a net gain of -0.0043 printed `-$0.00` in red, on a
+ * trade that had in truth come out level. `signedPct` and `pctClass` below
+ * already stated this rule for percentages; everything else now shares it.
+ */
+const printsZero = (v, dp) => Number(Math.abs(v).toFixed(dp)) === 0;
+
 function usd(v, digits = USD_DP) {
   if (!isNum(v)) return '';
-  return `${v < 0 ? '-' : ''}$${amount(v, digits)}`;
+  return `${v < 0 && !printsZero(v, digits) ? '-' : ''}$${amount(v, digits)}`;
 }
 
 function signedUsd(v) {
   if (!isNum(v)) return '';
-  return `${v >= 0 ? '+' : '-'}$${amount(v, USD_DP)}`;
+  return `${printsZero(v, USD_DP) ? '' : v < 0 ? '-' : '+'}$${amount(v, USD_DP)}`;
 }
 
 /**
@@ -47,12 +58,12 @@ function signedUsd(v) {
  */
 function money(v, currency) {
   if (!isNum(v)) return '';
-  return `${v < 0 ? '-' : ''}${amount(v, USD_DP)} ${currency}`;
+  return `${v < 0 && !printsZero(v, USD_DP) ? '-' : ''}${amount(v, USD_DP)} ${currency}`;
 }
 
 function signedMoney(v, currency) {
   if (!isNum(v)) return '';
-  return `${v >= 0 ? '+' : '-'}${amount(v, USD_DP)} ${currency}`;
+  return `${printsZero(v, USD_DP) ? '' : v < 0 ? '-' : '+'}${amount(v, USD_DP)} ${currency}`;
 }
 
 function ethQty(v) {
@@ -65,7 +76,7 @@ function eth(v) {
 
 function pct(v, digits = 2) {
   if (!isNum(v)) return '';
-  return `${v.toFixed(digits)}%`;
+  return `${v < 0 && !printsZero(v, digits) ? '-' : ''}${Math.abs(v).toFixed(digits)}%`;
 }
 
 /**
@@ -81,8 +92,7 @@ function pct(v, digits = 2) {
  */
 function signedPct(v, digits = 2) {
   if (!isNum(v)) return '';
-  const shown = Math.abs(v).toFixed(digits);
-  return `${Number(shown) === 0 ? '' : v < 0 ? '-' : '+'}${shown}%`;
+  return `${printsZero(v, digits) ? '' : v < 0 ? '-' : '+'}${Math.abs(v).toFixed(digits)}%`;
 }
 
 /**
@@ -95,7 +105,7 @@ function signedPct(v, digits = 2) {
  */
 function pctClass(v, digits = 2) {
   if (!isNum(v)) return '';
-  if (Number(Math.abs(v).toFixed(digits)) === 0) return 'flat';
+  if (printsZero(v, digits)) return 'flat';
   return v < 0 ? 'neg' : 'pos';
 }
 
@@ -146,7 +156,9 @@ const esc = (s) =>
     "'": '&#39;',
   })[c]);
 
-const gainClass = (v) => (!isNum(v) ? '' : v >= 0 ? 'pos' : 'neg');
+/** The money counterpart of `pctClass`, reading the figure as printed. */
+const gainClass = (v, dp = USD_DP) =>
+  !isNum(v) ? '' : printsZero(v, dp) ? 'flat' : v >= 0 ? 'pos' : 'neg';
 
 /**
  * The marker that carries an explanation. A real button, so the sentence can be
@@ -1324,7 +1336,11 @@ function stageSummary(stage, t, d) {
             rowUsd('of which currency', signedUsd(d.principalFxUsd), gainClass(d.principalFxUsd))
           : '') +
         row2('Net gain', signedMoney(d.netGain, c), signedFxNote(d.netGainUsd, null), gainClass(d.netGain)) +
-        row('Annualized', pct(d.pct), gainClass(d.netGainUsd))
+        // Coloured from the rate it prints, not from the dollar gain behind
+        // it. A cent made on a 30,000 loan is a real gain and a green
+        // +$0.01, but annualized it is 0.0002%, which prints 0.00% - and a
+        // green nothing is a claim the digits do not make.
+        row('Annualized', pct(d.pct), pctClass(d.pct))
       );
     default:
       return '';
@@ -1429,7 +1445,7 @@ function tradeRow(t, index, total) {
     <td data-label="Sell price" class="num">${isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : '<span class="muted">-</span>'}</td>
     <td data-label="Days" class="num">${isNum(d.days) ? d.days : ''}</td>
     <td data-label="Net gain" class="num">${gainCell}</td>
-    <td data-label="Annualized" class="num">${isNum(d.pct) ? `<span class="${gainClass(d.netGainUsd)}">${pct(d.pct)}</span>` : '<span class="muted">-</span>'}</td>
+    <td data-label="Annualized" class="num">${isNum(d.pct) ? `<span class="${pctClass(d.pct)}">${pct(d.pct)}</span>` : '<span class="muted">-</span>'}</td>
     <td data-label="Status"><span class="pill pill--${d.status}">${d.status}</span></td>
   </tr>
   ${
@@ -1500,6 +1516,7 @@ function renderTable() {
   const shown = rows.slice(start, start + PAGE_SIZE);
 
   mount.innerHTML = `${sortControl()}
+  <div class="table-scroll">
   <table class="table">
     <thead>
       <tr>
@@ -1511,6 +1528,7 @@ function renderTable() {
       ${shown.map((t, i) => tradeRow(t, start + i + 1, total)).join('')}
     </tbody>
   </table>
+  </div>
   ${pager(total)}`;
 
   const openForm = mount.querySelector('[data-stage-form]');
@@ -2069,6 +2087,12 @@ async function submitStage(form) {
     writeSeq += 1;
     state.editing = null;
     state.draft = null;
+    // The save can move the row: adding a sale gives a trade a net gain it did
+    // not have, and under any sort but the default that can be a different
+    // page. The row stays open, so follow it - otherwise the toast says saved
+    // while the row and its open detail vanish off the screen. `submitBorrow`
+    // has done this since paging arrived; editing never did.
+    state.page = pageOfTrade(id);
     render();
     state.draft = null;
     toast(`${STAGES.find((s) => s.key === stage).name} saved.`);

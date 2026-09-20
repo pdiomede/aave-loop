@@ -163,6 +163,14 @@ h3 {
   color: var(--negative);
 }
 
+/* Neither up nor down: a figure whose digits are all zero once rounded. It
+   takes the ordinary text colour rather than staying unclassed, so that the
+   absence of red or green is a decision in this file rather than an accident
+   of no rule matching. */
+.flat {
+  color: var(--text);
+}
+
 /* ---------------------------------------------------------------- header */
 
 .header {
@@ -1737,6 +1745,28 @@ th[aria-sort="ascending"] .th-sort__caret {
 }
 
 /* ------------------------------------------------------------ responsive */
+
+/* The eight columns need about 980px before they start compressing, and the
+   card layout that replaces the table does not arrive until 760. Between those
+   two the table was simply wider than the page: 982px of table in a 705px card
+   at 768px, which is an iPad held upright, and the 252px it could not fit
+   pushed the header, the hero and the footer sideways with it. Padding does not
+   close a gap that size - trimming it and letting the cells wrap still leaves
+   the table 800px wide - so the table scrolls within its own card instead, and
+   the page stops moving.
+
+   Bounded above as well as below. Past about 1045px the card is wider than the
+   table needs and there is nothing to scroll, and an `overflow` that is never
+   used is not free: it clips, so a tooltip hanging below a cell would be cut
+   off by a container that had no other reason to exist. */
+@media (min-width: 761px) and (max-width: 1080px) {
+  .table-scroll {
+    overflow-x: auto;
+    /* The table rounds its own bottom corners, and a scroll container with a
+       square edge would show through them. */
+    border-radius: 0 0 var(--radius-card) var(--radius-card);
+  }
+}
 
 @media (max-width: 900px) {
   /* The header is still one row here and cannot hold all three windows beside
