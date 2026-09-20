@@ -54,7 +54,13 @@ for (const { file, find, what } of TARGETS) {
     failed = true;
     continue;
   }
-  const after = before.replace(find, `$1${version}$2`);
+  // A function replacer rather than a replacement string, where $$, $&,
+  // $` and $' each mean something other than themselves. Interpolating
+  // the version between two group references produced text of the shape
+  // $1<version>$2, which parsed correctly only because there is no group 10
+  // to claim the digit after $1 - right by a fallback rule rather than by
+  // what the line appeared to say. Nothing a function returns is special.
+  const after = before.replace(find, (_, lead, tail) => lead + version + tail);
   if (after !== before) writeFileSync(target, after);
   console.log(`stamp-version: ${file} -> v${version}`);
 }
