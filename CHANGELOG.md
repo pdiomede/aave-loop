@@ -15,11 +15,6 @@ Two lines on the landing page that were breaking in the wrong places.
 
 - **The hero subtitle breaks between its two sentences.** "Borrow a stablecoin, buy ETH, sell it, repay the loan." now ends a line, and what the app does with those four moves starts the next. The ledger's own hero has done exactly this, with the same sentence, since it had a hero.
 
-### Notes
-
-- Verified by measurement rather than by eye: one line at 1440, 1024 and 768 pixels, two at 375 with no sideways scroll, and still centred - margins of 200.688 and 200.695 pixels either side.
-- **A pagination pass over both tables found nothing to fix.** Driven against 86 trades and 25 alerts: every page of both, the counters against the rows actually drawn, the short last page and the exact-multiple boundary, sorting from page three by header, by select and by direction toggle, emptying the last page a row at a time, deleting every alert from page two, creating a trade from page nine, and the condensed pager past seven pages. Recorded because the absence is the result.
-- `README.md` now points at the changelog and the licence from its first screen, and its Releasing section has moved to `CLAUDE.md`, which is where the next person cutting a release will be looking.
 ## [1.0.0] - 2026-09-20
 
 The first stable release.
@@ -41,12 +36,6 @@ A recursive audit of every source file in the repository - 21 files, about 10,90
 - **The Telegram summary could report a blended rate of `-0.00%`.** `format.js` defines `signOf` for exactly this - take the sign from the figure as printed, so digits that are all zero do not carry a minus - and `usd`, `signedUsd` and `pct1` all use it. `pct2` was the one that did not, and it is the formatter "Blended annualized" goes through.
 - **An alert could report `Gain: -$0.00`.** `alertMessage` built its own sign from the held value rather than using the `signedUsd` sitting in the module it already imports from. Reproduced with a goal a person could type: half an ETH at 3.1%, goal 24,207.91, which lands 0.001 below break-even. The live preview in the alert window is written by the same function, so it showed it too.
 
-### Notes
-
-- **Clean, after being read:** `telegram.js`, `config.js`, `db.js`, `eth.js`, `fx.js`, `report.js`, `bot.js`, `lib/calc.js`, `public/app.js`, `public/index.html`, `public/styles.css`, `landing/index.html`, `landing/404.html`, `landing/styles.css`, `scripts/stamp-version.mjs`, `run_myAave.sh`, `resetDatabase.sh`, `config.env.example`.
-- **Two suspicions withdrawn rather than reported.** `resetDatabase.sh` copies the WAL with `[ -f "$DB-wal" ] && cp ...` under `set -e`, which looks like it would abort the script when no WAL exists; and its `node -e` trade count uses `require` in a package marked `"type": "module"`. Both were run: `set -e` does not exit on that list form, and `node -e` is evaluated as CommonJS. Neither is a bug.
-- **Checked and sound where it was worth proving:** no schema migration gap, since `bot_state` and `fx_rates` were each introduced complete in one commit; every string the server sends reaches the DOM through `textContent` and the only HTML passed to `confirmDialog` interpolates a number, so there is no injection path; `notes` accepts 2000 characters and is never rendered; and the `/api/eth` error shape, which omits the change windows, is handled by the ticker rather than drawn as empty chips.
-
 ### Removed
 
 - `PROMPTS.md`. The reusable audit prompts it held have been run enough times to have done their work, and the findings they produced are in the entries above rather than in the file.
@@ -66,11 +55,6 @@ Eight bugs across the three views, each reproduced against a seeded ledger befor
 - **The rate banner said more than it meant.** "so it is left out of the totals below" is false of the borrowed totals: only the borrow leg's rate decides those, and a trade waiting on a later one is counted in both Total borrowed and the By currency column. It is the trade's *result* that is left out, and the banner and `TIPS.totalBorrowed` now say that.
 - **`extremeCard` was dead.** Unreferenced since `perfExtreme` replaced it in 0.0.35, and still carrying the superseded pattern of colouring a rate from a dollar figure - a worked example of the bug above, sitting in the file waiting to be copied.
 
-### Notes
-
-- **Looked for and not counted.** A CANCELLED alert renders a blank "Fired at" where an ARMED one renders a dash - but `cancelled` appears nowhere in the codebase; the seed that produced it was mine. The three real statuses all have a `fired_at`, because the claim that sets one is what any of them passes through. Reported here rather than fixed, since fixing it would mean supporting a state the app cannot reach.
-- **Checked and sound:** the stage draft survives a view switch; the amount suffix follows the borrow currency; field validation fires on blur with the right message; the alert window's preview is written at the goal price and its arithmetic ties out; partial sales state cost of ETH sold, still held and gross gain correctly; a missing sale rate degrades to "no rate" in every place it should and to a dash in the rest.
-- The three views were swept for `NaN`, `undefined`, `Invalid Date` and empty cells, at desktop and phone width, with no console error and no sideways page scroll.
 ## [0.0.39] - 2026-09-20
 
 Four bugs in the Trades view, each reproduced against a seeded ledger before the fix and measured after. A fifth candidate was dropped as unreachable rather than counted.
@@ -82,13 +66,6 @@ Four bugs in the Trades view, each reproduced against a seeded ledger before the
 - **A saved stage did not follow its row to another page.** Adding a sale gives a trade a net gain it did not have, and under any sort but the default that can put the row on a different page; the toast said saved while the row and its open detail disappeared. Verified: with 23 trades sorted oldest first, moving one trade date to today sent it from page 1 to page 2, and the view now goes with it. `submitBorrow` has done this since paging arrived - editing never did.
 - **The table pushed the whole page sideways on a tablet.** The eight columns need about 980px, and the card layout that replaces the table does not arrive until 760, so between those two the table was wider than the page: 982px inside a 705px card at 768px, an iPad held upright, dragging the header, hero and footer 252px with it. 0.0.34 saw this and left it, correctly noting that padding cannot close a gap that size - trimming it and letting the cells wrap still leaves 800px. The table scrolls inside its own card instead, only between 761 and 1080px. Above that the container is not created at all, because an unused `overflow` still clips, and a tooltip hanging under a cell would pay for it.
 
-### Notes
-
-- **Not counted, because it cannot happen.** The Days cell falls back to an empty string where every other column writes a dash, which on a phone leaves a labelled row with nothing after it. But `days` runs to today while a loan is open and to the repayment once it is closed, so it is null only for a borrow date that could not be stored. A sweep of every column across all eight sorts, both directions and both pages found no empty cell and no `NaN`, `undefined` or `Invalid Date`.
-- **Checked and sound:** every sort orders correctly in both directions with valueless rows last in each; deleting all seven rows of the last page collapses to a single page rather than an empty table; the chronology rules make a repayment dated before a purchase unreachable, since a repayment already requires a sale and a sale requires a purchase.
-- The same colour-from-the-wrong-figure pattern sits in the Summary's by-currency table, where average annualized is coloured from net gain. Left alone: this was a Trades pass, and the two figures there almost always agree in sign.
-- `stamp-version.mjs` builds its replacement with a function rather than a string. The security review of 0.0.38 raised this and it was judged cosmetic, since npm validates the version as semver and semver has no `$`. Writing these fixes then produced the same mistake for real, in a patch script whose `$$` collapsed to one and dropped the dollar sign from every figure in the app - caught before it was committed, but a good enough argument. Real versions are unaffected; a value containing `$&` used to paste the whole match back into the file.
-- `.flat` now has a rule of its own. `pctClass` has returned it since 0.0.35 and nothing in the stylesheet matched, so "neither up nor down" worked by no rule applying rather than by one saying so.
 ## [0.0.38] - 2026-09-20
 
 A quality pass over 0.0.37. Four findings, every one in what that release added: two places where a single fact was written down twice, one awaited call that never needed awaiting, and three comments describing something other than the code beneath them.
@@ -98,12 +75,6 @@ A quality pass over 0.0.37. Four findings, every one in what that release added:
 - **The version lifecycle stages what it changed, not a list of what it expected to change.** `package.json` named `public/index.html` and `landing/index.html` for `git add`, and `scripts/stamp-version.mjs` named the same two in `TARGETS` - so a third page that printed the version would have been stamped, logged as stamped, and then left out of the commit. That is the silently stale version the script exists to prevent, reachable again through the staging step. `git add -u` stages what the bump and the stamp touched, and it is safe precisely because `npm version` refuses to run on a dirty tree, so nothing else can be modified when it does.
 - **The footer's version is no longer awaited before the ledger loads.** `boot()` held every other request behind `await api('/api/version')`, in a function whose own comments twice explain why the ticker and the alerts must not gate the trades. Since 0.0.37 stamps the number into the markup, that call only ever corrects a page served from an older build than the server it is talking to, and nothing on screen should wait on it. Measured on localhost: the four requests ran 32.5ms to 40.4ms in series and now start together at 31.5ms. Over a network it is a full round-trip.
 - **`stamp-version.mjs` finds the pages the way the rest of the repo finds a file.** It resolved `public/index.html` against the working directory, where `server.js`, `config.js` and `db.js` all anchor to `import.meta.url`. npm runs lifecycle scripts from the package root, so it worked - but it was the one file in the project relying on that, and the one whose failure mode is a raw `ENOENT` thrown before its own error handling can say which pattern went missing.
-
-### Notes
-
-- Three comments written in 0.0.37 said something the code did not. The stylesheet offered 68ch as "the company of `.hero__sub`", which is 56ch; no rule in either stylesheet uses 68ch, and the 45-75ch band was always the real argument. The base `a` rule claimed all four container selectors "are more specific" - three are the same specificity as `a:hover` and `.nav__link` is lower, so source order settles them, and moving that block below them would change brand and footer hover. And `stamp-version.mjs` justified stamping `public/index.html` as insurance against a person forgetting, which is the discipline the script had just abolished; the real reason is that the stamped number renders on every load and stays if the API call never lands, which the change above makes truer still.
-- Left as it is: the replacement string `$1${version}$2` resolves through the `$10` fallback rather than the two capture groups it appears to use. Verified correct for 0.0.5 through 11.0.0, so it reads worse than it behaves and is not a defect. Same for the double regex pass, which is 0.0022ms against 20ms of node startup and whose removal would break the distinction between "pattern gone" and "already stamped".
-- Verified by execution: the stamp script run from outside the repo, which previously threw `ENOENT`, now reads and writes both pages and restores cleanly; the version repaint still lands in the footer; the old and new boot orders measured side by side; all three views rendering with no console error; and the Summary note still two paragraphs with its link taking the body colour.
 
 ## [0.0.37] - 2026-09-20
 
@@ -122,23 +93,12 @@ The note under the Summary says which figures were converted and which were neve
 - **A base `a` rule.** The stylesheet had no generic link style - `a.brand`, `.nav__link` and `.footer a` all key on where the link sits - so the note's anchor got a fourth container-scoped rule that copied `.th-tip`'s declarations from 485 lines away. The next link a script writes would have needed a fifth. There is one rule now, and the container rules are all more specific and override it unchanged.
 - **`npm version` stamps the version everywhere it is written.** It was hand-edited in `package.json`, `public/index.html` and `landing/index.html` each release, and the landing page is the one a visitor reads and the one with no runtime source to paint over a miss. `package-lock.json` had drifted 31 releases to 0.0.5, which an `npm install` on the server would have rewritten into a dirty checkout; it is back in step.
 
-### Notes
-
-- The JSDoc block introduced with the link was attached to `ECB_RATES_URL` while describing `SUMMARY_FOOT` - the sentences, the break, the escaping - so hovering the note gave nothing and moving the URL would have carried the note's whole rationale off with it. Each constant carries its own now.
-
 ## [0.0.36] - 2026-09-20
 
 ### Changed
 
 - **The note under the Summary links to the ECB's rates, and reads as two lines.** It named the European Central Bank reference rate without pointing anywhere, so the one thing it invites you to do - check a figure - needed a search engine first. The phrase now links to the ECB's euro foreign exchange reference rates page, which carries the day's rates and the CSV, XML and SDMX history together; the history is the half that makes a past transaction checkable. The explanation is split after the first sentence, so the consequence starts on its own line rather than trailing off the end of a paragraph.
 - The link is **hung on the phrase that was already there**, unchanged: "European Central Bank reference rate" named the number before and names it now. What the anchor adds is a destination, and the destination is where these rates are published rather than where this app fetches them - the figures are ECB reference rates but the only lookup goes to a mirror. "Checked against the ECB's own tables" is the claim `db.js`, `fx.js` and the README already make, and it is the one that is true.
-
-### Notes
-
-- The note's measure widened with the split. Three lines was a property of `max-width: 68ch` rather than of the sentence, so a break on its own would have made it three lines in a different place. It is two from 900px up, three at 760, and more on a phone, which no version of this sentence avoids.
-- **Every anchor rule in the stylesheet keys on where the link sits** - `a.brand`, `.nav__link`, `.footer a` - and this link sits in none of those places, so without a rule of its own it would have fallen through to the browser default and been the single blue underline in the product. It takes the colour of the note it sits in, with the footer's solid underline on hover.
-- **The README carries the same link**, on the same phrase, and its rate bullet no longer says the rates "come from the ECB" - they are the ECB's, read through a public mirror of its daily file, and `MYAAVE_FX_URL` is named for anyone who would rather point it elsewhere. `fx.js`'s own header said the same thing and now says what its next eighteen lines actually do.
-- Verified by execution: the link's colour matching the body text at rest in both themes and never the browser blue; `href`, `target` and `rel` as written; the ECB page answering with "Euro foreign exchange reference rates" and a USD quote; and no console error on any of the three views, with the Performance card still three tiles then four. The four widths the measure was checked at - 1440, 1280, 1100 and 900px - are all above where `max-width: 108ch` binds, so they were one measurement reported four times; the width where the first sentence stops fitting was never tested. See 0.0.37, where the break stops depending on a measure at all.
 
 ## [0.0.35] - 2026-09-20
 
@@ -168,12 +128,6 @@ Four found in the ticker after it was written, each reproduced before the fix an
 - **The row could not be read out or copied.** The gaps between the price and the badges, and between each label and its figure, are drawn by flex, so the text itself ran together as `ETH: $3,000.001h+1.4%24h-1.5%`. The spaces are in the markup now; flex drops them on the way to the screen, so nothing moved.
 - **Every switch back to the tab fired a request.** Ten alt-tabs in ten seconds were ten round trips - through nginx and basic auth on the deployed app - none of which could return anything new, because the server serves the same cached figure for five minutes. It asks on return only when the figure it holds is actually due.
 
-### Notes
-
-- **One call to the price service per five minutes, however many tabs are open.** Measured: 60 requests fired at two instances sharing one database file produced two calls, one per process, and then none. `ethPrice` shares a request between concurrent callers and caches the answer on disk, and any fetch resets that cache for everyone. This is the number that matters - going past the free tier's limit parks the whole module for ten minutes and takes the alert sweep's own price lookups with it.
-- Verified by execution: the `change_1h` column arriving on a database written before this release and on one created after, with no second add on re-open; a price service that has never heard of the 1h window, which leaves the badge off rather than breaking; a null 7d, likewise; a dead price service leaving the last good figure and no unhandled rejection; a cold start with no cached price at all, where the two calls race and the priced answer wins; the interval picking up a move on its own; the header at 1440, 1000, 901, 900, 800, 761, 760, 500 and 375px in both themes, with no sideways scroll and the row dropping under the nav below 760; and the two rankings naming different trades, with a trade whose rate cannot be worked out winning neither.
-- A window with an absurd value was tested too - it renders wide but the header absorbs it at every width, so nothing was changed for it.
-
 ## [0.0.34] - 2026-09-20
 
 An audit of the three views. Nine findings, every one reproduced before it was fixed and again after: five in the Alerts view, two in the Summary and two in the Trades table. Nothing was invented to reach a number, and the Trades table's own count is two because that is what was there.
@@ -192,10 +146,6 @@ An audit of the three views. Nine findings, every one reproduced before it was f
 ### Changed
 
 - **The expanded row names the trade's own id.** `#N` is the id everywhere else - the Alerts table, every Telegram message - and in this one place it was the row's position in the current sort, so one trade called itself #4, #9 or #2 depending on which column the table was ordered by. It reads `Trade #7 · row 4 of 10 · added 1 Aug 2026`, with the position said in words.
-
-### Notes
-
-- Verified by execution, each failure reproduced first: the deleted alert returning under a delayed log fetch and staying gone after; `UNIQUE constraint failed: alerts.trade_id` in the log with the row left clean, against the same race afterwards logging the real reason and keeping the newer goal armed - with the ordinary retry ladder still climbing 1, 2, 3 to FAILED when nothing supersedes it; the old and new holding predicates run side by side over a trade with a bare sale date, and over the same trade once the sale is complete; the page measured at 761, 768, 800 and 1440px and at 375px in both themes, with no sideways scroll left on the Alerts view; a ledger of open trades only, where the tile, the column and the hero now agree on $75,000; and the whole round trip of creating a trade, adding a purchase, setting a goal, firing it against a stubbed Telegram, deleting one alert and deleting them all, with no console error and every endpoint answering as before.
 
 ## [0.0.33] - 2026-09-20
 
@@ -219,11 +169,6 @@ An Alerts view, and a fired alert that is kept rather than overwritten.
 - **A failed send would have rewritten a trade's whole alert history.** The two follow-up statements in `fire()` were `WHERE trade_id` with no status filter - harmless while a trade had one row, and the moment history existed they would have put every fired alert on that trade back to `armed` and sent them all again on the next sweep. Both key on the alert's own id, which is also what the claim now locks on.
 - **Two clicks on Delete in one tick left no confirmation at all.** `close()` queues its event rather than firing it, so the handler ran after the window had already reopened for the second question, wiped it and closed it again - no dialog, no message, nothing deleted.
 - **Neither dialog ever cleared its markup.** Both leaned on the `close` event for that, and an engine need not dispatch it for a `close()` from script, so the goal somebody had typed stayed in the document after the window shut. Both clear on the way out instead, with the event kept as a second line of defence.
-
-### Notes
-
-- Verified by execution: the migration against a database built on the previous schema, twice and from three concurrent boots, with `foreign_key_check` clean and the new ids deliberately not equal to the trade ids; the armed invariant refusing a second armed row and accepting any number of fired ones; an alert firing, the bell going unselected, and a new goal adding a row rather than replacing the old one; two instances against one database sending exactly one message on the new claim; a retryable failure climbing to FAILED while an older alert on the same trade kept its own `fired_at`; a confirmation stacking above the alert window with the typed goal surviving a cancel; pagination falling back a page when the last row of the last one goes; and `PUT /api/alerts/1` now answering 404.
-- The bell shows armed alerts only, so a failed one has no trace on the trade card and lives in the Alerts view. A FIRED row whose message Telegram refused carries a "not sent" chip with the reason, because that case is not a status of its own.
 
 ## [0.0.32] - 2026-09-20
 
@@ -251,12 +196,6 @@ An audit of every file. Twenty-two findings across twelve of them; `alerts.js`, 
 - `dataDir` in `db.js`, which created `data/` even when `MYAAVE_DB` pointed somewhere else entirely.
 - `AMOUNT_FIELDS` and the `annualizedPct` import in `public/app.js`, the `n2` import in `report.js`, and `--mono` in the stylesheet: all declared, none read.
 - A `padding-top` in the landing stylesheet overridden by the shorthand on the very next line, and a second `.step__body` block whose only job was to add a margin to the first.
-
-### Notes
-
-- **`alerts.js` and `lib/calc.js` came out clean**, as did both HTML files. `lib/calc.js` is the most audited file here and it shows; no finding in either was worth inventing a fix for.
-- Comments that had drifted from what they describe were moved back: the `validate` block in `eth.js`, which a later insertion had left documenting the function below it, and two in the stylesheet.
-- Verified by execution: every command answered, an alert still sent as plain text with no `parse_mode`, `/api` returning JSON and `/favicon.ico` still 200, the four figures on the summary matching the page, and the ledger rendering with no console or network errors in either theme.
 
 ## [0.0.31] - 2026-09-20
 
@@ -305,11 +244,6 @@ Three bugs from an audit of the bot, the alert sweep and the theme, and the word
 - `config.env.example` says what a chat id actually is, both ways round, and warns that a group's id is rewritten when it becomes a supergroup - which making the bot an administrator is enough to trigger, leaving the configured id matching nothing. The log already prints the id of every chat it ignores, which is where the new one can be read.
 - The README says the private chat is an option rather than walking only through a group, and notes that pinning a message listing the commands gives a group something a menu button cannot: Telegram makes each `/command` in a message tappable.
 
-### Notes
-
-- Alerts, the test message and the `/watch` report are unchanged and still go to `TELEGRAM_CHAT_ID` alone. The watch switch is one row with no chat on it, so a `/watch` asked for privately is confirmed privately and still reports to `TELEGRAM_CHAT_ID`.
-- Verified by execution: a stubbed Telegram API answering a batch of four messages - the group, the private chat twice, and a third chat - with every reply's `chat_id` checked; the sweep driven from a timer with its table dropped, which crashed the process before and logged after; and the whole server through create, each stage, a partial sale, repay, the alert endpoints, the 400/403/404/413 paths and SIGTERM.
-
 ## [0.0.25] - 2026-09-20
 
 ### Added
@@ -339,16 +273,6 @@ The bot answers back: five commands, in the group and nowhere else.
 - **Only `TELEGRAM_CHAT_ID` is answered.** A bot is discoverable by username and `/holding` is the whole of a position, so a command from any other chat is confirmed and dropped without a reply. One log line per unknown chat per run, which is what makes the two confusing cases legible: messaging the bot privately, and a group being upgraded to a supergroup, which changes its id.
 - Nothing calls `setMyCommands` or `deleteWebhook`. Both change the bot for every chat it is in, and neither is this app's to decide.
 
-### Notes
-
-- **Telegram hands each update to one caller of `getUpdates` and refuses the second**, so the two instances this app already tolerates would have stolen each other's commands. A lease in `bot_state`, taken with the same conditional UPDATE the alerts use to claim a firing, settles which one polls; the other never calls Telegram at all. Verified with two instances against one database: one reply to one command, and takeover within seconds of killing the holder.
-- **The offset lives in the database, and is committed before a command is answered**, so a handover resumes where the last holder got to rather than from whatever a variable happened to say. At-most-once on purpose: a crash between the two loses a command, which costs six keystrokes, where the other order could put the same message in the group twice.
-- **A long poll is aborted on shutdown.** There is no `unref` for a fetch, so without that, stopping the app waited out the rest of a fifty second request. Measured: 0.3s against a server that never answers.
-- Commands older than ten minutes are confirmed and not answered, so coming back from an afternoon of downtime does not fire an afternoon of replies.
-- A rejected token stops the loop after one attempt rather than retrying forever; a 409 backs off and, when it names a webhook, says how to remove it.
-- `README.md` step 3 gained a warning: `curl .../getUpdates` to find the chat id only works before the app is running, or with `MYAAVE_BOT_OFF=1`, because the app is now the other reader of that queue.
-- Verified by execution: every command including `@name`, capitals, arguments and nonsense; a foreign chat; a stale backlog; the lease and its handover; shutdown mid-poll; 401 and 409; a trade with no exchange rate showing a dash rather than being summed; and an alert still sending plain text with no `parse_mode`.
-
 ## [0.0.23] - 2026-09-20
 
 The app wears its own mark, and the name comes off the social card.
@@ -366,11 +290,6 @@ The app wears its own mark, and the name comes off the social card.
 - `public/aaveLogo.png`, Aave's own mark, which nothing references any more.
 - `landing/favicon.svg`, a hand-traced copy of the old glyph which had already drifted from the artwork once. The ico is an exact downscale of the real logo at every size a browser asks for, so the pages name it directly rather than keeping a tracing that has to be redrawn by hand whenever the mark moves.
 
-### Notes
-
-- `MYAAVE_ALLOWED_HOSTS` left the README with the proxy section it was documented in. It is still read and still needed behind nginx; 0.0.10 below is what explains it now.
-- The footers read 0.0.23. The landing page's is hand-maintained, because `/api/version` sits behind auth, and the app's is a static fallback for the same reason.
-
 ## [0.0.22] - 2026-09-20
 
 A trade whose ETH is still held can now say what price it is waiting for, and be told when it gets there.
@@ -386,27 +305,11 @@ A trade whose ETH is still held can now say what price it is waiting for, and be
 - `GET /api/alerts`, `PUT` and `DELETE /api/alerts/:id`, `GET /api/alerts/:id/preview` and `POST /api/alerts/test`. The bot token and the chat id are in none of them.
 - **A setting-up section in the README**, six steps from making the bot to sending a test, including the two that fail like a broken app: `getUpdates` answers with nothing unless the message begins with a slash, because of Telegram's privacy mode, and the file is read once at startup. It also documents `MYAAVE_CONFIG`, which was in the code and nowhere else.
 
-### Notes
-
-- **An alert is claimed before the message is sent**, by a conditional `UPDATE ... WHERE status = 'armed'`, so two copies of the app polling one database cannot both send it. Verified with two instances at a fast poll: one message, over nine ticks.
-- **An armed alert is only checked while the trade is still holding ETH** - the purchase recorded in full and no sale - so selling disarms it without deleting it and undoing a sale brings it back. Asking only whether it had been sold let an alert on an undone purchase send "Bought 0.0000 ETH for 0.00 USDC".
-- A timeout leaves delivery genuinely unknown, so the alert re-arms and is retried up to three times; a refusal such as "no such chat" will say the same next time, so it stays fired with the reason on the card.
-- **Which way an alert reads is decided against ETH's current price, not what was paid for it.** With ETH at 3,000 and a purchase at 2,500, a goal of 2,600 means "tell me if it falls back"; against the purchase price it is an upward goal already met, and the next tick fired it. The fallback is `buyPriceUsd`, never `buyPrice`, which on a EURC loan is euros per ETH.
-- **Without `config.env` the app is what it was**: it boots, the bell works, goals are saved, and the window says what is missing. `.gitignore` did not cover the file - `.env.*` matches a file beginning `.env.` - so it would have been committed with a live token.
-- Smaller: the window fetches the alert and a fresh price each time it opens rather than once at page load; `Retry-After` is honoured upward, bounded at an hour; a variable exported empty no longer masks a filled-in `config.env`; a stale preview is discarded; a failed **Remove alert** says so; and the alert keeps no copy of the trade's amount, date or purchase price, any of which an edit can move.
-- The alert window is the first modal, and lives in the page shell rather than in the card that opens it, because the trades table is rebuilt wholesale on every render. `.modal` sets `color` explicitly, since a `dialog` is given near-black `CanvasText`.
-- Verified by execution: the fire path, no second message after firing, two instances against one database, the disarm on sale, cascade delete, a clean shutdown mid-sweep, and both themes at 1440px and 375px.
-
 ## [0.0.21] - 2026-09-20
 
 ### Changed
 
 - **The app is called Aave Loop.** "Ledger" is dropped from the wordmark, the landing page and its 404, both page titles, the Open Graph and Twitter cards, the README, the startup log, the reset script's banner, the `package.json` description and the two prompts in `PROMPTS.md`. The 0.0.2 entry below keeps the old name, because that is what happened at 0.0.2.
-
-### Notes
-
-- The lowercase "ledger" is left alone where it is the ordinary word for what the app holds, since that is a description and not a name.
-- The landing page footer is hand-maintained, because `/api/version` sits behind auth. It reads 0.0.21, as does the static fallback in the app's own footer.
 
 ## [0.0.20] - 2026-09-20
 
@@ -423,10 +326,6 @@ The four items 0.0.19 knowingly left open. One of them turned out to lose a save
 - **"Open positions" says when its total is incomplete**, carrying the same `no rate` chip as the rest of the app rather than printing a total that is short without saying so.
 - "Total borrowed" states that a trade waiting on a rate is left out, in step with every other figure on that card.
 
-### Notes
-
-- Verified by execution, with the 0.0.19 suite re-run unchanged: both FX invariants across 40,000 generated trades and 200 portfolios, aggregate reconciliation, the server bounds matrix, and no overflow at 1440px or 390px in either theme.
-
 ## [0.0.19] - 2026-09-20
 
 Five bugs from an audit of the money path, the date path and the forms.
@@ -438,11 +337,6 @@ Five bugs from an audit of the money path, the date path and the forms.
 - **A field's error was painted over by a live hint while the field stayed flagged.** Typing in a sibling recomputed the hints, which are written into the slot the error occupies, leaving a red field showing a figure computed from the value just rejected. An invalid field keeps its error until that field is edited.
 - **The stage preview converted at the rate belonging to the stage's old date.** Moving a repayment from 17 May to 15 July left the net gain converted at the 15 May rate and said nothing about it. The preview drops a stage's stored rate as soon as the form moves it to another day, as the server does, so it falls back and says "(converted on save)".
 - **"Added" named the wrong day.** `created_at` is a UTC instant while every other date is a local calendar day, so slicing it put a trade added at 00:09 in Berlin on the day before. It follows `todayISO`'s convention now.
-
-### Notes
-
-- Verified by execution: both FX invariants - `loanCostUsd === interestPaidUsd + principalFxUsd`, and `netGainUsd === netGain × rate` under a flat rate - across 40,000 generated trades and 200 portfolios, with stage-rate attribution, null propagation and partial-sale reconciliation.
-- The landing page footer had been left at v0.0.17 through the 0.0.18 release, the same slip 0.0.12 recorded. Audited and found clean: `derive`, the weighted-average maths, the date helpers across DST and leap days, `fx.js` caching and backfill, server-side validation, `esc()` coverage and layout in both themes.
 
 ## [0.0.18] - 2026-09-19
 
@@ -459,11 +353,6 @@ Five bugs from an audit of the money path, the date path and the forms.
 ### Fixed
 
 - **"Of which currency" painted a saving red.** A negative figure there means the currency moved in your favour, but it was coloured from the gain palette. Only the colour changed.
-
-### Notes
-
-- A card no longer clips its overflow, which is what lets a tooltip on the last row out. The bubble is hidden with `display`, not `visibility`, because a hidden bubble is still laid out and a wide one gave the phone layout a horizontal scrollbar while nothing was hovered.
-- Each bubble anchors to a box wide enough to hold it rather than to the 14px marker, which is why it cannot run off an edge and why there is no caret. Verified in Chromium at 1440px, 1100px and 390px in both themes.
 
 ## [0.0.17] - 2026-09-19
 
@@ -490,11 +379,6 @@ Eight bugs in the exchange rate lookup, found by auditing the path a euro trade'
 - The chosen column and direction are remembered between visits. The page is not: coming back and landing on page 4 is disorienting.
 - Below 760px the header row is hidden and a select stands in for it, as the nav already does at that width.
 
-### Notes
-
-- Sorting works on a copy, so the Summary and the hero tiles are unaffected by what the table is showing. Creating a trade jumps to the page it landed on, and changing sort or page closes an open stage editor.
-- Verified against an independently written comparison: all eight columns, both directions, every page, nulls last.
-
 ## [0.0.15] - 2026-09-19
 
 ### Fixed
@@ -520,10 +404,6 @@ Eight bugs in the exchange rate lookup, found by auditing the path a euro trade'
 
 - The exchange-rate lines on a EURC trade's stage cards were clipped mid-word. The cards sit inside the expanded row's cell, which inherits the table's `white-space: nowrap`; the cell resets it now, and the converted figure and the rate that produced it take a line each - the part that makes a conversion checkable against the ECB's tables.
 - The loan cost breakdown is two rows of its own rather than a run-on third line. It matters most when the cost is negative, which was the case cut off hardest: -$38.55 is $8.25 of interest less $46.80 the euro moved.
-
-### Notes
-
-- Presentation only; `lib/calc.js` is untouched. Verified by asserting that nothing inside the stage cards has `scrollWidth` greater than `clientWidth` at 1440px and 390px in both themes: twelve elements failed before the change, none after.
 
 ## [0.0.13] - 2026-09-19
 
@@ -576,21 +456,12 @@ The four low severity items left open by the 0.0.7 audit, all in the rate lookup
 - A trade in a currency other than the dollar carries its native amount on its own line, above the dates. The two used to share one line joined by a middot, which read as a run-on.
 - In card mode the Trade label is aligned to the top of its cell rather than floating in the middle of a three line stack.
 
-### Notes
-
-- Presentation only: `/api/trades` and `/api/summary` return byte-identical responses before and after. The first column narrowed rather than widening, because splitting the figures removed the longest string in it.
-
 ## [0.0.8] - 2026-09-19
 
 ### Added
 
 - A public landing page at `/`, in `landing/`. It explains what the app does in a screen or two and carries a **Use Aave Loop** button that leads to the app, and therefore to the password prompt. Served by nginx as static files, which leaves the Node process with no publicly reachable route.
 - The page shares the app's `myaave-theme` setting, so a dark session carries across both ways, and follows the system preference for a first time visitor.
-
-### Notes
-
-- The page is self contained rather than linking the app's stylesheet: `/styles.css` sits behind basic auth, so a public visitor would get a 401 and an unstyled page. Its text colour is a darker violet than the fills, because `#9896ff` measures 3.6:1 on the soft violet behind the status badges and fails contrast for small bold type.
-- The footer states that this is an independent tool and not affiliated with Aave, since the page borrows enough of their look that the question is worth answering.
 
 ## [0.0.7] - 2026-09-19
 
