@@ -41,7 +41,7 @@ The app wears its own mark, and the name comes off the social card.
 
 ### Changed
 
-- **The brand mark is Aave Loop's own logo.** The app had been wearing Aave's, in the header, on the landing page and on its 404. `AaveLoop_logo_transparent.png` is the full-resolution master, at 1254px. The pages load a 96px derivative of it: the mark is drawn at 24px, and the full-size file is 941KB, which was a megabyte a page load for a tile the size of a fingernail.
+- **The brand mark is Aave Loop's own logo.** The app had been wearing Aave's, in the header, on the landing page and on its 404. `AaveLoop_logo.png` is the master at 1254px, with `AaveLoop_logo_transparent.png` beside it for backgrounds that are not the violet tile. The pages load a 96px derivative: the mark is drawn at 24px, and the full-size file is 941KB, which was a megabyte a page load for a tile the size of a fingernail.
 - **`favicon.ico` and the apple-touch icon are regenerated from that logo**, the ico at 16, 32 and 48 with the tile's corners rounded, the touch icon at 180, square and opaque because iOS applies its own mask and composites transparency onto black. Both still carried Aave's mark.
 - **The social card is redrawn as `landing/og2.png`**, 1200x630 as before: the wordmark loses "Ledger", the mark is the new logo, and the second sentence of the subtitle starts on its own line rather than running on from the first. `og:image` and `twitter:image` name it. A new filename rather than an overwrite, because a scraper caches the image by URL; `og.png` stays where it is for the unfurls already pointing at it.
 - **The README is half the length it was**, opens with a link to this file, and drops the "Landing page" and "Running behind a proxy" sections. Every formula, all six `config.env` steps and the layout block are unchanged.
@@ -50,7 +50,6 @@ The app wears its own mark, and the name comes off the social card.
 ### Removed
 
 - `public/aaveLogo.png`, Aave's own mark, which nothing references any more.
-- `public/AaveLoop_logo.png`, the opaque 1254px copy, once the 96px mark and the icons had been generated from it. The transparent copy at the same size is kept as the one thing to regenerate from.
 - `landing/favicon.svg`, a hand-traced copy of the old glyph which had already drifted from the artwork once. The ico is an exact downscale of the real logo at every size a browser asks for, so the pages name it directly rather than keeping a tracing that has to be redrawn by hand whenever the mark moves.
 
 ### Notes
