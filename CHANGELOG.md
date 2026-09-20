@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [0.0.27] - 2026-09-20
+
+### Removed
+
+- **`TELEGRAM_GROUP_NAME` is no longer read.** It was kept for one release as the old name of the display-only setting, so that an existing `config.env` did not have to be touched. `TELEGRAM_CHAT_NAME` is now the only name for it, and a file still carrying the old key falls back to "your Telegram chat" - cosmetic, and only in the alert window, the startup line and the test message. The two mentions left in this file are history and describe what 0.0.24 and 0.0.26 actually did.
+
 ## [0.0.26] - 2026-09-20
 
 Three bugs from an audit of the bot, the alert sweep and the theme, and the wording stops assuming there is a group.

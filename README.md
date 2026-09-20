@@ -136,7 +136,7 @@ cp config.env.example config.env && chmod 600 config.env
 | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | the token from step 1 |
 | `TELEGRAM_CHAT_ID` | the id from step 3 |
-| `TELEGRAM_CHAT_NAME` | display only: shown in the alert window and at startup. `TELEGRAM_GROUP_NAME` is the old name and still read |
+| `TELEGRAM_CHAT_NAME` | display only: shown in the alert window and at startup |
 | `TELEGRAM_OWNER_ID` | optional, and only useful when the id above is a group: your own user id, so the bot answers you privately too |
 
 **5. Restart, and read the line it prints.** The file is read once, when the process starts, so an app already running will not notice an edit. On the way up it says one of:

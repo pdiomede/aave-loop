@@ -122,10 +122,8 @@ export function telegramConfig() {
   const ownerId = get('TELEGRAM_OWNER_ID');
   // Where alerts go does not have to be a group. A user id sends them to that
   // person's private chat with the bot, which is the whole setup for someone
-  // who is the only reader. `TELEGRAM_CHAT_NAME` is the name that says so;
-  // `TELEGRAM_GROUP_NAME` is still read, because it is in every config.env
-  // written before there was a reason to call it anything else.
-  const chatName = get('TELEGRAM_CHAT_NAME') || get('TELEGRAM_GROUP_NAME') || FALLBACK_NAME;
+  // who is the only reader, so the name of the setting does not say group.
+  const chatName = get('TELEGRAM_CHAT_NAME') || FALLBACK_NAME;
 
   let reason = null;
   if (!token && !chatId) {
