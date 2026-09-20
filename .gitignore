@@ -40,3 +40,8 @@ Thumbs.db
 
 # claude code
 .claude/
+
+# scratch notes
+# Personal working notes kept beside the code rather than in it. Nothing here
+# is part of the app, and the repo is public.
+next.md
