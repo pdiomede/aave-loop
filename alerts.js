@@ -190,13 +190,20 @@ export function alertMessage(trade, alert, price) {
   const at = n2(price) === n2(alert.goal_price) ? '' : ` - now $${n2(price)}`;
 
   const lines = [
-    `ETH ${verb} your $${n2(alert.goal_price)} goal${at}.`,
+    `ETH ${verb} your $${n2(alert.goal_price)} goal${at}`,
     '',
-    `Trade #${trade.id} - borrowed ${n2(trade.borrow_amount)} ${c} on ${fmtDate(trade.borrow_date)}`,
-    `Bought ${n4(trade.buy_eth)} ETH for ${n2(trade.buy_amount)} ${c} on ${fmtDate(trade.buy_date)}`,
+    `Trade #${trade.id}: borrowed ${n2(trade.borrow_amount)} ${c} on ${fmtDate(trade.borrow_date)}`,
+    `Bought: ${n4(trade.buy_eth)} ETH`,
   ];
 
-  if (typeof d.buyPriceUsd === 'number') lines.push(`Purchase price $${n2(d.buyPriceUsd)}`);
+  if (typeof d.buyPriceUsd === 'number') lines.push(`Purchase price: $${n2(d.buyPriceUsd)}`);
+
+  // Worth stands on its own line, so it can still be stated on a trade whose
+  // rate is missing: what the ETH is worth needs no exchange rate, while the
+  // gain underneath it is measured against a cost basis that does.
+  if (Number.isFinite(d.ethHeld) && Number.isFinite(price)) {
+    lines.push(`Worth now: $${n2(d.ethHeld * price)}`);
+  }
 
   const gain = unrealisedUsd(d, price);
   if (gain !== null) {
@@ -205,9 +212,7 @@ export function alertMessage(trade, alert, price) {
       typeof days === 'number' && days > 0
         ? ` after ${days} day${days === 1 ? '' : 's'} of interest`
         : ' after interest';
-    lines.push(
-      `Worth $${n2(d.ethHeld * price)} now, ${gain >= 0 ? '+' : '-'}$${n2(Math.abs(gain))}${since}`,
-    );
+    lines.push(`Gain: ${gain >= 0 ? '+' : '-'}$${n2(Math.abs(gain))}${since}`);
   }
 
   return lines.join('\n');
