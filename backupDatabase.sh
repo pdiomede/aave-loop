@@ -56,6 +56,9 @@ LOG=""
 # straight away; the default one lives in the destination folder and cannot be
 # opened until that folder has been checked.
 LOG_GIVEN=0
+# Whether the log is actually open. open_log() is called twice for a --log that
+# was typed: once before the checks, and again once the destination exists.
+LOG_OPEN=0
 KEEP=12
 # Whether --db was given, as opposed to defaulted. The default and MYAAVE_DB
 # are relative to the checkout - `data/myaave.db` only means anything there,
@@ -128,43 +131,50 @@ done
 # The script owns its log rather than leaving it to a `>>` in the crontab.
 # A redirect the shell cannot open fails before the script starts, so the
 # backup never runs at all - and with no mail configured, that is a weekly
-# job silently doing nothing. Opened here it is one warning, and the backup
-# still happens, which is the part that matters.
+# job silently doing nothing. Opened here a log that cannot be written is one
+# warning and the backup still happens, which is the part that matters.
 #
 # Called at whichever moment the log's path is first known to be usable, which
 # is not the same moment for both kinds: see LOG_GIVEN above. Everything after
 # the call lands in the file, and the point of opening it as early as each kind
 # allows is that the failures worth reading are the early ones - node missing
 # from cron's short PATH above all.
+#
+# It says nothing itself and gives up quietly, because it is called twice and a
+# first attempt that fails is ordinary rather than worth reporting. Whether the
+# log ever opened is LOG_OPEN, and the warning belongs to the one caller that
+# knows it was the last chance.
 open_log() {
   [ -n "$LOG" ] || return 0
+  [ "$LOG_OPEN" -eq 0 ] || return 0
   # In a subshell: a redirect bash cannot open reports itself before the
   # command's own stderr redirection applies, so the raw error leaks out.
-  if ( : >> "$LOG" ) 2>/dev/null; then
-    if [ -t 1 ]; then
-      # Someone is watching this one, so it goes to the terminal as well. tee
-      # is a separate process and finishes what is already in the pipe even
-      # after this shell has exited, so the file gets every line either way.
-      exec > >(tee -a "$LOG") 2>&1
-    else
-      # The real stderr is kept on fd 3 first, so die() can still reach it
-      # once everything else has been folded into the file.
-      exec 3>&2
-      exec >> "$LOG" 2>&1
-      ECHO_ERRORS=1
-    fi
-    # Escape codes are noise in a file somebody reads back months later, and
-    # after the redirect above stdout is a pipe or a file in any case.
-    BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; OFF=""
+  ( : >> "$LOG" ) 2>/dev/null || return 0
+  if [ -t 1 ]; then
+    # Someone is watching this one, so it goes to the terminal as well. tee
+    # is a separate process and finishes what is already in the pipe even
+    # after this shell has exited, so the file gets every line either way.
+    exec > >(tee -a "$LOG") 2>&1
   else
-    warn "Could not open the log at $LOG. Carrying on, writing to the console."
-    LOG=""
+    # The real stderr is kept on fd 3 first, so die() can still reach it
+    # once everything else has been folded into the file.
+    exec 3>&2
+    exec >> "$LOG" 2>&1
+    ECHO_ERRORS=1
   fi
+  LOG_OPEN=1
+  # Escape codes are noise in a file somebody reads back months later, and
+  # after the redirect above stdout is a pipe or a file in any case.
+  BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; OFF=""
 }
 
 case "$LOG" in ''|/*) ;; *) LOG="$INVOKED_FROM/$LOG" ;; esac
-# A path that was typed needs nothing checked first, so it opens here - before
-# --keep, before node, before the database is so much as looked at.
+# A path that was typed can usually open right here - before --keep, before
+# node, before the database is so much as looked at. When it cannot it is tried
+# once more below rather than given up on, because the commonest reason to fail
+# at this point is a --log inside the destination folder on a first run: the
+# folder it names is one this script is about to create a few lines further
+# down, and refusing to log a run for that is refusing over nothing.
 if [ "$LOG_GIVEN" -eq 1 ]; then
   open_log
 fi
@@ -179,6 +189,11 @@ case "$DEST" in /*) ;; *) DEST="$INVOKED_FROM/$DEST" ;; esac
 if [ "$DB_GIVEN" -eq 1 ]; then
   case "$DB" in /*) ;; *) DB="$INVOKED_FROM/$DB" ;; esac
 fi
+
+# A trailing slash is doubled into every name built from $DEST and every path
+# printed: `--dest /backups/` reported `/backups//myaave-20260921-030000.db`,
+# in the success line and in the log. Root keeps its one slash.
+while [ "$DEST" != "/" ] && [ "${DEST%/}" != "$DEST" ]; do DEST="${DEST%/}"; done
 
 # Every file this script writes, reads back or removes is matched on this
 # prefix and never on a bare `*.db`. Two things went wrong without it, and
@@ -211,7 +226,11 @@ fi
 # `myaave-backup.log` is neither timestamped nor a .db.
 if [ "$LOG_GIVEN" -eq 0 ]; then
   LOG="$DEST/$PREFIX-backup.log"
-  open_log
+fi
+open_log
+if [ -n "$LOG" ] && [ "$LOG_OPEN" -eq 0 ]; then
+  warn "Could not open the log at $LOG. Carrying on, writing to the console."
+  LOG=""
 fi
 
 case "$KEEP" in
@@ -276,8 +295,17 @@ OUT="$BASE.db"
 # Two runs inside the same second - a manual run right after cron fires, say -
 # would otherwise share a filename, and the second would silently overwrite
 # the first's backup rather than sit beside it.
+#
+# The test and the claim have to be the same step. `[ -e ]` followed by a write
+# is not: two runs starting in the same second both found nothing there and
+# both chose the same name, SQLite handed one of them `disk I/O error`, and
+# that one's own cleanup then deleted the finished backup the other had just
+# written. Two runs, no backup left, and the survivor died on the next line
+# without printing anything. noclobber makes the redirect itself fail when the
+# file appeared in between, so a name is claimed or it is not.
 SUFFIX=2
-while [ -e "$OUT" ]; do
+until ( set -o noclobber; : > "$OUT" ) 2>/dev/null; do
+  [ "$SUFFIX" -le 64 ] || die "Could not claim a name for the backup in $DEST after 64 tries."
   OUT="$BASE-$SUFFIX.db"
   SUFFIX=$((SUFFIX + 1))
 done
@@ -324,8 +352,16 @@ node -e '
   die "Backup failed. Nothing was kept."
 }
 
-SIZE="$(du -h "$OUT" | cut -f1 | tr -d ' ')"
-ok "Backed up to $OUT ($SIZE)"
+# Best effort, and deliberately not a bare assignment. `set -e` ends the script
+# on a failed command substitution, and an assignment has nowhere to say why:
+# when the file had been deleted from under it the run stopped here having
+# printed nothing at all, on any channel, after a copy that had succeeded.
+SIZE="$(du -h "$OUT" 2>/dev/null | cut -f1 | tr -d ' ')" || SIZE=""
+if [ -n "$SIZE" ]; then
+  ok "Backed up to $OUT ($SIZE)"
+else
+  ok "Backed up to $OUT"
+fi
 
 if [ "$KEEP" -gt 0 ]; then
   # Oldest first, past the newest $KEEP. `ls -t` is newest first, so the ones
