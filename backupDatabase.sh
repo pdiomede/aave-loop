@@ -23,9 +23,22 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; OFF=$'\033[0m'
 if [ ! -t 1 ]; then BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; OFF=""; fi
 
+# Whether a failure has to be repeated on the real stderr. Set when the log
+# swallowed this run's output whole, which is every unattended run: the
+# narration belongs in the file, but a run that failed should still be able to
+# say so where the caller is looking - cron's mail, or a calling script's own
+# screen. A terminal run tees, so there it would only print twice.
+ECHO_ERRORS=0
+
 ok()   { printf '  %s+%s %s\n' "$GREEN" "$OFF" "$1"; }
 warn() { printf '  %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
-die()  { printf '  %sx%s %s\n' "$RED" "$OFF" "$1" >&2; exit 1; }
+die()  {
+  printf '  %sx%s %s\n' "$RED" "$OFF" "$1" >&2
+  if [ "$ECHO_ERRORS" -eq 1 ]; then
+    printf '  x %s\n' "$1" >&3
+  fi
+  exit 1
+}
 
 DB="${MYAAVE_DB:-data/myaave.db}"
 # HOME is not guaranteed. cron sets it from the passwd entry, but a systemd
@@ -39,6 +52,10 @@ else
   DEST=""
 fi
 LOG=""
+# Whether --log was given. A path typed on the command line can be opened
+# straight away; the default one lives in the destination folder and cannot be
+# opened until that folder has been checked.
+LOG_GIVEN=0
 KEEP=12
 # Whether --db was given, as opposed to defaulted. The default and MYAAVE_DB
 # are relative to the checkout - `data/myaave.db` only means anything there,
@@ -52,16 +69,19 @@ Usage: ./backupDatabase.sh [options]
 
 Copies the live database to a timestamped file in the destination folder,
 using SQLite's online backup API - safe to run while the server is up. Older
-backups past --keep are then removed, oldest first.
+backups past --keep are then removed, oldest first. A log of every run is
+kept in that same folder, so the copies and the account of how they got there
+sit side by side.
 
   --dest DIR    Where backups go. Defaults to $MYAAVE_BACKUP_DIR, then to
                 ~/aaveloop-backups.
   --keep N      How many backups to keep. Defaults to 12. 0 keeps them all.
   --db FILE     Database to back up. Defaults to $MYAAVE_DB, then to
                 data/myaave.db.
-  --log FILE    Append this run's output here instead of the console, from
-                the first check onwards. A log that cannot be opened is a
-                warning, not a failure - the backup still runs.
+  --log FILE    Append this run's output here instead. Defaults to a file
+                beside the backups named after the database, so backing up
+                data/myaave.db writes myaave-backup.log. A log that cannot be
+                opened is a warning, not a failure - the backup still runs.
   --help        Show this message.
 
 A path typed into --dest, --log or --db is resolved from wherever you run
@@ -76,12 +96,17 @@ A weekly cron line. Run it as the user the service runs as, which is the one
 that can read the database: on a default install `data/` is mode 700 and owned
 by that account, so nobody else can even look inside it.
 
-  0 3 * * 0 cd /var/www/aave && ./backupDatabase.sh --log "$HOME/aaveloop-backup.log"
+  0 3 * * 0 cd /var/www/aave && ./backupDatabase.sh --dest /path/to/backups
 
 Add it with `crontab -e` while logged in as that user, or `sudo crontab -u
-<user> -e` from an account with sudo. Prefer --log over a `>>` redirect: a
-redirect the shell cannot open fails before this script starts, so the backup
-never runs, and with no mail configured nothing says so.
+<user> -e` from an account with sudo. There is deliberately no `>>` in that
+line: a redirect the shell cannot open fails before this script starts, so the
+backup never runs, and with no mail configured nothing says so. The script
+writes its own log instead, once it has checked the folder that log goes in.
+
+A run that fails still says so on stderr as well as in the log, and a run that
+succeeds says nothing there at all - so cron mails you about a backup that
+broke and stays quiet about every one that worked.
 USAGE
 }
 
@@ -93,35 +118,100 @@ while [ $# -gt 0 ]; do
     --keep=*) KEEP="${1#*=}"; shift ;;
     --db) [ $# -ge 2 ] || die "--db needs a path."; DB="$2"; DB_GIVEN=1; shift 2 ;;
     --db=*) DB="${1#*=}"; DB_GIVEN=1; shift ;;
-    --log) [ $# -ge 2 ] || die "--log needs a path."; LOG="$2"; shift 2 ;;
-    --log=*) LOG="${1#*=}"; shift ;;
+    --log) [ $# -ge 2 ] || die "--log needs a path."; LOG="$2"; LOG_GIVEN=1; shift 2 ;;
+    --log=*) LOG="${1#*=}"; LOG_GIVEN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1. Try --help." ;;
   esac
 done
-
-# The log is opened before anything that can fail, so everything this run has
-# to say lands in it. Opened after the checks below - where it used to be - the
-# failures most likely to happen under cron, node missing from a short PATH
-# above all, went to stderr and never reached the file: the log the schedule is
-# watched through stayed empty on precisely the runs worth reading.
-case "$LOG" in ''|/*) ;; *) LOG="$INVOKED_FROM/$LOG" ;; esac
 
 # The script owns its log rather than leaving it to a `>>` in the crontab.
 # A redirect the shell cannot open fails before the script starts, so the
 # backup never runs at all - and with no mail configured, that is a weekly
 # job silently doing nothing. Opened here it is one warning, and the backup
 # still happens, which is the part that matters.
-if [ -n "$LOG" ]; then
+#
+# Called at whichever moment the log's path is first known to be usable, which
+# is not the same moment for both kinds: see LOG_GIVEN above. Everything after
+# the call lands in the file, and the point of opening it as early as each kind
+# allows is that the failures worth reading are the early ones - node missing
+# from cron's short PATH above all.
+open_log() {
+  [ -n "$LOG" ] || return 0
   # In a subshell: a redirect bash cannot open reports itself before the
   # command's own stderr redirection applies, so the raw error leaks out.
   if ( : >> "$LOG" ) 2>/dev/null; then
-    exec >> "$LOG" 2>&1
-    # A log file is never a terminal.
+    if [ -t 1 ]; then
+      # Someone is watching this one, so it goes to the terminal as well. tee
+      # is a separate process and finishes what is already in the pipe even
+      # after this shell has exited, so the file gets every line either way.
+      exec > >(tee -a "$LOG") 2>&1
+    else
+      # The real stderr is kept on fd 3 first, so die() can still reach it
+      # once everything else has been folded into the file.
+      exec 3>&2
+      exec >> "$LOG" 2>&1
+      ECHO_ERRORS=1
+    fi
+    # Escape codes are noise in a file somebody reads back months later, and
+    # after the redirect above stdout is a pipe or a file in any case.
     BOLD=""; DIM=""; GREEN=""; YELLOW=""; RED=""; OFF=""
   else
     warn "Could not open the log at $LOG. Carrying on, writing to the console."
+    LOG=""
   fi
+}
+
+case "$LOG" in ''|/*) ;; *) LOG="$INVOKED_FROM/$LOG" ;; esac
+# A path that was typed needs nothing checked first, so it opens here - before
+# --keep, before node, before the database is so much as looked at.
+if [ "$LOG_GIVEN" -eq 1 ]; then
+  open_log
+fi
+
+[ -n "$DEST" ] || die "No destination. HOME is not set here, so pass --dest."
+
+# Relative to where this was run from, not to the checkout it lives in.
+# Without this for --db, standing in a folder with its own data/myaave.db and
+# passing `--db data/myaave.db` backed up the checkout's database instead, and
+# said it had succeeded: the wrong ledger, copied and reported as the right one.
+case "$DEST" in /*) ;; *) DEST="$INVOKED_FROM/$DEST" ;; esac
+if [ "$DB_GIVEN" -eq 1 ]; then
+  case "$DB" in /*) ;; *) DB="$INVOKED_FROM/$DB" ;; esac
+fi
+
+# Every file this script writes, reads back or removes is matched on this
+# prefix and never on a bare `*.db`. Two things went wrong without it, and
+# both destroyed data rather than merely miscounting: a destination pointed
+# at the database's own folder pruned the live `myaave.db`, because an idle
+# fortnight left it older than the backups around it; and two ledgers backed
+# up to one folder pruned each other, since the newest N of everything is
+# not the newest N of either. It also names the default log, which is why it
+# is worked out up here rather than beside the copy it prefixes.
+PREFIX="$(basename "${DB%.db}")"
+
+# Named in the failure, because the default is a home folder and a service
+# account often has none: the account the ledger runs as may be unable to
+# create its own, which is a destination to choose rather than a fault to fix.
+mkdir -p "$DEST" 2>/dev/null || die "Could not create $DEST. Pass --dest with somewhere this account can write."
+
+# Creatable and writable are different, and `mkdir -p` on a directory that is
+# already there succeeds whoever owns it. Without this the run got as far as
+# the copy and failed with SQLite's own "unable to open database file", which
+# names neither the directory nor the reason.
+if [ ! -w "$DEST" ] || [ ! -x "$DEST" ]; then
+  die "Cannot write into $DEST - it belongs to $(ls -ld "$DEST" | awk '{print $3}'). Pass --dest with somewhere this account can write."
+fi
+
+# The default log sits with the backups, so the folder holds both the copies
+# and the record of how they got there. It can only open now: until the two
+# checks above have passed there is no folder to write it into, which is also
+# why those two are the one pair of failures that can only reach the console.
+# The name cannot collide with a backup - the prune matches a timestamp, and
+# `myaave-backup.log` is neither timestamped nor a .db.
+if [ "$LOG_GIVEN" -eq 0 ]; then
+  LOG="$DEST/$PREFIX-backup.log"
+  open_log
 fi
 
 case "$KEEP" in
@@ -137,22 +227,11 @@ esac
 # while reporting success.
 KEEP=$((10#$KEEP))
 
-[ -n "$DEST" ] || die "No destination. HOME is not set here, so pass --dest."
-
 # Named now rather than reaching the copy and reporting a bare failure. cron
 # runs with a short PATH - often just /usr/bin:/bin - so a node installed by
 # nvm or under /usr/local is on the PATH of the person who tested this by hand
 # and absent from the one the schedule uses.
 command -v node >/dev/null 2>&1 || die "node is not on PATH. Under cron, set PATH in the crontab to include it."
-
-# Relative to where this was run from, not to the checkout it lives in.
-# Without this for --db, standing in a folder with its own data/myaave.db and
-# passing `--db data/myaave.db` backed up the checkout's database instead, and
-# said it had succeeded: the wrong ledger, copied and reported as the right one.
-case "$DEST" in /*) ;; *) DEST="$INVOKED_FROM/$DEST" ;; esac
-if [ "$DB_GIVEN" -eq 1 ]; then
-  case "$DB" in /*) ;; *) DB="$INVOKED_FROM/$DB" ;; esac
-fi
 
 # A file that is not there and a file that cannot be looked at are the same
 # `[ -f ]` and are not the same problem. `data/` is mode 700 owned by the
@@ -170,28 +249,6 @@ elif [ ! -f "$DB" ]; then
 elif [ ! -r "$DB" ]; then
   die "$DB is there but this account cannot read it - it belongs to $(ls -l "$DB" | awk '{print $3}'). Run this as that user."
 fi
-
-# Named in the failure, because the default is a home folder and a service
-# account often has none: the account the ledger runs as may be unable to
-# create its own, which is a destination to choose rather than a fault to fix.
-mkdir -p "$DEST" 2>/dev/null || die "Could not create $DEST. Pass --dest with somewhere this account can write."
-
-# Creatable and writable are different, and `mkdir -p` on a directory that is
-# already there succeeds whoever owns it. Without this the run got as far as
-# the copy and failed with SQLite's own "unable to open database file", which
-# names neither the directory nor the reason.
-if [ ! -w "$DEST" ] || [ ! -x "$DEST" ]; then
-  die "Cannot write into $DEST - it belongs to $(ls -ld "$DEST" | awk '{print $3}'). Pass --dest with somewhere this account can write."
-fi
-
-# Every file this script writes, reads back or removes is matched on this
-# prefix and never on a bare `*.db`. Two things went wrong without it, and
-# both destroyed data rather than merely miscounting: a destination pointed
-# at the database's own folder pruned the live `myaave.db`, because an idle
-# fortnight left it older than the backups around it; and two ledgers backed
-# up to one folder pruned each other, since the newest N of everything is
-# not the newest N of either.
-PREFIX="$(basename "${DB%.db}")"
 
 # Every backup of this database, newest first.
 #
