@@ -1126,6 +1126,13 @@ th[aria-sort="ascending"] .th-sort__caret {
   box-shadow: var(--ring);
 }
 
+/* The hero's four tiles, inside a year's overview card. The hero pushes them to
+   the right edge with `margin-left: auto`; inside a card they start where the
+   card's own content does. */
+.stats--year {
+  margin-left: 0;
+}
+
 .years__note {
   margin: 10px 2px 0;
   font-size: 12.5px;

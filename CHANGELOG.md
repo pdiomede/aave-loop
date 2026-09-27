@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.1.1] - 2026-09-27
+
+An audit of the year tabs added in 1.1.0. Four bugs, each reproduced on a scratch ledger before the fix and re-run after. The arithmetic came back clean and is not in this list: on a random ledger of 300 trades across four years, every trade lands on exactly one tab and the right one (its repay year, or the current year while open), net gain, closed and open counts, total borrowed and interest paid add up across the years to All, every month row and every best-or-worst tile sits inside its own year, and the blended annualized figure of each year and each currency matches an independent recomputation of 36,500 x total gain / total (loan x days).
+
+### Fixed
+
+- **A year tab never said what that year made.** The realized net gain and the blended annualized rate were left off the Performance card because the hero tiles already show them - but the hero is all-time, so on a year tab the year's own pair was computed by `summaryReport` and drawn nowhere. 1.1.0's own entry quotes "2025 reads +$2,380.00", a figure the 2025 tab did not show. Each year tab now opens with an overview card of the hero's tiles over that year's trades: 2025 reads +$2,380.00 at 60.33%, which is 36,500 x 2,380 / (20,000 x 42 + 10,000 x 60). Open positions is on the current year only, where open trades are filed; on a past year it could only read 0. All has no overview, since it would repeat the hero tile for tile. The hero and the overview are drawn by one `statTiles`, and Blended annualized takes its colour from `pctClass`, the rate's own helper.
+- **The rate banner blamed the wrong year.** Its count is ledger-wide, deliberately, because its button fills in every year at once. But it went on to say the result was "left out of the totals below", and on a year tab that was a claim about trades on another tab: a EURC trade repaid on 22 December 2025, offline so it had no rate, was said to be missing from 2026's figures, which never included it. On a year tab the banner now says how many of them are in that year - "It is not in 2026."
+- **Choosing a year by keyboard threw focus to the top of the page.** The render replaces the button that was pressed, so after Enter on 2025 `document.activeElement` was the body and the next Tab started over from the header. Focus moves to the new copy of the button, and only when the old one had it.
+- **`#toString` was treated as an old name for a view.** The `#summary` alias was looked up with `in`, which walks the prototype, so `#toString` and `#constructor` were rewritten to `#trades`. Cosmetic - the view was Trades either way - but it was the address bar being edited on a name nobody used. The lookup is own keys only now.
+
 ## [1.1.0] - 2026-09-27
 
 Summary is now Stats, and Stats is kept year by year.

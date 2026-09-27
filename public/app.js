@@ -1585,7 +1585,8 @@ function statRow(label, value, cls = '', hint = '') {
  *
  * The two figures that used to head this card, the realized gain and the
  * blended rate, are the first two tiles above the table on every view, so they
- * were being stated twice on the same screen. What is left is the seven that
+ * were being stated twice on the same screen. On a year tab those tiles are
+ * all-time, so the year's own pair is drawn by the overview card above this one. What is left is the seven that
  * are only here, and they read better as a grid than as two columns of a list.
  */
 function perfTile(label, value, cls = '', hint = '', sub = '', tileCls = '') {
@@ -1733,13 +1734,13 @@ function monthTable(rows) {
  * real rate could still arrive, but the button was the only thing that asks
  * and it used to appear only when something was missing outright.
  */
-function fxBanner(count, provisional = 0) {
+function fxBanner(count, provisional = 0, tab = null) {
   if (!count && !provisional) return '';
   const noun = count === 1 ? 'trade has' : 'trades have';
   const message = count
     ? `${count} ${noun} no exchange rate yet, so ${
         count === 1 ? 'its result is' : 'their results are'
-      } left out of the totals below.`
+      } left out of the totals${missingOnTab(count, tab)}`
     : `${provisional} recent ${
         provisional === 1 ? 'trade is' : 'trades are'
       } converted at the rate published the day before. The ECB may have published since.`;
@@ -1749,6 +1750,23 @@ function fxBanner(count, provisional = 0) {
       <button class="btn btn--sm btn--primary" type="button" id="fetch-rates">Fetch rates</button>
     </div>
   </section>`;
+}
+
+/**
+ * How much of a ledger-wide count the year tab underneath actually contains.
+ *
+ * The count stays ledger-wide because the button beside it fills in every year
+ * at once. But "left out of the totals below" was a claim about the figures on
+ * screen, and on a year tab it was made about trades filed under another year:
+ * a EURC trade repaid in December 2025 was said to be missing from 2026's
+ * figures, which never included it.
+ */
+function missingOnTab(count, tab) {
+  if (!tab || tab.count === count) return ' below.';
+  if (tab.count === 0) {
+    return count === 1 ? `. It is not in ${tab.year}.` : `. None of them is in ${tab.year}.`;
+  }
+  return `. ${tab.count} of them ${tab.count === 1 ? 'is' : 'are'} in ${tab.year}.`;
 }
 
 /**
@@ -1848,10 +1866,24 @@ function renderStatsView() {
           year === current ? ' Trades still open count here, in the current year.' : ''
         }</p>`;
 
+  // The year's own realized gain and blended rate. The hero above is all-time
+  // and the Performance card leaves those two out because the hero has them,
+  // so without this a year tab stated neither: the one figure a year view is
+  // for, computed in `summaryReport` and then drawn nowhere. Not on All, where
+  // it would repeat the hero tile for tile.
+  const overview =
+    year === 'all'
+      ? ''
+      : summaryCard(
+          `${year} overview`,
+          `<div class="stats stats--year">${statTiles(r, { open: year === current })}</div>`,
+        );
+
   mount.innerHTML = `
-    ${fxBanner(whole.missingFx, whole.provisionalFx)}
+    ${fxBanner(whole.missingFx, whole.provisionalFx, year === 'all' ? null : { year, count: r.missingFx })}
     ${yearTabs(years, year)}
     ${scope}
+    ${overview}
     ${summaryCard(
       'Performance',
       `<div class="perf-grid">
@@ -1912,20 +1944,28 @@ function renderStatsView() {
   `;
 }
 
-function renderHeroStats() {
-  const s = summarize(state.trades);
+/**
+ * The four headline figures, from anything shaped like `summarize()`.
+ *
+ * The hero draws them for the whole ledger and a year tab draws them for its
+ * year, from the one function, so the two cannot come to disagree about how a
+ * missing rate or an open position is written. `open: false` drops the last
+ * tile on a past year, where it could only ever read 0: open trades are filed
+ * under the current year.
+ */
+function statTiles(s, { open = true } = {}) {
   const tiles = [
     {
       // Not "$0" when no closed trade has a rate yet. Those trades made a real
       // gain that simply is not known in dollars, and this tile shows on the
-      // Trades view too, where the Summary's banner is not there to explain it.
+      // Trades view too, where the Stats view's banner is not there to explain it.
       label: 'Realized net gain',
       value: isNum(s.netGain) ? signedUsd(s.netGain) : s.missingFx ? RATE_MISSING : '-',
       cls: gainClass(s.netGain),
     },
-    { label: 'Blended annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: gainClass(s.avgPct) },
+    { label: 'Blended annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: pctClass(s.avgPct) },
     { label: 'Closed trades', value: String(s.closedCount) },
-    {
+    open && {
       label: 'Open positions',
       // The chip, not a quietly short total: the count includes every open
       // trade while the dollars can only include the ones with a rate.
@@ -1934,7 +1974,8 @@ function renderHeroStats() {
         : '0',
     },
   ];
-  document.getElementById('hero-stats').innerHTML = tiles
+  return tiles
+    .filter(Boolean)
     .map(
       (t) => `<div class="stat">
         <div class="stat__label">${t.label}</div>
@@ -1942,6 +1983,10 @@ function renderHeroStats() {
       </div>`,
     )
     .join('');
+}
+
+function renderHeroStats() {
+  document.getElementById('hero-stats').innerHTML = statTiles(summarize(state.trades));
 }
 
 /* ------------------------------------------------------------ alerts view */
@@ -2546,9 +2591,15 @@ const VIEWS = ['trades', 'stats', 'alerts'];
  */
 const VIEW_ALIASES = { summary: 'stats' };
 
+/**
+ * Own keys only. `in` and a bare lookup both walk the prototype, so `#toString`
+ * and `#constructor` counted as old names and were rewritten to `#trades`.
+ */
+const aliasOf = (raw) => (Object.hasOwn(VIEW_ALIASES, raw) ? VIEW_ALIASES[raw] : null);
+
 function viewFromHash() {
   const raw = (location.hash || '').replace(/^#/, '');
-  const name = VIEW_ALIASES[raw] ?? raw;
+  const name = aliasOf(raw) ?? raw;
   return VIEWS.includes(name) ? name : 'trades';
 }
 
@@ -2568,7 +2619,7 @@ function setView(view, { updateHash = true } = {}) {
 
   // An old name is rewritten even when the hash is otherwise left alone, so the
   // address bar agrees with the nav link that is now underlined.
-  const aliased = (location.hash || '').replace(/^#/, '') in VIEW_ALIASES;
+  const aliased = aliasOf((location.hash || '').replace(/^#/, '')) !== null;
   if ((updateHash && viewFromHash() !== state.view) || aliased) {
     history.replaceState(null, '', `#${state.view}`);
   }
@@ -2678,8 +2729,16 @@ function wire() {
 
     const yearTab = e.target.closest('[data-stats-year]');
     if (yearTab) {
+      // The render replaces the button that was pressed, so focus fell back to
+      // the body and a keyboard user choosing a year was sent to the top of
+      // the page. Put it on the new copy - only if the old one had it, so a
+      // browser that does not focus a clicked button is left as it was.
+      const hadFocus = document.activeElement === yearTab;
       state.statsYear = yearTab.dataset.statsYear;
       render();
+      if (hadFocus) {
+        document.querySelector(`[data-stats-year="${state.statsYear}"]`)?.focus();
+      }
       return;
     }
 
