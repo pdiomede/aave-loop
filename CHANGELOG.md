@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.1.0] - 2026-09-27
+
+Summary is now Stats, and Stats is kept year by year.
+
+### Added
+
+- **A tab per year on Stats, plus All.** Performance, By currency and By month closed are worked out for the year picked, newest year first; All is the view exactly as it was. A trade counts in the year it was repaid, which is the rule "By month closed" has always used, so a loan opened on 15 December 2025 and repaid on 2 February 2026 is 2026's in both places. A trade not yet repaid has no closure date and counts in the current year, which keeps capital still at work on this year's tab. Reproduced on a scratch ledger with trades repaid in April 2025, 31 December 2025 and February 2026 and one still open: 2025 reads +$2,380.00 over two trades, 2026 reads +$2,440.00 over one closed and one open, and All reads +$4,820.00, the sum of the two. `statsYear` in `lib/calc.js` asks `derive` whether a trade is repaid rather than reading `repay_date`, because a date with no amount is not a repayment.
+
+### Changed
+
+- **Summary is called Stats**, in the nav, the view heading, the README and the "Fetch rates" hint. `#summary` still opens it and is rewritten to `#stats`, so a bookmark keeps working. The hero tiles move from `id="stats"` to `id="hero-stats"`, or `#stats` in the address bar would have been an anchor to them. `/api/summary` and the Telegram `/summary` command are unchanged.
+- **The exchange-rate banner stays ledger-wide** above the tabs. Its button fetches every missing rate at once, and a count scoped to one year above a button that also fills in the others would describe less than it does.
+- **Total borrowed says "the trades on this tab"** rather than "everything ever borrowed", which stopped being true on a year tab.
+
 ## [1.0.1] - 2026-09-20
 
 Two lines on the landing page that were breaking in the wrong places.

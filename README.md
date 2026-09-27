@@ -27,7 +27,7 @@ A trade is created with the borrow alone, then each stage is added as it happens
 | Sell ETH | date, ETH sold, amount received | `SOLD` |
 | Repay | date, amount repaid | `CLOSED` |
 
-**Trades** is the history table; expand a row to see its four stages and edit them. **Summary** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed and average hold. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money.
+**Trades** is the history table; expand a row to see its four stages and edit them. **Stats** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed and average hold. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money. Stats is split into a tab per year, plus **All** for the whole ledger: a trade counts in the year it was repaid, and one still open counts in the current year. The four figures above the tabs stay all-time.
 
 ## The math
 
@@ -60,7 +60,7 @@ The loan cost can be negative: if the euro fell between borrowing and repaying, 
 
 - **Rates are the ECB's**, read through a public mirror of its daily file rather than from the Bank directly - `MYAAVE_FX_URL` points somewhere else if you would rather it did. The ECB publishes once per business day, so a Sunday transaction is converted at Friday's rate. The publication date is stored and shown next to the figure, so any conversion can be checked against [the ECB's own tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
 - **EURC is valued as one euro.** There is no free historical feed for the coin itself, and it tracks the euro closely enough for this to be the honest approximation. It is an approximation all the same.
-- **Working offline.** A trade always saves, whether or not a rate could be fetched. One without a rate is marked rather than guessed at and left out of the totals; **Fetch rates** on the Summary fills in everything outstanding once the network is back. Each day is only ever looked up once.
+- **Working offline.** A trade always saves, whether or not a rate could be fetched. One without a rate is marked rather than guessed at and left out of the totals; **Fetch rates** on Stats fills in everything outstanding once the network is back. Each day is only ever looked up once.
 - **A known limitation.** An open position is not marked to today's rate. Its dollar value is its cost basis on the day it was borrowed, so the currency's movement on capital still at work is not shown until the loan is repaid.
 
 ## Price alerts

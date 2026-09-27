@@ -2,6 +2,8 @@ import {
   derive,
   summarize,
   summaryReport,
+  statsYears,
+  statsYear,
   accruedInterest,
   daysBetween,
   todayISO,
@@ -185,7 +187,7 @@ const hintHead = (label, tip, cls = '') =>
   `<th${cls ? ` class="${cls}"` : ''} data-tip="${esc(tip)}"><span class="th-tip">${label}</span></th>`;
 
 /**
- * Every explanation in the Summary, in one place, so the wording can be checked
+ * Every explanation on the Stats view, in one place, so the wording can be checked
  * against lib/calc.js rather than against the label sitting above it.
  *
  * Each one says which trades it counts. That is the detail that makes two
@@ -209,9 +211,9 @@ const TIPS = {
     'borrowed and the day you repaid. A negative figure means the currency moved your way ' +
     'and the loan cost less than the interest alone. Always zero on a dollar loan.',
   totalBorrowed:
-    'Everything ever borrowed, open trades included, each loan valued at the rate on its own ' +
-    'borrow date. A running total, not the amount currently at risk. Only the borrow rate ' +
-    'matters here, so a trade waiting on a later one still counts - it is the result figures ' +
+    'Everything borrowed by the trades on this tab, open ones included, each loan valued at ' +
+    'the rate on its own borrow date. A running total, not the amount currently at risk. ' +
+    'Only the borrow rate matters here, so a trade waiting on a later one still counts - it is the result figures ' +
     'above that leave it out.',
   avgHold:
     'Mean days from borrowing to repaying, over the same closed trades the figures above are ' +
@@ -256,7 +258,7 @@ const TIPS = {
       'The result for this month against the largest month in the table, so the bars can be ' +
       'compared at a glance.',
   },
-  noRate: 'No exchange rate for this date yet. Use Fetch rates on the Summary.',
+  noRate: 'No exchange rate for this date yet. Use Fetch rates on Stats.',
   alerts: {
     trade: 'The trade the goal was set on. A trade can appear more than once: an alert is kept after it fires, so setting a new goal adds a row rather than replacing one.',
     goal: 'The ETH price the alert is waiting for, in dollars.',
@@ -387,7 +389,7 @@ function saveSort() {
  *
  * Works on a copy: state.trades stays exactly as the server sent it, because
  * summarize() and summaryReport() read it whole for the hero tiles and the
- * Summary view, and neither should notice this feature exists.
+ * Stats view, and neither should notice this feature exists.
  *
  * A row with no value for the column sorts last in BOTH directions. Ascending
  * by net gain should not fill the first page with open trades that have no gain
@@ -577,6 +579,10 @@ const state = {
   // rewrites `state.alerts`. Polling for a header figure through that would put
   // a second writer on the armed-alert map for no reason.
   eth: null,
+  // The year tab open on the Stats view: '2026', 'all', or null for the newest
+  // year. Kept for the session only, like the page number, and checked against
+  // the ledger on every render because a delete can take a year's last trade.
+  statsYear: null,
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -1759,7 +1765,7 @@ const ECB_RATES_URL =
   'https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html';
 
 /**
- * The note under the Summary.
+ * The note under the Stats view.
  *
  * One sentence, scoped. Four of the five currencies are pegged, and `rateOf`
  * in lib/calc.js hands a pegged coin a literal 1, so on a USDC ledger - the
@@ -1783,8 +1789,24 @@ const SUMMARY_FOOT = `<p class="summary__foot muted">
     for the day of each transaction, or for the last business day before it.
   </p>`;
 
-function renderSummary() {
-  const mount = document.getElementById('summary-mount');
+/**
+ * The year tabs, newest first, with All last.
+ *
+ * Buttons carrying `aria-pressed` rather than an ARIA tablist: a tablist
+ * promises arrow-key navigation between tabs, and a row of toggle buttons
+ * promises only what a button does, which is all this is.
+ */
+function yearTabs(years, selected) {
+  const tab = (value, label) => `<button class="years__tab${
+    value === selected ? ' is-active' : ''
+  }" type="button" data-stats-year="${value}" aria-pressed="${value === selected}">${label}</button>`;
+  return `<div class="years" role="group" aria-label="Year">
+    ${years.map((y) => tab(y, y)).join('')}${tab('all', 'All')}
+  </div>`;
+}
+
+function renderStatsView() {
+  const mount = document.getElementById('stats-mount');
 
   if (state.trades.length === 0) {
     mount.innerHTML = `<section class="card"><div class="empty">
@@ -1794,11 +1816,42 @@ function renderSummary() {
     return;
   }
 
-  const r = summaryReport(state.trades);
+  // One `asOf` for the whole render, so a view drawn across midnight cannot
+  // file an open trade under one year for the tabs and another for the cards.
+  const asOf = todayISO();
+  const years = statsYears(state.trades, asOf);
+  // A year that has lost its last trade - deleted, or its repayment moved to
+  // another year - falls back to the newest rather than rendering empty cards.
+  if (state.statsYear !== 'all' && !years.includes(state.statsYear)) {
+    state.statsYear = years[0] ?? 'all';
+  }
+  const year = state.statsYear;
+  const trades =
+    year === 'all' ? state.trades : state.trades.filter((t) => statsYear(t, asOf) === year);
+
+  const r = summaryReport(trades, asOf);
   const valuedAny = r.valuedCount > 0;
 
+  // The banner is about the ledger, not the year: its button fetches every
+  // missing rate at once, and a count scoped to 2025 above a button that also
+  // fills in 2026 would be describing less than it does.
+  const whole = summarize(state.trades, asOf);
+
+  // Said once, under the tabs, because it is what every card below means by
+  // "this year" and none of their labels can carry it. Not on All, where no
+  // trade has been filed anywhere.
+  const current = asOf.slice(0, 4);
+  const scope =
+    year === 'all'
+      ? ''
+      : `<p class="years__note muted">Trades count in the year they were repaid.${
+          year === current ? ' Trades still open count here, in the current year.' : ''
+        }</p>`;
+
   mount.innerHTML = `
-    ${fxBanner(r.missingFx, r.provisionalFx)}
+    ${fxBanner(whole.missingFx, whole.provisionalFx)}
+    ${yearTabs(years, year)}
+    ${scope}
     ${summaryCard(
       'Performance',
       `<div class="perf-grid">
@@ -1859,7 +1912,7 @@ function renderSummary() {
   `;
 }
 
-function renderStats() {
+function renderHeroStats() {
   const s = summarize(state.trades);
   const tiles = [
     {
@@ -1881,7 +1934,7 @@ function renderStats() {
         : '0',
     },
   ];
-  document.getElementById('stats').innerHTML = tiles
+  document.getElementById('hero-stats').innerHTML = tiles
     .map(
       (t) => `<div class="stat">
         <div class="stat__label">${t.label}</div>
@@ -2004,8 +2057,8 @@ function renderAlerts() {
 
 function render() {
   state.draft = captureDraft();
-  renderStats();
-  if (state.view === 'summary') renderSummary();
+  renderHeroStats();
+  if (state.view === 'stats') renderStatsView();
   else if (state.view === 'alerts') renderAlerts();
   else renderTable();
 }
@@ -2485,10 +2538,17 @@ function toast(message) {
 
 /* ------------------------------------------------------------------ views */
 
-const VIEWS = ['trades', 'summary', 'alerts'];
+const VIEWS = ['trades', 'stats', 'alerts'];
+
+/**
+ * `#summary` is what the Stats view was called before it had year tabs. A
+ * bookmark to it should land on the same page it always did, not on Trades.
+ */
+const VIEW_ALIASES = { summary: 'stats' };
 
 function viewFromHash() {
-  const name = (location.hash || '').replace(/^#/, '');
+  const raw = (location.hash || '').replace(/^#/, '');
+  const name = VIEW_ALIASES[raw] ?? raw;
   return VIEWS.includes(name) ? name : 'trades';
 }
 
@@ -2506,7 +2566,10 @@ function setView(view, { updateHash = true } = {}) {
     link.classList.toggle('is-active', link.dataset.view === state.view);
   }
 
-  if (updateHash && viewFromHash() !== state.view) {
+  // An old name is rewritten even when the hash is otherwise left alone, so the
+  // address bar agrees with the nav link that is now underlined.
+  const aliased = (location.hash || '').replace(/^#/, '') in VIEW_ALIASES;
+  if ((updateHash && viewFromHash() !== state.view) || aliased) {
     history.replaceState(null, '', `#${state.view}`);
   }
 
@@ -2610,6 +2673,13 @@ function wire() {
     const bell = e.target.closest('[data-alert-trade]');
     if (bell) {
       openAlertDialog(Number(bell.dataset.alertTrade));
+      return;
+    }
+
+    const yearTab = e.target.closest('[data-stats-year]');
+    if (yearTab) {
+      state.statsYear = yearTab.dataset.statsYear;
+      render();
       return;
     }
 
@@ -2937,7 +3007,7 @@ async function boot() {
       <h3>Could not reach the server</h3>
       <p>Check that it is still running, then reload this page.</p>
     </div>`;
-    renderStats();
+    renderHeroStats();
     return;
   }
 
