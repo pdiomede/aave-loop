@@ -9,6 +9,15 @@
 #
 set -euo pipefail
 
+# Backups are private. `data/` is mode 700 so that nobody but the service
+# account can read the ledger, but a copy made under the usual umask of 022
+# came out -rw-r--r--, in a destination folder created 755: any account on the
+# host could read the whole ledger from its backups instead. 077 keeps every
+# copy, the destination this creates and the log readable by this account
+# alone. A destination that already exists keeps its own mode; the files in it
+# are 600 either way.
+umask 077
+
 # Kept before the cd, so a relative --dest or --log means what the person
 # typing it meant. Without this they resolved against the checkout instead:
 # `--dest backups` from a home folder quietly filled /var/www/aave/backups,
@@ -276,8 +285,29 @@ fi
 # whose name merely starts the same way, and `--keep 1` on myaave.db then
 # deleted every backup myaave-old.db had - the cross-database pruning the
 # prefix was introduced to stop, walked straight around.
-backups_newest_first() {
+#
+# And a name that matches is not yet a backup. The name is claimed before the
+# copy starts, so a run killed part way - a reboot, the OOM killer, a SIGKILL
+# no trap can see - left an empty file under a perfectly good name. Counted,
+# it took one of the --keep places from a real backup, and as the newest it was
+# the one a restore would have reached for: reproduced by killing a run whose
+# copy was still going, after which the next run reported "2 backup(s)" for one
+# backup and one empty file. Only a file that opens with SQLite's header is a
+# backup. The redirect of stderr comes first so an unreadable file is quietly
+# not a backup, rather than an error printed from inside the prune.
+backup_matches() {
   ls -1t "$DEST/$PREFIX"-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]*.db 2>/dev/null
+}
+is_backup() {
+  local magic=""
+  IFS= read -r -n 15 magic 2>/dev/null < "$1" || true
+  [ "$magic" = "SQLite format 3" ]
+}
+backups_newest_first() {
+  local f
+  while IFS= read -r f; do
+    if [ -n "$f" ] && is_backup "$f"; then printf '%s\n' "$f"; fi
+  done < <(backup_matches)
 }
 
 # Absolute, with symlinks and `..` resolved, so the guard in the prune loop
@@ -309,6 +339,25 @@ until ( set -o noclobber; : > "$OUT" ) 2>/dev/null; do
   OUT="$BASE-$SUFFIX.db"
   SUFFIX=$((SUFFIX + 1))
 done
+
+# The claim only reserves the name. The copy itself goes to a hidden file
+# beside it and is renamed over the claim once it is whole, so no file under a
+# backup's name ever holds half a ledger, and the claim is removed on every way
+# out that is not success: a failed copy, Ctrl-C, or the SIGTERM a shutdown
+# sends. Before this a killed run left its empty claim behind for good (see
+# is_backup above, which covers the kills no trap can catch). The -wal, -shm
+# and -journal names are what SQLite may leave beside the copy if it is
+# interrupted mid-write.
+TMP="$DEST/.${OUT##*/}.partial"
+DONE=0
+cleanup() {
+  if [ "$DONE" -eq 0 ]; then rm -f "$OUT"; fi
+  rm -f "$TMP" "$TMP-wal" "$TMP-shm" "$TMP-journal"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # The online backup API, not a file copy. A plain `cp` of a WAL-mode database
 # mid-write can capture the main file without the WAL's newer pages and hand
@@ -342,15 +391,40 @@ node -e '
       }
     })
     .catch((err) => { console.error(err.message); process.exit(1); });
-' "$DB" "$OUT" || {
+' "$DB" "$TMP" || {
   # A rejected backup can still have created the destination and written part
   # of it - a disk filling up mid-copy is the ordinary way that happens. By
   # name and by the glob below that file is indistinguishable from a good
   # one, so leaving it means the next run counts it and prunes a real backup
-  # to make room for a broken one.
-  rm -f "$OUT"
+  # to make room for a broken one. The EXIT trap removes both the partial copy
+  # and the claim.
   die "Backup failed. Nothing was kept."
 }
+
+# rename(2) within one folder: the backup appears under its name complete or
+# not at all.
+mv -f "$TMP" "$OUT" || die "Backed up, but could not move the copy into place as $OUT."
+DONE=1
+
+# Debris from runs that were killed where no trap could run: a claim that never
+# became a backup, and a hidden partial copy. Only files matching this
+# database's exact backup names, and only once they are an hour old, so a run
+# still copying at this moment - the same-second case the claim exists for -
+# never loses its files to this one.
+while IFS= read -r stale; do
+  [ -n "$stale" ] || continue
+  if is_backup "$stale"; then continue; fi
+  if [ "$(canonical "$stale")" = "$LIVE_DB" ]; then continue; fi
+  if [ -z "$(find "$stale" -prune -mmin +60 2>/dev/null)" ]; then continue; fi
+  rm -f "$stale"
+  warn "Removed $stale: an interrupted run's empty claim, not a backup."
+done < <(backup_matches)
+for stale in "$DEST/.$PREFIX"-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]*.db.partial*; do
+  [ -e "$stale" ] || continue
+  if [ -z "$(find "$stale" -prune -mmin +60 2>/dev/null)" ]; then continue; fi
+  rm -f "$stale"
+  warn "Removed $stale: an interrupted run's partial copy."
+done
 
 # Best effort, and deliberately not a bare assignment. `set -e` ends the script
 # on a failed command substitution, and an assignment has nowhere to say why:
