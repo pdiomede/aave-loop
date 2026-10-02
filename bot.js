@@ -217,11 +217,44 @@ async function reply(html, to = null) {
  * group and is not part of the name. Arguments are ignored rather than refused:
  * `/price now` is a request for the price.
  */
-export function commandOf(text) {
+export function commandOf(text, me = null) {
   if (typeof text !== 'string' || text[0] !== '/') return null;
   const first = text.trim().split(/\s+/)[0];
-  const name = first.slice(1).split('@')[0].toLowerCase();
+  const [raw, to] = first.slice(1).split('@');
+  // Addressed to another bot, so not ours to answer. Stripped and ignored, the
+  // suffix let `/holding@SomeOtherBot` in the group post the whole position.
+  // Only judged once our own name is known; until then a suffixed command is
+  // answered as before rather than refused on a lookup that failed.
+  if (to && me && to.toLowerCase() !== me.toLowerCase()) return null;
+  const name = raw.toLowerCase();
   return /^[a-z0-9_]{1,32}$/.test(name) ? name : null;
+}
+
+/**
+ * This bot's own username, asked of Telegram once and kept. Null until that
+ * has worked, and asked again on the next batch if it did not.
+ */
+let myName = null;
+async function botUsername() {
+  if (myName) return myName;
+  const { token } = telegramConfig();
+  if (!token) return null;
+  const controller = new AbortController();
+  const guard = setTimeout(() => controller.abort(), 5_000);
+  guard.unref?.();
+  try {
+    const res = await fetch(`${API}/bot${token}/getMe`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => null);
+    if (res.ok && body?.ok && typeof body.result?.username === 'string') myName = body.result.username;
+  } catch {
+    // Unknown for now. `commandOf` answers suffixed commands as it always did.
+  } finally {
+    clearTimeout(guard);
+  }
+  return myName;
 }
 
 async function textFor(command) {
@@ -378,6 +411,9 @@ function allowedChats() {
 
 async function handle(updates) {
   const allowed = allowedChats();
+  // Only needed to tell our commands from another bot's, so only asked when
+  // some message in the batch carries a suffix.
+  const me = updates.some((u) => /^\/\S*@/.test(u.message?.text ?? '')) ? await botUsername() : null;
   let stale = 0;
   let handled = 0;
   let dropped = 0;
@@ -407,7 +443,7 @@ async function handle(updates) {
       continue;
     }
 
-    const command = commandOf(msg.text);
+    const command = commandOf(msg.text, me);
     if (!command) continue;
 
     // Past the cap they are dropped, and the offset covering them has already

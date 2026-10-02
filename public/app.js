@@ -197,87 +197,61 @@ const hintHead = (label, tip, cls = '') =>
  */
 const TIPS = {
   netGain:
-    'What the repaid trades made once the loan was settled: the ETH sale less the purchase, ' +
-    'less what the loan cost, less the gas paid on every stage. A closed trade still waiting on an exchange rate is left out ' +
-    'rather than counted as zero.',
+    'What closed trades made: the ETH sale, less the purchase, the loan cost and gas. ' +
+    'Trades still waiting on a rate are left out.',
   avgPct:
-    'The return on the capital actually deployed, weighted by how much and for how long. ' +
-    'Not the average of the percentages in the table: a one day flip would otherwise ' +
-    'count as heavily as a trade held for months.',
+    'Return on the capital used, weighted by loan size and days held. ' +
+    'Not an average of the rates in the table.',
   interestPaid:
-    'Interest on the closed loans only, each converted at the rate published for the day it ' +
-    'was repaid. Interest still accruing on an open loan is not in here.',
+    'Interest on closed loans, converted at the rate on each repay date. Open loans are not included.',
   currencyEffect:
-    'The other half of what the loan cost: the principal revalued between the day you ' +
-    'borrowed and the day you repaid. A negative figure means the currency moved your way ' +
-    'and the loan cost less than the interest alone. Always zero on a dollar loan.',
+    'How the currency moved the principal between borrowing and repaying. ' +
+    'Negative means it moved your way. Always zero on a dollar loan.',
   totalBorrowed:
-    'Everything borrowed by the trades on this tab, open ones included, each loan valued at ' +
-    'the rate on its own borrow date. A running total, not the amount currently at risk. ' +
-    'Only the borrow rate matters here, so a trade waiting on a later one still counts - it is the result figures ' +
-    'above that leave it out.',
-  avgHold:
-    'Mean days from borrowing to repaying, over the same closed trades the figures above are ' +
-    'built from.',
+    "Everything borrowed by this tab's trades, open ones included, at each borrow date's rate. " +
+    'A running total, not what is at risk today.',
+  avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
-    'Gas paid on every stage of the trades on this tab, in dollars as typed - open trades and ' +
-    'closed ones still waiting on an exchange rate included, since a fee needs no rate. Each ' +
-    'fee is taken off its own trade\'s result wherever that result is shown, so this can be ' +
-    'more than the gas inside the realized figures above. A stage saved before fees were asked ' +
-    'for has none on record, and is counted underneath rather than as free.',
+    "Gas paid on every stage of this tab's trades, open ones included. Unrecorded ones are counted below.",
   best:
-    'The largest result in dollars, over the closed trades whose dollar result is known. The ' +
-    'rate underneath is that trade\'s, not the ranking: the two tiles below rank on the rate ' +
-    'instead, and they often name a different trade.',
-  worst:
-    'The smallest result in dollars, over the same trades. On a ledger carrying a loss this ' +
-    'is the biggest one, and it says so.',
+    "The largest dollar result among closed trades. The rate under it is that trade's own. " +
+    'The % tiles rank by rate and often pick another trade.',
+  worst: 'The smallest dollar result among closed trades. With a loss, it is the biggest one.',
   bestPct:
-    'The best annualized return, over the same closed trades - which is rarely the same trade ' +
-    'as the biggest cheque. A few days at a good price beats months at a fair one. Treat a ' +
-    'very short trade with care: a same day loop is scaled to a full year from one day of ' +
-    'capital at work, so a small gain can read as an enormous rate.',
+    'The best annualized return among closed trades, often not the biggest dollar gain. ' +
+    'Short trades are scaled to a full year, so one good day can show a huge rate.',
   worstPct:
-    'The weakest annualized return, over the same trades, and the biggest loss by rate once ' +
-    'one exists. A trade whose rate cannot be worked out - a loan of nothing, or dates that ' +
-    'run backwards - is left out of both rate tiles rather than ranked as zero.',
+    'The weakest annualized return among closed trades, or the biggest loss by rate. ' +
+    'Trades whose rate cannot be worked out are left out, not counted as zero.',
   cur: {
-    currency:
-      'The stablecoin the loan was denominated in. A trade is grouped by what you borrowed, ' +
-      'not by what you bought.',
-    closed: 'Trades in this currency that have been repaid.',
-    open: 'Trades in this currency still running, whether the ETH has been bought, sold or neither.',
+    currency: 'The stablecoin borrowed. Trades are grouped by what you borrowed.',
+    closed: 'Repaid trades in this currency.',
+    open: 'Trades in this currency not yet repaid.',
     borrowed:
-      'Everything borrowed in this currency, open and closed, in dollars at the rate on each ' +
-      'borrow date. The line beneath is the same total in the currency itself.',
-    netGain:
-      'The dollar result of the closed trades in this currency, after gas. Open trades contribute nothing.',
-    avgPct:
-      'The closed trades in this currency blended together, weighted by loan size and days ' +
-      'held, the same way the headline rate is.',
+      'Everything borrowed in this currency, open and closed, in dollars. Below, the same total in the coin.',
+    netGain: 'Dollar result of closed trades in this currency, after gas.',
+    avgPct: 'Closed trades in this currency, blended by loan size and days held.',
   },
   month: {
-    month:
-      'The month the loan was repaid, which is when the gain became real. A trade opened in ' +
-      'March and closed in May lands in May.',
-    trades: 'Closed trades that landed in this month.',
-    netGain: 'The dollar result of the trades closed in this month, after gas.',
-    share:
-      'The result for this month against the largest month in the table, so the bars can be ' +
-      'compared at a glance.',
+    month: 'The month the loan was repaid, which is when the gain became real.',
+    trades: 'Trades closed this month with a dollar result.',
+    netGain: 'Dollar result this month, after gas.',
+    share: "This month's result compared with the largest month in the table.",
   },
-  noRate: 'No exchange rate for this date yet. Use Fetch rates on Stats.',
+  noRate: 'No rate yet. Use Fetch rates on Stats.',
   alerts: {
-    trade: 'The trade the goal was set on. A trade can appear more than once: an alert is kept after it fires, so setting a new goal adds a row rather than replacing one.',
-    goal: 'The ETH price the alert is waiting for, in dollars.',
+    trade:
+      'The trade the goal is on. A trade can appear twice: a new goal adds a row instead of replacing the old one.',
+    goal: 'The ETH price to wait for, in USD.',
     direction:
-      'Settled when the alert was saved, against what ETH cost at that moment rather than what you paid for it. A goal above the price then is one it has to rise to; below, one it has to fall to.',
+      "Set when saved, against ETH's price at that moment. A goal above it waits for a rise; below it, for a fall.",
     status:
-      'ARMED is still being watched. FIRED means the goal was reached. FAILED means the message could not be delivered after three attempts. A FIRED row can also carry a "not sent" note, which means the goal was reached but Telegram refused the message, and an ARMED row a "not watched" one.',
+      'ARMED: still watched. FIRED: goal reached. FAILED: not delivered after three tries. ' +
+      '"not sent": reached, but Telegram refused it. "not watched": ETH sold.',
     suspended:
-      'The ETH on this trade has been sold, so the goal is no longer being checked. The alert is kept rather than deleted: restoring the trade to holding puts it back under watch at the same price.',
-    set: 'The day the goal was saved.',
-    firedAt: 'When the goal was reached, and the price it was reached at. Blank while an alert is still armed.',
+      'No ETH held now (sold, or the purchase undone), so this goal is not checked. It is kept for when the trade holds again.',
+    set: 'When it was saved.',
+    firedAt: 'When the goal was reached, and at what price. Blank while armed.',
   },
 };
 
@@ -1456,7 +1430,11 @@ function stageSummary(stage, t, d) {
         // ran off the card, which is the one figure a reader most needs to see.
         (!d.isUsdPegged && isNum(d.principalFxUsd)
           ? rowUsd('of which interest', usd(d.interestPaidUsd)) +
-            rowUsd('of which currency', signedUsd(d.principalFxUsd), gainClass(d.principalFxUsd))
+            // Coloured by what it did to you, not by its sign. It is part of a
+            // cost, so a positive figure (the euro rose, the loan cost more in
+            // dollars) is the bad case and was being shown green, and the
+            // favourable one - the reason a loan cost comes out negative - red.
+            rowUsd('of which currency', signedUsd(d.principalFxUsd), gainClass(-d.principalFxUsd))
           : '') +
         gasRow('repay') +
         row('Total fees paid', feesText(d)) +
@@ -1537,9 +1515,13 @@ function tradeRow(t, index, total) {
   const gain = isNum(d.netGainUsd) ? d.netGainUsd : d.projectedNetGainUsd;
   const gainCell = isNum(gain)
     ? `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ' <span class="chip">est</span>'}`
-    : d.fxComplete
-      ? '<span class="muted">-</span>'
-      : RATE_MISSING;
+    // The chip only where a rate is what stands between the row and a figure,
+    // which is once the ETH is sold. An open or held trade has no net gain at
+    // any rate, and "no rate" there sent the reader to fetch rates that could
+    // only turn it into a dash.
+    : d.stages.sold && !d.fxComplete
+      ? RATE_MISSING
+      : '<span class="muted">-</span>';
 
   return `
   <tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0">
@@ -1719,6 +1701,19 @@ function perfTile(label, value, cls = '', hint = '', sub = '', tileCls = '') {
  * level to within half a cent is printed `$0.00` by the same tile that calls
  * it the biggest loss. The label now agrees with the digits beside it.
  */
+/**
+ * The mirror of `worstLabel`. On a ledger, or a year, that only lost money the
+ * best trade is the smallest loss, and calling it the biggest gain printed a
+ * red -$554.00 under the word "gain" - on the same trade the tile beside it
+ * called the biggest loss.
+ */
+function bestLabel(entry, key, unit) {
+  const v = entry ? entry[key] : null;
+  return isNum(v) && v < 0 && !printsZero(v, 2)
+    ? `Smallest loss in ${unit}`
+    : `Biggest gain in ${unit}`;
+}
+
 function worstLabel(entry, key, unit) {
   const v = entry ? entry[key] : null;
   return isNum(v) && v < 0 && !printsZero(v, 2)
@@ -1996,7 +1991,11 @@ function renderStatsView() {
           // some trade contributed to it; zero means no trade has a rate.
           perfTile(
             'Total borrowed',
-            r.totalBorrowed > 0 ? usd(r.totalBorrowed) : '',
+            r.totalBorrowed > 0
+              ? `${usd(r.totalBorrowed)}${r.totalBorrowedMissingFx ? ` ${RATE_MISSING}` : ''}`
+              : r.totalBorrowedMissingFx
+                ? RATE_MISSING
+                : '',
             '',
             TIPS.totalBorrowed,
           )
@@ -2025,14 +2024,14 @@ function renderStatsView() {
           // Both pairs keep the label that flips: on a ledger that has lost
           // money the second of each pair is a loss, and calling it the
           // smallest gain would be the card lying about the worst thing on it.
-          perfExtreme('Biggest gain in USD', r.best, TIPS.best, 'usd', 'perf--row-start')
+          perfExtreme(bestLabel(r.best, 'netGain', 'USD'), r.best, TIPS.best, 'usd', 'perf--row-start')
         }
         ${perfExtreme(
           worstLabel(r.worst, 'netGain', 'USD'),
           r.worst,
           TIPS.worst,
         )}
-        ${perfExtreme('Biggest gain in %', r.bestPct, TIPS.bestPct, 'pct')}
+        ${perfExtreme(bestLabel(r.bestPct, 'pct', '%'), r.bestPct, TIPS.bestPct, 'pct')}
         ${perfExtreme(
           worstLabel(r.worstPct, 'pct', '%'),
           r.worstPct,
@@ -2068,7 +2067,16 @@ function statTiles(s, { open = true } = {}) {
       // gain that simply is not known in dollars, and this tile shows on the
       // Trades view too, where the Stats view's banner is not there to explain it.
       label: 'Realized net gain',
-      value: isNum(s.netGain) ? signedUsd(s.netGain) : s.missingFx ? RATE_MISSING : '-',
+      // Keyed on closed trades that have no dollar result, not on rates missing
+      // anywhere. `missingFx` counts open trades too, so a ledger with nothing
+      // closed read "no rate" here, and a total missing a closed euro trade
+      // carried no chip at all. The chip goes beside a partial total the way
+      // Open positions does it.
+      value: isNum(s.netGain)
+        ? `${signedUsd(s.netGain)}${s.closedCount > s.valuedCount ? ` ${RATE_MISSING}` : ''}`
+        : s.closedCount > s.valuedCount
+          ? RATE_MISSING
+          : '-',
       cls: gainClass(s.netGain),
     },
     { label: 'Blended annualized', value: isNum(s.avgPct) ? pct(s.avgPct) : '-', cls: pctClass(s.avgPct) },
@@ -2078,7 +2086,7 @@ function statTiles(s, { open = true } = {}) {
       // The chip, not a quietly short total: the count includes every open
       // trade while the dollars can only include the ones with a rate.
       value: s.openCount
-        ? `${s.openCount} (${usd(s.deployed)})${s.deployedMissingFx ? ` ${RATE_MISSING}` : ''}`
+        ? `${s.openCount}${isNum(s.deployed) ? ` (${usd(s.deployed)})` : ''}${s.deployedMissingFx ? ` ${RATE_MISSING}` : ''}`
         : '0',
     },
   ];

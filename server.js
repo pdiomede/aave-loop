@@ -178,11 +178,24 @@ function toDate(value, field, label) {
   const iso = String(value).trim();
   const ts = parseDate(iso);
   if (ts === null) throw new BadRequest(`${label} must be a valid date.`, field);
-  // Compared against the same local calendar date the form uses. The old
+  // One calendar day of slack, counted in calendar days and no more. The old
   // 36 hour slack was measured from `Date.now()` while `parseDate` returns UTC
-  // midnight, so tomorrow always fell inside it and still produced the negative
-  // loan span this check exists to prevent.
-  if (iso > todayISO()) {
+  // midnight, so it was never the bound it claimed to be. Then the check was
+  // tightened to the server's own today, assuming the browser and the server
+  // were one machine - which in production they are not: a reader in Rome with
+  // the service on UTC is a day ahead of it from midnight to two, and the
+  // form's own default date was refused as being in the future.
+  //
+  // No timezone is more than a day ahead of another, so tomorrow by the
+  // server's clock is the latest anyone's today can be, and the form still
+  // caps the date at the reader's own today. The negative span the tighter
+  // check prevented only exists by the server's clock, for those hours: the
+  // browser derives with its own date and never sees it, and on the server
+  // `accruedInterest` answers null for a negative span, so a Telegram report
+  // in that window says the gain is unknown rather than printing a wrong one.
+  const now = parseDate(todayISO());
+  const tomorrow = new Date(now + 86_400_000).toISOString().slice(0, 10);
+  if (iso > tomorrow) {
     throw new BadRequest(`${label} cannot be in the future.`, field);
   }
   if (ts < Date.UTC(2015, 6, 30)) {

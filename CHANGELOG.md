@@ -21,6 +21,8 @@ Gas fees. Every stage of a trade is an on-chain transaction, and until now the l
 - **`isRealized` gates on the gross gain** rather than on the native net gain. The two were the same test until the native gain started needing a rate for every stage with a fee, at which point a closed EURC trade still waiting on one would have been filed as open.
 - **Opening a trade in History no longer closes the one already open.** The open row was a single `state.openId`, so with trade #15 expanded, a click on #16 collapsed #15 - two trades could never be read side by side. It is a set now, and each row opens and closes on its own; a newly created trade opens without closing the others either. The editor is no longer cleared on every row click: it closes only when its own row is collapsed or its trade deleted, because with several rows open, opening #16 used to throw away a half typed sale on #15.
 
+- **Every tooltip is at least 30% shorter, and none uses a dash.** They had grown into paragraphs: Total fees paid ran to eleven lines on a phone. All 29 in `TIPS` were rewritten in short sentences, between 32% and 56% shorter each, measured against the old text by script. Each still says which trades it counts, which is what that object's own comment asks of it. The three that used a spaced hyphen as a dash (Total borrowed and both % tiles) no longer do.
+
 ### Fixed
 
 Two bug hunts over the new code before release, one over the fees and the net gain, one over the euro conversion and how the cards print it. Five bugs, each reproduced on a scratch ledger or against `lib/calc.js` before the fix and re-run after. The arithmetic itself came back clean: a USDT trade with $3, $5, $4 and $0 of gas loses exactly $12, an EURC trade loses its fees in dollars and their per-stage conversion in euros, a sold trade's estimate and a held trade's unrealised gain lose the gas paid so far, a trade recorded before fees reads exactly as it did, and the migration adds the four columns to a copy of a live ledger with every figure on it unchanged.
@@ -30,6 +32,33 @@ Two bug hunts over the new code before release, one over the fees and the net ga
 - **The tile's tooltip claimed every fee in it was already taken off the figures above it.** Once the tile counted open and rateless trades, that stopped being true: a ledger reporting a realized net gain of $918 and $10 of fees had all $10 sitting on a trade the $918 did not include. It says the total can be more than the gas inside the realized figures, and why.
 - **The sale form previewed a euro gain beside a dollar price.** Editing the EURC sale of 25 February read "ETH price $2,083.03, gross +306.00 EURC" while the card under the form said +$313.79. The preview follows the card: dollars once both rates are known.
 - **And with only one of those rates known, it gave no sign of it.** With the sale's rate in and the purchase's missing, the price came out in dollars and the gross in EURC, with no "(converted on save)" - the marker followed the price alone. It follows either figure falling back to the coin.
+
+A second review, by area, once the fees had settled: the History view and how a trade is stored and validated, with security in scope; the Stats view; and the alerts with the Telegram scripts. Fifteen bugs, each reproduced on a scratch ledger, in a headless browser or against a mock Telegram before the fix and re-run after. Security came back clean: column names in an UPDATE come only from the server's own list, `__proto__` keys in a body are ignored, exchange rates in a request are refused, a cross-site form post to the trade endpoints is not parsed, the Host allow-list holds, `..` in a static path is a 404, and every server error reaches the page as text.
+
+History and storage:
+
+- **A pasted decimal comma with four or more decimals lost the comma.** Only a comma followed by one or two digits was read as a decimal point, so "8,0773" pasted into ETH purchased stored 80,773 ETH, and an ETH price of $0.31 was the only sign. No thousands separator groups more than three digits, so a comma followed by four or more is a decimal point too. "12,000" and "1,234,567" still read as thousands.
+- **The server refused today's date from a reader ahead of its timezone.** The future check used the server's own today, and in production the browser is not the same machine: with the service on UTC, a reader in Rome had the form's default date refused as "in the future" every night from midnight to two. The server allows its own tomorrow, the latest anyone's today can be; the form still caps the date at the reader's today.
+- **Net gain said "no rate" on trades that have no gain yet.** Any open or held EURC trade without a rate showed the chip and its advice to fetch rates, which could only turn the cell into a dash. The chip appears once the ETH is sold, where a rate is what stands between the row and a figure.
+- **"of which currency" was coloured backwards.** It is part of a cost, so a positive figure - the euro rose and the loan cost more in dollars - is the bad case, and an EURC loan borrowed at 1.05 and repaid at 1.10 showed +$500.00 of extra cost in green. It is coloured by what it did to you now, the sign left as it is.
+
+Stats:
+
+- **The best trade on a ledger of losses was called the biggest gain.** Only the second tile of each pair changed its label, so with every trade at a loss the same -$554.00 trade was the "Biggest gain in USD" and the "Biggest loss in USD" side by side. The first tile now reads "Smallest loss" when its figure is a loss.
+- **Realized net gain put "no rate" on the wrong condition.** It followed any missing rate, open trades included, so a ledger with nothing closed read "no rate" over zero closed trades, while a total missing a closed EURC trade carried no chip at all. It follows closed trades without a dollar result now, beside the figure when the figure is partial. Telegram's `/summary` had the same test and the same fix.
+- **Open positions printed "$0.00" for capital of unknown size.** With no open loan converted it read "1 ($0.00) no rate". It reads "1 no rate"; `summarize` answers null for the dollar figure in that case, and `/summary` follows.
+- **Total borrowed was short without saying so.** It skipped trades with no borrow rate, and $10,000.00 stood over a tab that had also borrowed EUR 15,000. It carries the "no rate" chip when it is missing any.
+- **Two tooltips described more trades than their figures count.** Average hold and the by-month Trades column count closed trades with a dollar result, as the money beside them does; the tooltips said closed trades. They say what is counted.
+
+Alerts and Telegram:
+
+- **A delivered alert was shown as "not sent".** The claim never cleared the error from an earlier attempt, so a 500 followed by a 200 left a FIRED alert carrying "Internal Server Error", and the Alerts view drew "not sent" from it. The claim clears it.
+- **A goal reached before Telegram was set up was used up.** The sweep claimed the alert, the send failed as not retryable, and the row stayed fired for good, though the alert window promises the goal "will be sent once config.env is filled in". The sweep waits until there is somewhere to send it.
+- **An alert could fire on a trade sold while the sweep ran.** Whether the trade still held ETH was asked when the armed list was read, before a price lookup and earlier sends that together can take a quarter of a minute, and a sale recorded in that window still sent a goal message for a position that no longer existed. The claim asks again, in the same statement.
+- **`/holding` blamed the exchange rate when the ETH price was missing.** With no price every row is unpriced, a dollar coin included, and the header said "No exchange rate yet" above a table printing that trade's purchase price in dollars. It says the ETH price is missing.
+- **The bot answered commands addressed to another bot.** The `@botname` suffix was stripped and ignored, so `/holding@SomeOtherBot` in the group posted the whole position. The bot asks Telegram its own name once and ignores commands naming another; until it knows its name it answers as before rather than refuse on a lookup that failed.
+- **"not watched" said the ETH was sold when the purchase had been undone.** The same suspension covers both. The tooltip names both.
+
 
 ## [1.1.1] - 2026-09-27
 

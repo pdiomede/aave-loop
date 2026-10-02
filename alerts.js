@@ -29,6 +29,7 @@ import { db, prepare } from './db.js';
 import { derive, unrealisedUsd } from './lib/calc.js';
 import { ethPrice } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
+import { telegramConfig } from './config.js';
 import { n2, n4, fmtDate, signedUsd } from './format.js';
 
 /**
@@ -82,15 +83,19 @@ const selectLog = () => prepare('SELECT * FROM alerts ORDER BY id DESC');
  * Nothing is deleted either way. Both edits can themselves be undone, and
  * restoring the stage brings the alert back with it.
  */
+// The HOLDING test as SQL, for the trade aliased `t`. Shared by the read that
+// lists the armed alerts and by the claim, which has to ask again: see `fire`.
+const HOLDING = `
+      t.buy_date IS NOT NULL
+      AND t.buy_amount IS NOT NULL
+      AND t.buy_eth IS NOT NULL
+      AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)`;
+
 const selectArmed = () =>
   prepare(`
     SELECT a.*, t.id AS t_id FROM alerts a
     JOIN trades t ON t.id = a.trade_id
-    WHERE a.status = 'armed'
-      AND t.buy_date IS NOT NULL
-      AND t.buy_amount IS NOT NULL
-      AND t.buy_eth IS NOT NULL
-      AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)
+    WHERE a.status = 'armed' AND ${HOLDING}
   `);
 
 const selectTrade = () => prepare('SELECT * FROM trades WHERE id = ?');
@@ -310,9 +315,20 @@ let sweeping = false;
  */
 async function fire(row, price) {
   const now = new Date().toISOString();
+  // `last_error` is cleared here. A retry that succeeds writes nothing after
+  // the claim, so the error from the attempt before it stayed on a delivered
+  // alert, and the Alerts view - which draws "not sent" from that column -
+  // showed a FIRED alert as not sent after a 500 followed by a 200.
+  //
+  // And the trade is asked again whether it is still holding. The list was
+  // read before the price lookup and every earlier send, which together can
+  // take a quarter of a minute, and a sale recorded in that window still sent
+  // the alert: a goal message for a position that no longer existed.
   const claimed = prepare(`
-    UPDATE alerts SET status = 'fired', fired_at = @now, fired_price = @price, updated_at = @now
+    UPDATE alerts SET status = 'fired', fired_at = @now, fired_price = @price,
+      last_error = NULL, updated_at = @now
     WHERE id = @id AND status = 'armed'
+      AND EXISTS (SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING})
   `).run({ id: row.id, price, now });
 
   if (claimed.changes !== 1) return;
@@ -409,6 +425,13 @@ export async function runAlertSweep() {
     const armed = selectArmed().all();
     checked = armed.length;
     if (armed.length === 0) return { checked: 0, fired: 0 };
+
+    // Nowhere to send it, so nothing is claimed. Claiming first used the alert
+    // up: the send failed as not retryable and the row stayed fired for good,
+    // while the alert window promises the goal "will be sent once config.env
+    // is filled in". Left armed, the first sweep after the file is filled in
+    // sends it.
+    if (!telegramConfig().configured) return { checked: armed.length, fired: 0 };
 
     const quote = await ethPrice({ maxAgeMs: Math.min(POLL_MS, 300_000) });
     if (!quote || !db.open) return { checked: armed.length, fired: 0 };

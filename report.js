@@ -161,7 +161,14 @@ export function holdingText(rows, price) {
     const less = gassed ? 'interest and gas' : 'interest';
     head.push(`Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}`);
   } else if (unpriced) {
-    head.push('No exchange rate yet, so the gain is not known in dollars.');
+    // Two different absences. With no ETH price every row is unpriced, a
+    // dollar coin included, and blaming the exchange rate sat above a table
+    // printing that trade's purchase price in dollars.
+    head.push(
+      hasPrice
+        ? 'No exchange rate yet, so the gain is not known in dollars.'
+        : 'No ETH price right now, so the gain is not known.',
+    );
   }
 
   return `${head.join('\n')}\n\n<pre>${escHtml(fit(body))}</pre>`;
@@ -193,9 +200,12 @@ export function summaryText(s) {
       'Realized net gain',
       // Not "$0.00" when nothing has a rate yet: those trades made a real gain
       // that is simply not known in dollars, the distinction the tile makes too.
+      // Keyed on closed trades without a dollar result, as on the page:
+      // `missingFx` counts open trades too, so it said "not known" with
+      // nothing closed and said nothing under a total that was short.
       Number.isFinite(s.netGain)
-        ? signedUsd(s.netGain)
-        : s.missingFx
+        ? `${signedUsd(s.netGain)}${s.closedCount > s.valuedCount ? ' (some without a rate)' : ''}`
+        : s.closedCount > s.valuedCount
           ? 'not known in dollars yet'
           : MISSING,
     ],
@@ -204,7 +214,9 @@ export function summaryText(s) {
     [
       'Open positions',
       s.openCount
-        ? `${s.openCount} (${usd(s.deployed)})${s.deployedMissingFx ? ' \u2014 some without a rate' : ''}`
+        ? `${s.openCount}${Number.isFinite(s.deployed) ? ` (${usd(s.deployed)})` : ''}${
+            s.deployedMissingFx ? ' (some without a rate)' : ''
+          }`
         : '0',
     ],
   ];
