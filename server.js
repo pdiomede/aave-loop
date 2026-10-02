@@ -98,6 +98,23 @@ app.use((req, res, next) => {
   next();
 });
 
+// Cross-site requests. In production the app sits behind basic auth, and a
+// browser sends those credentials with any request to the origin - including
+// a form another site posts at it. A hidden form on any page could press Send
+// test message or Fetch rates on your behalf. Every write here is therefore
+// required to come as JSON: an HTML form cannot send that content type, and a
+// script on another site cannot either without a CORS preflight, which this
+// server never answers. The app's own `api()` sends it on every call.
+//
+// Read from the header rather than through `req.is`, which answers null for a
+// request with no body - and the app's own DELETEs have none.
+const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
+app.use('/api', (req, res, next) => {
+  const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (READS.has(req.method) || type === 'application/json') return next();
+  res.status(415).json({ error: 'Send this request as JSON, with Content-Type: application/json.' });
+});
+
 app.use(express.json());
 
 // Everything here is a small local file, so correctness beats caching. Without

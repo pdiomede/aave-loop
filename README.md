@@ -162,7 +162,7 @@ Bot commands are off: TELEGRAM_CHAT_ID is missing from config.env.
 **6. Send a test**, rather than waiting for the market to tell you whether it works:
 
 ```bash
-curl -X POST http://localhost:3000/api/alerts/test
+curl -X POST -H 'Content-Type: application/json' http://localhost:3000/api/alerts/test
 ```
 
 `{"ok":true,"error":null}` and a message in the group means it is done. Anything else comes back as a sentence rather than a stack trace: `Bad Request: chat not found` for a wrong id, `Unauthorized` for a wrong token. One test per ten seconds.
