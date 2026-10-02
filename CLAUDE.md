@@ -26,6 +26,10 @@ Drive a throwaway ledger rather than reasoning about a figure: import `lib/calc.
 directly for math, or run a server on a temp database and hit it with curl. Claims of
 correctness in this repo are expected to come with the command that produced them.
 
+Every non-GET `/api` request must send `Content-Type: application/json`, or it gets a
+415. That is the cross-site guard, so a bare `curl -X POST` fails by design: add
+`-H 'Content-Type: application/json'`. Trades also need a gas fee on each stage written.
+
 ### Switches that make the app testable offline
 
 | Variable | Effect |
@@ -134,6 +138,13 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   arithmetically correct under a label describing something else is a bug here.
 - **Exchange rates are resolved server-side and never accepted from a request.** A
   caller that could post its own rate could move every dollar figure in the ledger.
+- **Gas fees are dollars, one per stage, required on any stage being written** (0 is
+  allowed, blank is not; `checkGas` in `server.js`). Trades from before fees existed
+  have NULL, which is "not recorded", never 0: `feesUsd` is null and `feesMissing`
+  names the stages. `derive` takes fees off `netGainUsd`, the projected gain and
+  `unrealisedUsd`. The native `netGain` converts each fee at its own stage's rate, the
+  one place a rate is divided, and is null until those rates exist, which is why
+  `isRealized` gates on `grossGain` rather than `netGain`.
 - **Migrations are shape-detected, not versioned.** `addMissingColumns` reads the
   table back and adds what is missing. A new column needs **both** the `CREATE TABLE`
   DDL edit (for fresh databases) and the column-list edit (for existing ones).
@@ -149,8 +160,8 @@ exchange rate; a loan cost can be negative when the euro falls; the headline
 annualized figure is a blended return on capital over time, not a mean of per-trade
 rates).
 
-`CHANGELOG.md` entries are written in the same voice and carry the reproduction, not
-just the fix.
+`CHANGELOG.md` entries are short: one bullet per change, the problem and what it does
+now, with at most one example. It was condensed by half, so do not grow it back.
 
 ### Security posture
 
