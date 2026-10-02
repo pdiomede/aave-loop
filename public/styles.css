@@ -1195,21 +1195,21 @@ th[aria-sort="ascending"] .th-sort__caret {
   /* The shell is 1180px with 24px gutters and the card body adds 20px a side,
      so the grid has 1092px at full width: four columns at a 12px gap is 264px
      each, and a 240px floor is what settles it there. Below that it takes
-     three, then two, then one. The seventh tile leaves the last slot of the
-     second row empty, which is the arrangement that was asked for - auto-fit
-     does not collapse that track, because column four is filled in row one. */
+     three, then two, then one. Eight tiles fill both rows exactly: the four
+     figures about the whole tab on the first, the four extremes on the
+     second. */
   grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
 }
 
 /*
  * The first of the four extremes starts a fresh row, which is what splits the
- * card three and four: the general figures keep the first row, and the second
+ * card four and four: the general figures keep the first row, and the second
  * reads gain, loss, gain, loss - so the dollar pair and the rate pair sit one
  * above the other and the same trade can be found in both.
  *
  * Left unconditional. Once the grid is down to two columns the break puts a gap
- * after Average hold instead, which separates the three figures about the whole
- * ledger from the four about single trades, and reads as a divider rather than
+ * after Total fees paid instead, which separates the four figures about the
+ * whole ledger from the four about single trades, and reads as a divider rather than
  * a hole.
  */
 .perf--row-start {

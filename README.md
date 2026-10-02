@@ -22,12 +22,14 @@ A trade is created with the borrow alone, then each stage is added as it happens
 
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
-| Borrow | date, amount, currency, APR | `OPEN` |
-| Buy ETH | date, amount spent, ETH received | `HOLDING` |
-| Sell ETH | date, ETH sold, amount received | `SOLD` |
-| Repay | date, amount repaid | `CLOSED` |
+| Borrow | date, amount, currency, APR, gas fee | `OPEN` |
+| Buy ETH | date, amount spent, ETH received, gas fee | `HOLDING` |
+| Sell ETH | date, ETH sold, amount received, gas fee | `SOLD` |
+| Repay | date, amount repaid, gas fee | `CLOSED` |
 
-**Trades** is the history table; expand a row to see its four stages and edit them. **Stats** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed and average hold. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money. Stats is split into a tab per year, plus **All** for the whole ledger: a trade counts in the year it was repaid, and one still open counts in the current year. The four figures above the tabs stay all-time.
+Every stage asks what its transaction cost in gas, in dollars whatever was borrowed; 0 is accepted, blank is not. Trades recorded before fees were asked for show the fee as *not recorded* rather than $0.00.
+
+**Trades** is the history table; expand a row to see its four stages and edit them. **Stats** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed, average hold and total fees paid. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money. Stats is split into a tab per year, plus **All** for the whole ledger: a trade counts in the year it was repaid, and one still open counts in the current year. The four figures above the tabs stay all-time.
 
 ## The math
 
@@ -39,7 +41,8 @@ A trade is created with the borrow alone, then each stage is added as it happens
 | Days | borrow date to repay date |
 | Accrued interest | `borrow_amount * apr% * days / 365` |
 | Suggested repayment | `borrow_amount + accrued_interest` |
-| Net gain | `sell_amount - repay_amount` |
+| Fees | `borrow_gas + buy_gas + sell_gas + repay_gas`, in dollars |
+| Net gain | `gross_gain - interest_paid - fees` (`sell_amount - repay_amount - fees` on a full exit) |
 | Annualized return | `net_gain_usd / borrow_usd * 365 / days` |
 
 Gross gain uses the cost basis of the ETH actually sold, so a partial exit is not reported as a loss. The return is annualized, so a 3 day trade netting 7% shows as roughly 877%.
@@ -54,7 +57,8 @@ Amounts are recorded in the coin that was borrowed, and every total is reported 
 | Loan cost | `repaid_usd - borrowed_usd` |
 | of which interest | `interest_paid * repay_rate` |
 | of which currency | `borrowed * (repay_rate - borrow_rate)` |
-| Net gain | `gross_gain_usd - loan_cost` |
+| Net gain | `gross_gain_usd - loan_cost - fees` |
+| Net gain in EURC | `gross_gain - interest_paid - sum(fee / rate_of_its_stage)` |
 
 The loan cost can be negative: if the euro fell between borrowing and repaying, the loan was cheaper in dollars than its interest alone. The Repaid card shows the two parts separately so this reads as an explanation rather than a mistake.
 

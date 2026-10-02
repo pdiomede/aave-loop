@@ -93,6 +93,7 @@ export function holdingText(rows, price) {
   let gain = 0;
   let gainKnown = 0;
   let unpriced = 0;
+  let gassed = 0;
 
   const cells = rows.map((t) => {
     const d = derive(t);
@@ -104,6 +105,7 @@ export function holdingText(rows, price) {
     else {
       gain += g;
       gainKnown += 1;
+      if (Number.isFinite(d.feesUsd)) gassed += 1;
     }
 
     return {
@@ -153,7 +155,11 @@ export function holdingText(rows, price) {
     const caveat = unpriced
       ? ` (${unpriced} without an exchange rate ${unpriced === 1 ? 'is' : 'are'} not counted)`
       : '';
-    head.push(`Unrealised ${escHtml(signedUsd(gain))} after interest${caveat}`);
+    // `unrealisedUsd` takes the gas already paid off too, and a figure has to
+    // be described by what was actually taken from it: "after interest" alone
+    // under a total that is also after gas named one deduction and hid one.
+    const less = gassed ? 'interest and gas' : 'interest';
+    head.push(`Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}`);
   } else if (unpriced) {
     head.push('No exchange rate yet, so the gain is not known in dollars.');
   }

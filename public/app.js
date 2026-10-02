@@ -12,6 +12,7 @@ import {
   CURRENCIES,
   FX_STAGES,
   isUsdPegged,
+  gasKey,
 } from '/lib/calc.js';
 
 /* ------------------------------------------------------------- formatters */
@@ -197,7 +198,7 @@ const hintHead = (label, tip, cls = '') =>
 const TIPS = {
   netGain:
     'What the repaid trades made once the loan was settled: the ETH sale less the purchase, ' +
-    'less what the loan cost. A closed trade still waiting on an exchange rate is left out ' +
+    'less what the loan cost, less the gas paid on every stage. A closed trade still waiting on an exchange rate is left out ' +
     'rather than counted as zero.',
   avgPct:
     'The return on the capital actually deployed, weighted by how much and for how long. ' +
@@ -218,6 +219,12 @@ const TIPS = {
   avgHold:
     'Mean days from borrowing to repaying, over the same closed trades the figures above are ' +
     'built from.',
+  feesPaid:
+    'Gas paid on every stage of the trades on this tab, in dollars as typed - open trades and ' +
+    'closed ones still waiting on an exchange rate included, since a fee needs no rate. Each ' +
+    'fee is taken off its own trade\'s result wherever that result is shown, so this can be ' +
+    'more than the gas inside the realized figures above. A stage saved before fees were asked ' +
+    'for has none on record, and is counted underneath rather than as free.',
   best:
     'The largest result in dollars, over the closed trades whose dollar result is known. The ' +
     'rate underneath is that trade\'s, not the ranking: the two tiles below rank on the rate ' +
@@ -243,7 +250,8 @@ const TIPS = {
     borrowed:
       'Everything borrowed in this currency, open and closed, in dollars at the rate on each ' +
       'borrow date. The line beneath is the same total in the currency itself.',
-    netGain: 'The dollar result of the closed trades in this currency. Open trades contribute nothing.',
+    netGain:
+      'The dollar result of the closed trades in this currency, after gas. Open trades contribute nothing.',
     avgPct:
       'The closed trades in this currency blended together, weighted by loan size and days ' +
       'held, the same way the headline rate is.',
@@ -253,7 +261,7 @@ const TIPS = {
       'The month the loan was repaid, which is when the gain became real. A trade opened in ' +
       'March and closed in May lands in May.',
     trades: 'Closed trades that landed in this month.',
-    netGain: 'The dollar result of the trades closed in this month.',
+    netGain: 'The dollar result of the trades closed in this month, after gas.',
     share:
       'The result for this month against the largest month in the table, so the bars can be ' +
       'compared at a glance.',
@@ -310,12 +318,6 @@ function fxNote(usdValue, leg) {
     leg.date ? ` on ${fmtDate(leg.date)}` : ''
   }</span>` : '';
   return `<span class="fx-note__usd">${usd(usdValue)}</span>${at}`;
-}
-
-function signedFxNote(usdValue, leg) {
-  if (!isNum(usdValue)) return RATE_MISSING;
-  const at = leg && isNum(leg.rate) ? `<span class="fx-note__rate">at ${leg.rate.toFixed(4)}</span>` : '';
-  return `<span class="fx-note__usd">${signedUsd(usdValue)}</span>${at}`;
 }
 
 const RATE_MISSING = `<span class="chip chip--warn" data-tip="${esc(TIPS.noRate)}">no rate</span>`;
@@ -552,7 +554,10 @@ const state = {
   view: 'trades',
   draft: null,
   trades: [],
-  openId: null,
+  // Every trade whose stages are showing. A set rather than one id: opening a
+  // trade used to collapse whichever was open, so two could never be compared
+  // side by side.
+  openIds: new Set(),
   editing: null, // { id, stage }
   creating: false,
   // The column is remembered between visits, the page deliberately is not:
@@ -898,6 +903,10 @@ const FIELD_LABELS = {
   sell_amount: 'Amount received',
   repay_date: 'Repayment date',
   repay_amount: 'Amount repaid',
+  borrow_gas_usd: 'Gas fee',
+  buy_gas_usd: 'Gas fee',
+  sell_gas_usd: 'Gas fee',
+  repay_gas_usd: 'Gas fee',
 };
 
 /**
@@ -946,6 +955,13 @@ function validateField(name, raw, trade = {}) {
     if (value < 0) return 'APR cannot be negative.';
     if (value > 100) return 'APR looks too high. Enter it as a percent, for example 4.27.';
     return null;
+  }
+
+  // Gas can be nothing at all - a sponsored transaction - so 0 is a figure
+  // here, the way 0% is for an APR. Blank is still refused above: an
+  // unrecorded fee is not a free one.
+  if (name.endsWith('_gas_usd')) {
+    return value < 0 ? 'A gas fee cannot be negative.' : null;
   }
 
   if (value <= 0) return `${label} must be greater than zero.`;
@@ -1055,12 +1071,19 @@ const actions = (submitLabel, cancelAttr) => `
 // fields carry that ticker rather than a dollar sign.
 const unitOf = (t) => t.borrow_currency || 'USDC';
 
+// The one figure on a stage that is not in the borrowed coin: gas is what the
+// transaction cost, typed in dollars whatever was borrowed, so it carries a
+// dollar sign where its neighbours carry a ticker.
+const gasField = (stage, t) =>
+  field({ name: gasKey(stage), label: 'Gas fee', type: 'number', value: t[gasKey(stage)] ?? '', prefix: '$', placeholder: '3.20' });
+
 function borrowFields(t = {}) {
   return `<div class="grid">
     ${field({ name: 'borrow_date', label: 'Borrow date', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
     ${field({ name: 'borrow_amount', label: 'Amount borrowed', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
     ${field({ name: 'borrow_currency', label: 'Currency', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
     ${field({ name: 'borrow_apr', label: 'Borrow APR', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
+    ${gasField('borrow', t)}
   </div>`;
 }
 
@@ -1069,6 +1092,7 @@ function buyFields(t) {
     ${field({ name: 'buy_date', label: 'Purchase date', type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
     ${field({ name: 'buy_amount', label: 'Amount spent', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
     ${field({ name: 'buy_eth', label: 'ETH purchased', type: 'number', value: t.buy_eth ?? '', suffix: 'ETH', placeholder: '8.0773' })}
+    ${gasField('buy', t)}
   </div>`;
 }
 
@@ -1077,6 +1101,7 @@ function sellFields(t) {
     ${field({ name: 'sell_date', label: 'Sale date', type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
     ${field({ name: 'sell_amount', label: 'Amount received', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
     ${field({ name: 'sell_eth', label: 'ETH sold', type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: 'ETH' })}
+    ${gasField('sell', t)}
   </div>`;
 }
 
@@ -1100,6 +1125,7 @@ function repayFields(t) {
       // Stays in step with the date until the user types their own figure.
       auto: t.repay_amount == null,
     })}
+    ${gasField('repay', t)}
   </div>`;
 }
 
@@ -1180,10 +1206,25 @@ function refreshHints(form, trade, stage) {
   }
 
   if (stage === 'sell') {
+    // The gross gain the way the Sold card prints it: dollars first for a coin
+    // that is not one, once both rates are there. In the coin it previewed
+    // "ETH price $2,083.03, gross +306.00 EURC" while the card under the form
+    // said +$313.79 - a dollar price beside a euro gain, and a figure the save
+    // would not show.
+    //
+    // The note follows either figure falling back to the coin, not just the
+    // price: with the sale's rate known and the purchase's missing, the price
+    // has dollars and the gross does not, and "ETH price $3,080.00, gross
+    // +1,000.00 EURC" with no marker read as two measured figures.
+    const pegged = isUsdPegged(c);
+    const grossInCoin = !pegged && isNum(d.grossGain) && !isNum(d.grossGainUsd);
+    const gross = !pegged && isNum(d.grossGainUsd)
+      ? signedUsd(d.grossGainUsd)
+      : signedMoney(d.grossGain, c);
     set('sell_amount', isNum(d.sellPrice)
       ? `ETH price ${previewPrice(d.sellPriceUsd, d.sellPrice)}${
-          isNum(d.grossGain) ? `, gross ${signedMoney(d.grossGain, c)}` : ''
-        }${isNum(d.sellPriceUsd) ? '' : asSaved}`
+          isNum(d.grossGain) ? `, gross ${gross}` : ''
+        }${isNum(d.sellPriceUsd) && !grossInCoin ? '' : asSaved}`
       : '');
   }
 
@@ -1210,13 +1251,28 @@ function refreshHints(form, trade, stage) {
         }`
       : '');
 
-    set('repay_amount', isNum(after.netGain)
+    // After fees, dollars first for a coin that is not one, the way the Repaid
+    // card prints it (see `resultRow`). A euro preview with no rate yet falls
+    // back to the coin when it can be had; a fee on a stage with no rate
+    // leaves even that unknown, and it says when there will be a figure rather
+    // than printing a euro gain that skipped the fees.
+    const annual = isNum(after.pct) ? `, <strong>${pct(after.pct)}</strong> annualized` : '';
+    const realized = after.stages.repaid && isNum(after.grossGain);
+    set('repay_amount', isUsdPegged(c) && isNum(after.netGain)
       ? `Net gain <strong class="${gainClass(after.netGain)}">${signedMoney(after.netGain, c)}</strong>${
-          isNum(after.netGainUsd) ? ` (${signedUsd(after.netGainUsd)})` : asSaved
-        }${isNum(after.pct) ? `, <strong>${pct(after.pct)}</strong> annualized` : ''}`
-      : isNum(d.suggestedRepay)
-        ? `Suggested ${money(d.suggestedRepay, c)} from the APR`
-        : '');
+          isNum(after.netGainUsd) ? ` (${signedUsd(after.netGainUsd)})` : ''
+        }${annual}`
+      : realized && isNum(after.netGainUsd)
+        ? `Net gain <strong class="${gainClass(after.netGainUsd)}">${signedUsd(after.netGainUsd)}</strong>${
+            isNum(after.netGain) ? ` (${signedMoney(after.netGain, c)})` : ''
+          }${annual}`
+        : realized && isNum(after.netGain)
+          ? `Net gain <strong class="${gainClass(after.netGain)}">${signedMoney(after.netGain, c)}</strong>${asSaved}`
+          : realized
+            ? 'Net gain <span class="muted">worked out in dollars on save</span>'
+          : isNum(d.suggestedRepay)
+            ? `Suggested ${money(d.suggestedRepay, c)} from the APR`
+            : '');
   }
 }
 
@@ -1277,6 +1333,36 @@ const STAGES = [
   { key: 'repay', name: 'Repaid', done: (s) => s.repaid, fields: repayFields },
 ];
 
+const NOT_RECORDED = '<span class="muted">not recorded</span>';
+
+/**
+ * Every fee on the trade, in dollars. The stages with none recorded are named
+ * as a count rather than counted as free, so a total that is short says so.
+ */
+function feesText(d) {
+  const missing = d.feesMissing.length;
+  const note = missing
+    ? `<small class="fx-note">${missing} stage${missing === 1 ? '' : 's'} not recorded</small>`
+    : '';
+  return isNum(d.feesUsd) ? `${usd(d.feesUsd)}${note}` : NOT_RECORDED;
+}
+
+/**
+ * A result that is built from more than one rate, so it names none. For a
+ * dollar coin, in the coin as it always was. For any other, dollars lead and
+ * the coin sits underneath: the ledger reports in dollars, and every total on
+ * the page adds up the dollar figure. The colour comes from whichever figure
+ * is printed on top.
+ */
+function resultRow(row, row2, d, label, native, usdValue, c) {
+  if (d.isUsdPegged) return row(label, signedMoney(native, c), gainClass(native));
+  const under = isNum(native) ? signedMoney(native, c) : '';
+  // Only reached on a card whose stage is done, so a missing dollar figure is a
+  // missing rate, and the coin figure underneath still stands when it is known.
+  if (!isNum(usdValue)) return row2(label, RATE_MISSING, under);
+  return row2(label, signedUsd(usdValue), under, gainClass(usdValue));
+}
+
 function stageSummary(stage, t, d) {
   const row = (label, value, cls = '') =>
     value === '' || value == null ? '' : `<div class="stage__row"><dt>${label}</dt><dd class="${cls}">${value}</dd></div>`;
@@ -1301,13 +1387,22 @@ function stageSummary(stage, t, d) {
   // borrowed, so the four cards can be read straight down.
   const c = t.borrow_currency;
 
+  // Last on every card, in dollars whatever was borrowed. A stage saved before
+  // fees were asked for has none, and says so: hiding the row would look like
+  // the fee was never wanted, and $0.00 would state a fee nobody measured.
+  const gasRow = (key) => {
+    const fee = t[gasKey(key)];
+    return row('Gas fee', isNum(fee) ? usd(fee) : NOT_RECORDED);
+  };
+
   switch (stage) {
     case 'borrow':
       return (
         row('Date', fmtDate(t.borrow_date)) +
         row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow)) +
         row('APR', pct(t.borrow_apr)) +
-        row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} days` : '')
+        row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} days` : '') +
+        gasRow('borrow')
       );
     case 'buy':
       return (
@@ -1320,7 +1415,8 @@ function stageSummary(stage, t, d) {
         row('ETH price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING) +
         // Only when there is one. A card that says "Alert: none" on every
         // trade nobody set one on is four words of noise per row.
-        alertRow(row, t, d)
+        alertRow(row, t, d) +
+        gasRow('buy')
       );
     case 'sell':
       return (
@@ -1335,7 +1431,8 @@ function stageSummary(stage, t, d) {
         // here invited a reader to multiply by it and get a different number.
         // Net gain and Loan cost, the other figures built from more than one
         // rate, already pass null for the same reason.
-        row2('Gross gain', signedMoney(d.grossGain, c), signedFxNote(d.grossGainUsd, null), gainClass(d.grossGain))
+        resultRow(row, row2, d, 'Gross gain', d.grossGain, d.grossGainUsd, c) +
+        gasRow('sell')
       );
     case 'repay':
       // The interest the loan actually cost, which is what the net gain is
@@ -1361,7 +1458,9 @@ function stageSummary(stage, t, d) {
           ? rowUsd('of which interest', usd(d.interestPaidUsd)) +
             rowUsd('of which currency', signedUsd(d.principalFxUsd), gainClass(d.principalFxUsd))
           : '') +
-        row2('Net gain', signedMoney(d.netGain, c), signedFxNote(d.netGainUsd, null), gainClass(d.netGain)) +
+        gasRow('repay') +
+        row('Total fees paid', feesText(d)) +
+        resultRow(row, row2, d, 'Net gain', d.netGain, d.netGainUsd, c) +
         // Coloured from the rate it prints, not from the dollar gain behind
         // it. A cent made on a 30,000 loan is a real gain and a green
         // +$0.01, but annualized it is 0.0002%, which prints 0.00% - and a
@@ -1418,7 +1517,7 @@ function prerequisiteMet(key, s) {
 
 function tradeRow(t, index, total) {
   const d = t.derived || derive(t);
-  const isOpen = state.openId === t.id;
+  const isOpen = state.openIds.has(t.id);
 
   // A trade has an end date only once the loan is repaid, so that is the only
   // time a range is shown. While it is still running the borrow date stands
@@ -1586,7 +1685,7 @@ function statRow(label, value, cls = '', hint = '') {
  * The two figures that used to head this card, the realized gain and the
  * blended rate, are the first two tiles above the table on every view, so they
  * were being stated twice on the same screen. On a year tab those tiles are
- * all-time, so the year's own pair is drawn by the overview card above this one. What is left is the seven that
+ * all-time, so the year's own pair is drawn by the overview card above this one. What is left is the eight that
  * are only here, and they read better as a grid than as two columns of a list.
  */
 function perfTile(label, value, cls = '', hint = '', sub = '', tileCls = '') {
@@ -1908,8 +2007,17 @@ function renderStatsView() {
           '',
           TIPS.avgHold,
         )}
+        ${perfTile(
+          'Total fees paid',
+          isNum(r.feesPaid) ? usd(r.feesPaid) : '',
+          '',
+          TIPS.feesPaid,
+          r.feesUnrecorded > 0
+            ? `${r.feesUnrecorded} trade${r.feesUnrecorded === 1 ? '' : 's'} with fees not recorded`
+            : '',
+        )}
         ${
-          // The three figures above stay together on the first row and these
+          // The four figures above stay together on the first row and these
           // four take the second, reading gain, loss, gain, loss - so the
           // dollar pair and the rate pair sit one above the other and the same
           // trade can be found in both columns.
@@ -2229,7 +2337,7 @@ async function submitBorrow(form) {
     });
     await loadTrades();
     state.creating = false;
-    state.openId = created.id;
+    state.openIds.add(created.id);
     state.editing = null;
     // Go to wherever the new trade landed, so the row that just opened is on
     // screen whatever the table is sorted by.
@@ -2716,7 +2824,7 @@ function wire() {
     const edit = e.target.closest('[data-edit-stage]');
     if (edit) {
       state.editing = { id: Number(edit.dataset.trade), stage: edit.dataset.editStage };
-      state.openId = Number(edit.dataset.trade);
+      state.openIds.add(Number(edit.dataset.trade));
       render();
       return;
     }
@@ -2832,8 +2940,16 @@ function wire() {
     const row = e.target.closest('.row');
     if (row && !e.target.closest('button')) {
       const id = Number(row.dataset.trade);
-      state.openId = state.openId === id ? null : id;
-      state.editing = null;
+      if (state.openIds.has(id)) {
+        state.openIds.delete(id);
+        // Only the row being closed loses its editor. With several rows open,
+        // clearing it on every click threw away a half typed form in one trade
+        // because a different one was opened or closed; render() carries the
+        // typed values of a form that stays.
+        if (state.editing?.id === id) state.editing = null;
+      } else {
+        state.openIds.add(id);
+      }
       render();
     }
   });
@@ -2848,8 +2964,8 @@ function wire() {
         .then(() => {
           state.trades = state.trades.filter((t) => t.id !== id);
           writeSeq += 1;
-          state.openId = null;
-          state.editing = null;
+          state.openIds.delete(id);
+          if (state.editing?.id === id) state.editing = null;
           // The trade's alerts went with it, so both collections lose them.
           state.alerts = Object.fromEntries(
             Object.entries(state.alerts).filter(([tradeId]) => Number(tradeId) !== id),

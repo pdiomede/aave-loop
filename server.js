@@ -9,6 +9,8 @@ import {
   parseDate,
   parseAmount,
   stages,
+  reachedStages,
+  gasKey,
   todayISO,
   CURRENCIES,
   FX_STAGES,
@@ -211,6 +213,9 @@ function normalise(body, { requireBorrow }) {
   numericField('borrow_amount', 'Borrow amount');
   // A promotional or incentivised borrow really can sit at 0%.
   numericField('borrow_apr', 'Borrow APR', { allowZero: true });
+  // Gas can genuinely be nothing - a sponsored or batched transaction - so 0
+  // is a figure. Blank is not; `checkGas` refuses it on a stage being written.
+  numericField('borrow_gas_usd', 'Borrow gas fee', { allowZero: true });
   if (has('borrow_currency')) {
     const c = String(body.borrow_currency || '').toUpperCase();
     if (!CURRENCIES.includes(c)) throw new BadRequest('Pick a supported currency.', 'borrow_currency');
@@ -220,13 +225,16 @@ function normalise(body, { requireBorrow }) {
   dateField('buy_date', 'Purchase date');
   numericField('buy_amount', 'Purchase amount');
   numericField('buy_eth', 'ETH purchased');
+  numericField('buy_gas_usd', 'Purchase gas fee', { allowZero: true });
 
   dateField('sell_date', 'Sale date');
   numericField('sell_amount', 'Sale amount');
   numericField('sell_eth', 'ETH sold');
+  numericField('sell_gas_usd', 'Sale gas fee', { allowZero: true });
 
   dateField('repay_date', 'Repayment date');
   numericField('repay_amount', 'Repaid amount');
+  numericField('repay_gas_usd', 'Repayment gas fee', { allowZero: true });
 
   if (has('notes')) out.notes = isBlank(body.notes) ? null : String(body.notes).slice(0, 2000);
 
@@ -323,6 +331,40 @@ function checkChronology(row) {
   }
 }
 
+/**
+ * Every stage costs gas, and a stage being written has to say how much.
+ *
+ * Scoped to the stages this request touches. Trades recorded before fees were
+ * asked for have none on any stage, and requiring all four on every write
+ * would refuse a sale on such a trade until its purchase, long since done, was
+ * edited too. A stage this request writes and that ends up reached must leave
+ * with a fee; clearing a stage altogether needs none, since it is no longer
+ * reached.
+ */
+const STAGE_KEYS = {
+  borrow: ['borrow_date', 'borrow_amount', 'borrow_currency', 'borrow_apr'],
+  buy: ['buy_date', 'buy_amount', 'buy_eth'],
+  sell: ['sell_date', 'sell_amount', 'sell_eth'],
+  repay: ['repay_date', 'repay_amount'],
+};
+const GAS_LABELS = {
+  borrow: 'Borrow gas fee',
+  buy: 'Purchase gas fee',
+  sell: 'Sale gas fee',
+  repay: 'Repayment gas fee',
+};
+
+function checkGas(patch, row) {
+  const reached = new Set(reachedStages(stages(row)));
+  for (const stage of FX_STAGES) {
+    const key = gasKey(stage);
+    const touched = [...STAGE_KEYS[stage], key].some((k) => k in patch);
+    if (touched && reached.has(stage) && row[key] == null) {
+      throw new BadRequest(`${GAS_LABELS[stage]} is required.`, key);
+    }
+  }
+}
+
 const withDerived = (row) => ({ ...row, derived: derive(row) });
 
 /**
@@ -372,6 +414,7 @@ app.post('/api/trades', async (req, res, next) => {
     // refuses the statement for a parameter it was never handed.
     const row = Object.fromEntries([...FIELDS, ...FX_COLUMNS].map((f) => [f, patch[f] ?? null]));
     checkChronology(row);
+    checkGas(patch, row);
     Object.assign(row, await fillFxColumns(row));
 
     const now = new Date().toISOString();
@@ -401,6 +444,7 @@ app.patch('/api/trades/:id', async (req, res, next) => {
 
       const merged = { ...current, ...patch };
       checkChronology(merged);
+      checkGas(patch, merged);
 
       // An edit can invalidate a rate that was right when it was stored. Clear
       // those first, then look up replacements, so the write carries the change

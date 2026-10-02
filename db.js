@@ -51,6 +51,10 @@ db.exec(`
     repay_date      TEXT,
     repay_amount    REAL,
     notes           TEXT,
+    borrow_gas_usd  REAL,
+    buy_gas_usd     REAL,
+    sell_gas_usd    REAL,
+    repay_gas_usd   REAL,
     borrow_fx       REAL,
     borrow_fx_date  TEXT,
     buy_fx          REAL,
@@ -303,6 +307,17 @@ const ETH_MARKET_COLUMNS = [
   ['change_30d', 'REAL'],
 ];
 
+// What each stage's transaction cost in gas, typed in dollars. Nullable on
+// purpose: every trade recorded before fees were asked for has none, and an
+// unrecorded fee is not a free one, so it stays NULL rather than becoming 0.
+// The same pairing as above applies - the DDL and this list both carry them.
+const GAS_COLUMN_TYPES = [
+  ['borrow_gas_usd', 'REAL'],
+  ['buy_gas_usd', 'REAL'],
+  ['sell_gas_usd', 'REAL'],
+  ['repay_gas_usd', 'REAL'],
+];
+
 function addMissingColumns(table, columns) {
   const present = new Set(db.pragma(`table_info(${table})`).map((c) => c.name));
   const missing = columns.filter(([name]) => !present.has(name));
@@ -314,6 +329,7 @@ function addMissingColumns(table, columns) {
 
 db.transaction(() => {
   addMissingColumns('trades', FX_COLUMN_TYPES);
+  addMissingColumns('trades', GAS_COLUMN_TYPES);
   addMissingColumns('eth_price', ETH_MARKET_COLUMNS);
 })();
 
@@ -330,6 +346,10 @@ export const FIELDS = [
   'sell_eth',
   'repay_date',
   'repay_amount',
+  'borrow_gas_usd',
+  'buy_gas_usd',
+  'sell_gas_usd',
+  'repay_gas_usd',
   'notes',
 ];
 

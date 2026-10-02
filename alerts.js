@@ -268,7 +268,11 @@ export function alertMessage(trade, alert, price) {
     // Through `signedUsd` rather than a sign built here from the held value,
     // which put a minus on a gain too small to show: a goal typed a fraction
     // of a cent below break-even previewed as `Gain: -$0.00`.
-    lines.push(`Gain: ${signedUsd(gain)} after $${n2(d.accruedInterestUsd)} interest`);
+    // The gas already paid is deducted too, so it is named too, for the same
+    // reason the interest is. Left off when nothing was recorded, rather than
+    // claiming a $0.00 deduction nobody measured.
+    const gas = Number.isFinite(d.feesUsd) ? ` and $${n2(d.feesUsd)} gas` : '';
+    lines.push(`Gain: ${signedUsd(gain)} after $${n2(d.accruedInterestUsd)} interest${gas}`);
   }
 
   return lines.join('\n');

@@ -3,6 +3,34 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.2.0] - 2026-10-03
+
+Gas fees. Every stage of a trade is an on-chain transaction, and until now the ledger behaved as if they were free, so every net gain on it was overstated by whatever the gas came to.
+
+### Added
+
+- **A gas fee on every stage, in dollars.** Borrow, Buy ETH, Sell ETH and Repay each ask for a fifth figure, *Gas fee*, typed in dollars whatever was borrowed - hence the `$` in front of it where its neighbours carry a ticker. It is required: a stage cannot be saved without one, in the browser or through the API, though 0 is accepted for a sponsored transaction. Four nullable columns, `borrow_gas_usd` to `repay_gas_usd`, added to both the `CREATE TABLE` and the migration list; an existing ledger gains them on start, as NULL.
+- **Net gain is after fees, everywhere.** `derive` takes the fees off `netGainUsd`, so the table, the annualized rate, the hero's Realized net gain and Blended annualized, every Stats tile and table, and Telegram's `/summary` all follow from one subtraction. The estimate on a sold trade and the unrealised gain on a held one take off the gas paid so far too. Reproduced on a scratch ledger: a USDT trade borrowing 30,000 for 10 days, selling for 32,824 and repaying 30,293 made +$2,531.00 at 307.94%; with $3, $5, $4 and $0 of gas it reads +$2,519.00 at 306.48%, which is 36,500 x 2,519 / (30,000 x 10).
+- **Total fees paid on the Repaid card**, just above Net gain, and a *Gas fee* row at the foot of every stage card.
+- **Total fees paid on Stats**, after Average hold, for the year on the tab or for All. It filled the empty fourth slot of the Performance card's first row.
+
+### Changed
+
+- **A euro trade's Gross gain and Net gain lead with dollars**, with the EURC figure underneath, because the ledger reports in dollars and every total adds up the dollar figure. The EURC net gain under it is after fees too: each dollar fee is converted at the rate of the stage it was paid on, which is the one place `lib/calc.js` divides by a rate, and it says so. On the EURC trade of 15 February (6,000 borrowed, sold for 6,306, repaid 6,007), $10 of gas takes the net gain from +$352.34 to +$342.34 and from +299.00 to +290.54 EURC, which is 299 - 5 / 1.1862 - 5 / 1.1784.
+- **A trade recorded before fees existed keeps its figures.** Its stages say *not recorded* rather than $0.00, since an unrecorded fee is not a free one; the Repaid card counts them ("3 stages not recorded") and so does the Stats tile. Editing one of its stages asks for that stage's fee, and only that one: a sale on such a trade is not refused because its purchase, long since done, has no fee yet.
+- **`isRealized` gates on the gross gain** rather than on the native net gain. The two were the same test until the native gain started needing a rate for every stage with a fee, at which point a closed EURC trade still waiting on one would have been filed as open.
+- **Opening a trade in History no longer closes the one already open.** The open row was a single `state.openId`, so with trade #15 expanded, a click on #16 collapsed #15 - two trades could never be read side by side. It is a set now, and each row opens and closes on its own; a newly created trade opens without closing the others either. The editor is no longer cleared on every row click: it closes only when its own row is collapsed or its trade deleted, because with several rows open, opening #16 used to throw away a half typed sale on #15.
+
+### Fixed
+
+Two bug hunts over the new code before release, one over the fees and the net gain, one over the euro conversion and how the cards print it. Five bugs, each reproduced on a scratch ledger or against `lib/calc.js` before the fix and re-run after. The arithmetic itself came back clean: a USDT trade with $3, $5, $4 and $0 of gas loses exactly $12, an EURC trade loses its fees in dollars and their per-stage conversion in euros, a sold trade's estimate and a held trade's unrealised gain lose the gas paid so far, a trade recorded before fees reads exactly as it did, and the migration adds the four columns to a copy of a live ledger with every figure on it unchanged.
+
+- **The Telegram holding report said "after interest" under a figure that was also after gas.** `unrealisedUsd` takes the borrow and buy gas off, and the line beneath it named one deduction and hid the other. It says "after interest and gas" whenever a held trade has a fee recorded. The price alert's message names both amounts, "after $X interest and $Y gas", leaving the gas out only when none was recorded.
+- **Total fees paid counted only the closed trades with a dollar result.** Gated the way Interest paid is, the tile left out the gas an open trade has already paid to borrow and to buy, and every fee on a closed EURC trade still waiting on a rate - though a fee is typed in dollars and needs no rate at all. On a 2026 tab with a closed trade ($12 of gas), a held one ($5) and a rateless EURC one ($10) it read $12.00; it reads $27.00. It counts every trade on the tab now, the way Total borrowed does.
+- **The tile's tooltip claimed every fee in it was already taken off the figures above it.** Once the tile counted open and rateless trades, that stopped being true: a ledger reporting a realized net gain of $918 and $10 of fees had all $10 sitting on a trade the $918 did not include. It says the total can be more than the gas inside the realized figures, and why.
+- **The sale form previewed a euro gain beside a dollar price.** Editing the EURC sale of 25 February read "ETH price $2,083.03, gross +306.00 EURC" while the card under the form said +$313.79. The preview follows the card: dollars once both rates are known.
+- **And with only one of those rates known, it gave no sign of it.** With the sale's rate in and the purchase's missing, the price came out in dollars and the gross in EURC, with no "(converted on save)" - the marker followed the price alone. It follows either figure falling back to the coin.
+
 ## [1.1.1] - 2026-09-27
 
 An audit of the year tabs added in 1.1.0. Four bugs, each reproduced on a scratch ledger before the fix and re-run after. The arithmetic came back clean and is not in this list: on a random ledger of 300 trades across four years, every trade lands on exactly one tab and the right one (its repay year, or the current year while open), net gain, closed and open counts, total borrowed and interest paid add up across the years to All, every month row and every best-or-worst tile sits inside its own year, and the blended annualized figure of each year and each currency matches an independent recomputation of 36,500 x total gain / total (loan x days).
