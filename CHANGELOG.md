@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.4.2] - 2026-10-03
+
+### Fixed
+
+- **The landing page asked for a password in Edge, Firefox and Safari**, and showed no logo. Its logo loaded from the site root, which nginx routes to the ledger behind auth, so a browser with no saved credentials put up a login prompt over the public page. The landing and 404 pages now load every image from `/landing/`, the path nginx serves publicly.
+- **The ledger opened light on a dark machine even with 1.3.5 deployed.** Production's Content-Security-Policy admits inline scripts by hash, and rewriting the theme script changed its hash, so the browser blocked it. The script is now `public/theme.js`, which the policy admits as a file from the site. `npm run check` fails if a landing page's inline script stops matching nginx's hashes, or if one appears on the ledger page.
+
 ## [1.4.1] - 2026-10-03
 
 ### Added

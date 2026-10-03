@@ -11,6 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import {
   derive,
   unrealisedUsd,
@@ -278,6 +279,36 @@ check('a loss that prints as -$0.01 is counted as a loss', () => {
 check('a trade dated after today is derived on its own day', () => {
   assert.equal(derivedOn(held({ borrow_date: '2026-10-02', buy_date: '2026-10-02' }), AS_OF), '2026-10-02');
   assert.equal(derivedOn(held(), AS_OF), AS_OF);
+});
+
+/* ------------------------------------------- production's script policy */
+
+// The hashes production's nginx Content Security Policy admits, one per inline
+// script on the public pages. Editing a script changes its hash and the browser
+// then blocks it - silently, in production only. That is how the 1.3.5 theme
+// fix shipped and never ran. If a check below fails on purpose, the new hash
+// has to go into nginx's Content-Security-Policy line too, and then here.
+const CSP_PINNED = [
+  'sha256-idlxi/vmZQzRC4UbiGOUSbMaK2QEuIqX4WVbMpag3Bk=',
+  'sha256-4gctYiGTReoQs9WljWvM7zE5fYNvf1ArhhVsTPQedWU=',
+  'sha256-0khB/vQfDtt4wssJcCymFCpQnpQAFWWDyDOe2sacm6I=',
+];
+
+const inlineScriptHashes = (file) => {
+  const html = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+  return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(
+    (m) => `sha256-${createHash('sha256').update(m[1], 'utf8').digest('base64')}`,
+  );
+};
+
+check('the landing pages\' inline scripts are the ones nginx admits', () => {
+  for (const file of ['landing/index.html', 'landing/404.html']) {
+    for (const h of inlineScriptHashes(file)) assert.ok(CSP_PINNED.includes(h), `${file}: ${h} is not in nginx's CSP`);
+  }
+});
+
+check('the ledger page has no inline script for the CSP to block', () => {
+  assert.deepEqual(inlineScriptHashes('public/index.html'), []);
 });
 
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);

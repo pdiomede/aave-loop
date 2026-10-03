@@ -201,6 +201,17 @@ allow-list blocks DNS rebinding — a page on the internet pointing its own host
 127.0.0.1 fails it. `config.env` holds the Telegram token, is gitignored, and every
 string leaving `telegram.js` is redacted first.
 
+Two rules the production nginx imposes on the pages, both enforced by `npm run check`:
+
+- **The public pages load only from `/landing/`.** That is the one path nginx serves
+  without a password, besides `/` itself. An image at the root goes to the app, behind
+  auth, and the browser shows a login prompt on the public page — the landing logo did
+  exactly that, in every browser without saved credentials. Keep a copy in `landing/`.
+- **Inline scripts are admitted by hash.** nginx's Content-Security-Policy lists the
+  SHA-256 of each inline script on `landing/index.html` and `landing/404.html`; edit one
+  and the browser silently blocks it until the user updates nginx. The ledger page has
+  no inline script at all for that reason — its theme runs from `public/theme.js`.
+
 ## Importing other agent configs
 
 An OpenAI Codex config exists at `~/.codex/config.toml`. Reply `/import` to scan and

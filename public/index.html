@@ -17,22 +17,10 @@
     <meta name="theme-color" content="#9896ff" />
     <!-- Behind basic auth, so nothing should try to index or preview it. -->
     <meta name="robots" content="noindex, nofollow" />
-    <script>
-      // Applied before first paint so a dark session never flashes white. With
-      // no choice saved it follows the system, as the landing page does: only
-      // a saved choice was read, so a dark machine went from a dark landing
-      // page to a light ledger.
-      (function () {
-        var theme = null;
-        try {
-          theme = localStorage.getItem('myaave-theme');
-        } catch (e) {}
-        try {
-          if (!theme) theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        } catch (e) {}
-        if (theme) document.documentElement.dataset.theme = theme;
-      })();
-    </script>
+    <!-- A file, not an inline script: production's CSP admits inline scripts by
+         hash, so every edit to one broke it until nginx was told the new hash.
+         Synchronous, so it still runs before first paint. -->
+    <script src="/theme.js"></script>
   </head>
   <body>
     <header class="header">
@@ -129,7 +117,7 @@
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v1.4.1</span> - Built by
+          &copy; 2026 &middot; <span id="version">v1.4.2</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>
