@@ -1477,6 +1477,13 @@ th[aria-sort="ascending"] .th-sort__caret {
   margin-top: 8px;
 }
 
+/* The Repaid card's result: a rule above Net gain sets the outcome apart from
+   the loan and its fees, the way a total is ruled off under a sum. */
+.stage__row--rule {
+  border-top: 1px solid var(--hairline-strong);
+  padding-top: 10px;
+}
+
 /* Gross gain and Net gain: the dollar figure and the coin figure under it both
    end at the card's edge, like every one-line value above them. */
 .stage__row--result dd {
