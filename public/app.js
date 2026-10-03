@@ -16,6 +16,7 @@ import {
   OPTIONAL_GAS,
   openGainsUsd,
   estimatedGainUsd,
+  estimateRate,
   hasEstimate,
   estimateNeedsPrice,
 } from '/lib/calc.js';
@@ -246,6 +247,7 @@ const TIPS = {
     share: "This month's result compared with the largest month in the table.",
   },
   noRate: 'No rate yet. Use Fetch rates on Stats.',
+  estToday: "Estimated at today's exchange rate. This trade's own rate is not fetched yet. Use Fetch rates on Stats.",
   alerts: {
     trade:
       'The trade the goal is on. A trade can appear twice: a new goal adds a row instead of replacing the old one.',
@@ -1621,7 +1623,7 @@ function shownGain(t, d) {
 function gainCellHtml(t, d) {
   const gain = shownGain(t, d);
   if (isNum(gain)) {
-    return `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ' <span class="chip">est</span>'}`;
+    return `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ` ${estChip(t, d)}`}`;
   }
   // The chip only where a rate is what stands between the row and a figure.
   // A position waiting on the ETH price would be sent to fetch rates that
@@ -1637,6 +1639,19 @@ function gainCellHtml(t, d) {
 }
 
 /**
+ * The `est` beside an estimate. Marked when today's rate is standing in for a
+ * rate the trade itself is missing: the figure is fine as a rough guide, but
+ * the trade still needs its own rate before it can close with a real result,
+ * and the "no rate" chip that used to say so here gave way to the estimate.
+ */
+function estChip(t, d) {
+  const standIn = !d.fxComplete && estimateRate(t, d, state.fxNow) !== null;
+  return standIn
+    ? `<span class="chip chip--warn" data-tip="${esc(TIPS.estToday)}">est</span>`
+    : '<span class="chip">est</span>';
+}
+
+/**
  * Rewrite the estimate cells in place when the ETH price or today's rate moves.
  *
  * Not a re-render of the table: this runs on every quote, every five minutes,
@@ -1644,6 +1659,7 @@ function gainCellHtml(t, d) {
  * into. The rows keep their order until the next render, which re-sorts.
  */
 function refreshEstimateCells() {
+  if (resortByEstimate()) return;
   for (const tr of document.querySelectorAll('#table-mount tr.row[data-trade]')) {
     const t = state.trades.find((x) => String(x.id) === tr.dataset.trade);
     if (!t) continue;
@@ -1652,6 +1668,43 @@ function refreshEstimateCells() {
     const cell = tr.querySelector(':scope > td[data-label="Net gain"]');
     if (cell) cell.innerHTML = gainCellHtml(t, d);
   }
+}
+
+/**
+ * Redraw the table when it is sorted by Net gain and a new price or rate has
+ * changed the order. True when it did, since the redraw rewrote every cell.
+ *
+ * The page loads before the first ETH price, so a held trade sorted as having
+ * no figure, sat last - often on another page - and stayed there once its cell
+ * filled in. Only when the order actually moved, and never under someone's
+ * hands: an open stage form, focus anywhere in the table, an expanded row on
+ * this page or an open dialog means the rows stay put until the next render,
+ * which sorts them anyway. An expanded row is checked by itself because a save
+ * leaves focus on the page: a euro trade's first quote at today's rate moved
+ * one from +$2,888 to -$723 and sent it, open, to another page. A dialog
+ * because Cancel hands focus back to the button that opened it, and a redraw
+ * underneath had replaced that button, so focus fell to the top of the page.
+ */
+function resortByEstimate() {
+  if (state.view !== 'trades' || state.sort.key !== 'gain') return false;
+  const mount = document.getElementById('table-mount');
+  if (
+    !mount ||
+    document.querySelector('[data-stage-form], dialog[open]') ||
+    mount.contains(document.activeElement)
+  ) {
+    return false;
+  }
+  const page = clampPage(state.trades.length);
+  const want = sortedTrades()
+    .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    .map((t) => String(t.id));
+  const have = [...mount.querySelectorAll('tr.row[data-trade]')].map((tr) => tr.dataset.trade);
+  // No rows drawn yet means boot has not rendered the table; that render sorts.
+  if (!have.length || want.join() === have.join()) return false;
+  if (have.some((id) => state.openIds.has(Number(id)))) return false;
+  renderTable();
+  return true;
 }
 
 function tradeRow(t, index, total) {

@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.3.2] - 2026-10-03
+
+### Fixed
+
+- **Sorted by Net gain, held trades stayed last after the ETH price arrived.** The page loads before the price, so they sorted as having no figure, often onto another page. The table now re-sorts when a price or today's rate changes the order. It doesn't while a stage form, a row of the page, a dialog or focus in the table is open.
+- **A euro trade estimated at today's rate lost its "no rate" cue.** When today's rate stands in for one the trade is missing, its `est` chip turns amber and says to use Fetch rates.
+
+A bug hunt over the grid, the re-sort and the chip found two bugs in the re-sort, each traced through the code and fixed before release. No browser was available, so the layout itself is unseen.
+
+- **An expanded row could jump to another page by itself.** A save leaves focus on the page, so a euro trade's first quote at today's rate re-sorted it from +$2,888 to -$723 and away. An expanded row on the page now holds the order.
+- **A re-sort under the delete confirmation lost keyboard focus.** Cancel returned focus to a button the redraw had replaced, so it fell to the top of the page. An open dialog now holds the order too.
+
 ## [1.3.1] - 2026-10-03
 
 ### Changed
