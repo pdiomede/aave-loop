@@ -483,17 +483,28 @@ a.brand {
 
 .stat__sub + .stat__sub {
   margin-top: 2px;
-  /* A tile sizes to its widest line, so without a measure five open positions
-     made Open positions as wide as the hero and pushed the tiles beside it
-     onto a row of their own. */
-  max-width: 30ch;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-muted);
 }
 
-.stat__item {
-  white-space: nowrap;
+/* Each open position's estimate, two to a row: id, figure, id, figure. The
+   figures right-aligned so they read down the column, and a wider gap before
+   the second pair so the two read as separate positions. Sized to its
+   columns, so the tile is no wider for four positions than for two. */
+.stat__grid {
+  display: grid;
+  grid-template-columns: repeat(2, auto auto);
+  justify-content: start;
+  column-gap: 6px;
+}
+
+.stat__grid > :nth-child(even) {
+  text-align: right;
+}
+
+.stat__grid > :nth-child(4n + 3) {
+  padding-left: 14px;
 }
 
 /* ------------------------------------------------------------------ main */

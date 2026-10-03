@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.3.1] - 2026-10-03
+
+### Changed
+
+- **Open positions lists each estimate in a two-column grid**, ids and figures aligned, two positions to a row. The flowing line wrapped from four positions on and left a `·` dangling at the end of the first row.
+
 ## [1.3.0] - 2026-10-03
 
 One estimate for an open position, printed the same everywhere it appears.

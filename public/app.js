@@ -2311,7 +2311,10 @@ function statTiles(s, { open = true, estimate = false } = {}) {
       (t) => `<div class="stat">
         <div class="stat__label">${t.label}</div>
         <div class="stat__value ${t.cls || ''}">${t.value}</div>
-        ${(t.sub || []).map((line) => `<div class="stat__sub">${line}</div>`).join('')}
+        ${(t.sub || [])
+          .map((line) => (typeof line === 'string' ? { html: line } : line))
+          .map((line) => `<div class="stat__sub${line.cls ? ` ${line.cls}` : ''}">${line.html}</div>`)
+          .join('')}
       </div>`,
     )
     .join('');
@@ -2337,12 +2340,15 @@ function openGainLines() {
   const lines = [
     `Est. gain ${fig(g.total)}${g.missing && isNum(price) ? ` ${RATE_MISSING}` : ''}`,
   ];
-  // One position would only repeat the total above it. Each entry is kept
-  // whole, so a long line breaks between positions and never inside one.
+  // One position would only repeat the total above it. Two to a row, id and
+  // figure in columns of their own: a flowing line wrapped after its separator
+  // and left a dot dangling at the end of the first row from four positions on.
+  // The spaces are real, for copying and screen readers; the grid draws none.
   if (g.rows.length > 1) {
-    lines.push(
-      g.rows.map((r) => `<span class="stat__item">#${r.id} ${fig(r.gain)}</span>`).join(' · '),
-    );
+    lines.push({
+      cls: 'stat__grid',
+      html: g.rows.map((r) => `<span>#${r.id}</span> <span>${fig(r.gain)}</span>`).join(' '),
+    });
   }
   return lines;
 }
