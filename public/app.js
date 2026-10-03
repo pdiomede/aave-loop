@@ -1486,7 +1486,7 @@ function stageSummary(stage, t, d) {
         row('Date', fmtDate(t.borrow_date)) +
         row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow)) +
         row('APR', pct(t.borrow_apr), '', 'stage__row--gap') +
-        row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} days` : '') +
+        row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} day${d.days === 1 ? '' : 's'}` : '') +
         gasRow('borrow')
       );
     case 'buy':

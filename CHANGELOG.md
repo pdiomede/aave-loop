@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.3.4] - 2026-10-03
+
+### Fixed
+
+- **The Borrowed card said "Loan length 1 days".** It says "1 day" now, and "Running for 1 day" while the loan is open.
+
 ## [1.3.3] - 2026-10-03
 
 ### Fixed
