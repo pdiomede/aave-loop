@@ -14,6 +14,7 @@ import {
   isUsdPegged,
   gasKey,
   OPTIONAL_GAS,
+  openGainsUsd,
 } from '/lib/calc.js';
 import { tradesCsv, csvFileName } from '/lib/csv.js';
 
@@ -561,6 +562,10 @@ const state = {
   // rewrites `state.alerts`. Polling for a header figure through that would put
   // a second writer on the armed-alert map for no reason.
   eth: null,
+  // Today's exchange rate per borrowed coin that is not a dollar, for the
+  // estimate under Open positions and nothing else: no stored figure is ever
+  // converted with it. Filled by `loadFxNow`.
+  fxNow: {},
   // The year tab open on the Stats view: '2026', 'all', or null for the newest
   // year. Kept for the session only, like the page number, and checked against
   // the ledger on every render because a delete can take a year's last trade.
@@ -620,6 +625,9 @@ async function loadTrades() {
   const rows = (await api('/api/trades')).map(withoutDerived);
   if (seq !== loadSeq || wroteAt !== writeSeq) return false;
   state.trades = rows;
+  // Not awaited: the ledger draws now and the estimate follows the rate. A new
+  // euro position asks at once, anything else at most every half hour.
+  loadFxNow().catch(() => {});
   return true;
 }
 
@@ -729,6 +737,11 @@ function adoptEthQuote(quote) {
   state.eth = quote;
   ethQuoteAt = Date.now();
   renderTicker();
+  // The Open positions tile values held ETH at this price, so a new quote
+  // moves its estimate, and the first one is what fills it in at all. Only
+  // once the tiles are up: a quote landing before the trades would otherwise
+  // draw a ledger of zeros that the trades then replace.
+  if (document.getElementById('hero-stats')?.childElementCount) renderHeroStats();
 }
 
 async function loadEth() {
@@ -738,6 +751,9 @@ async function loadEth() {
     if (seq !== ethSeq) return;
     if (Number.isFinite(body?.pollMs) && body.pollMs >= 30_000) ethPollMs = body.pollMs;
     adoptEthQuote(body);
+    // Rides the same poll, so a tab left open past the ECB's publication
+    // picks today's rate up. It throttles itself to every half hour.
+    loadFxNow().catch(() => {});
   } catch (err) {
     /*
      * The figure is left exactly as it was. A price lookup that could not get
@@ -751,6 +767,53 @@ async function loadEth() {
      */
     if (seq === ethSeq) renderTicker();
   }
+}
+
+/**
+ * Today's rate for every coin an open position was borrowed in, so the estimate
+ * under Open positions can mark a euro loan the way it marks the ETH: at today's
+ * figure.
+ *
+ * The server resolves it, from the ECB's daily rate it already caches - there
+ * is no live quote, and the estimate is rough enough not to want one. Asked at
+ * most every half hour: today's rate is provisional until the ECB publishes, so
+ * the server goes past its cache for it each time it is asked.
+ *
+ * A rate that could not be had keeps the one already held, and with none the
+ * trade's own stored rates stand in (see `openGainsUsd`).
+ */
+let fxNowSeq = 0;
+let fxNowAt = 0;
+const FX_NOW_MS = 30 * 60_000;
+
+async function loadFxNow() {
+  const wanted = [
+    ...new Set(
+      state.trades
+        .filter((t) => {
+          if (isUsdPegged(t.borrow_currency)) return false;
+          const d = derive(t);
+          return isNum(d.ethHeld) || (d.stages.sold && !d.stages.repaid);
+        })
+        .map((t) => t.borrow_currency),
+    ),
+  ];
+  const due = Date.now() - fxNowAt >= FX_NOW_MS;
+  if (!wanted.length || (!due && wanted.every((c) => isNum(state.fxNow[c])))) return;
+  const seq = ++fxNowSeq;
+  fxNowAt = Date.now();
+  const today = todayISO();
+  const got = await Promise.all(
+    wanted.map((c) =>
+      api(`/api/fx/rate?currency=${encodeURIComponent(c)}&date=${today}`)
+        .then((body) => [c, body?.rate])
+        .catch(() => [c, null]),
+    ),
+  );
+  // A newer ask overtook this one; its answer is the one to keep.
+  if (seq !== fxNowSeq) return;
+  for (const [c, rate] of got) if (isNum(rate) && rate > 0) state.fxNow[c] = rate;
+  if (document.getElementById('hero-stats')?.childElementCount) renderHeroStats();
 }
 
 /**
@@ -2170,7 +2233,7 @@ function renderStatsView() {
  * tile on a past year, where it could only ever read 0: open trades are filed
  * under the current year.
  */
-function statTiles(s, { open = true } = {}) {
+function statTiles(s, { open = true, estimate = false } = {}) {
   const tiles = [
     {
       // Not "$0" when no closed trade has a rate yet. Those trades made a real
@@ -2198,6 +2261,10 @@ function statTiles(s, { open = true } = {}) {
       value: s.openCount
         ? `${s.openCount}${isNum(s.deployed) ? ` (${usd(s.deployed)})` : ''}${s.deployedMissingFx ? ` ${RATE_MISSING}` : ''}`
         : '0',
+      // The hero only. It is redrawn on every ETH quote and the Stats view is
+      // not, so the year tile drew the estimate once and then sat on it - a dash
+      // for good when it was drawn before the first price arrived.
+      sub: estimate && s.openCount ? openGainLines() : [],
     },
   ];
   return tiles
@@ -2206,13 +2273,44 @@ function statTiles(s, { open = true } = {}) {
       (t) => `<div class="stat">
         <div class="stat__label">${t.label}</div>
         <div class="stat__value ${t.cls || ''}">${t.value}</div>
+        ${(t.sub || []).map((line) => `<div class="stat__sub">${line}</div>`).join('')}
       </div>`,
     )
     .join('');
 }
 
+/**
+ * The estimated gain under Open positions: the total, then each position.
+ *
+ * Worked out here rather than in `summarize`, which is a function of the trades
+ * alone and must stay one: this needs what ETH costs now, and that is only in
+ * `state.eth`. Open trades are all filed under the current year, so the Stats
+ * view's tile for this year reads the same figures from the whole ledger.
+ *
+ * The "no rate" chip only when there is a price. Without one every held trade
+ * is unknown, a dollar loan included, and blaming the exchange rate would name
+ * the wrong absence.
+ */
+function openGainLines() {
+  const price = state.eth?.price;
+  const g = openGainsUsd(state.trades, price, state.fxNow);
+  if (!g.rows.length) return [];
+  const fig = (v) => (isNum(v) ? `<span class="${gainClass(v)}">${signedUsd(v)}</span>` : '-');
+  const lines = [
+    `Est. gain ${fig(g.total)}${g.missing && isNum(price) ? ` ${RATE_MISSING}` : ''}`,
+  ];
+  // One position would only repeat the total above it. Each entry is kept
+  // whole, so a long line breaks between positions and never inside one.
+  if (g.rows.length > 1) {
+    lines.push(
+      g.rows.map((r) => `<span class="stat__item">#${r.id} ${fig(r.gain)}</span>`).join(' · '),
+    );
+  }
+  return lines;
+}
+
 function renderHeroStats() {
-  document.getElementById('hero-stats').innerHTML = statTiles(summarize(state.trades));
+  document.getElementById('hero-stats').innerHTML = statTiles(summarize(state.trades), { estimate: true });
 }
 
 /* ------------------------------------------------------------ alerts view */

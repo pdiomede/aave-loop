@@ -472,6 +472,30 @@ a.brand {
   font-variant-numeric: tabular-nums;
 }
 
+/* Under Open positions: the estimated gain, then each position's share of it,
+   smaller and quieter, with every figure keeping its own colour. */
+.stat__sub {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__sub + .stat__sub {
+  margin-top: 2px;
+  /* A tile sizes to its widest line, so without a measure five open positions
+     made Open positions as wide as the hero and pushed the tiles beside it
+     onto a row of their own. */
+  max-width: 30ch;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.stat__item {
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------------------ main */
 
 .main {

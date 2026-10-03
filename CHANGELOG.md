@@ -3,6 +3,27 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.2.4] - 2026-10-03
+
+### Added
+
+- **Estimated gain under Open positions.** The hero tile adds the total at today's ETH price, then each position, for example `Est. gain +$34,359.92` over `#914 +$15,056.36 · #915 +$19,303.56`. A held trade is its ETH at today's price less cost, interest so far and gas. A sold, unrepaid trade shows the table's estimate. A loan with nothing bought is left out. `openGainsUsd` in `lib/calc.js` takes the price and rates as arguments.
+
+### Changed
+
+- **The Repaid card rules off its result.** A line above Net gain, and Net gain and Annualized in bold.
+
+### Fixed
+
+A bug hunt over the estimate found six bugs, each reproduced against `lib/calc.js` before the fix and re-run after.
+
+- **A euro position was marked at the purchase day's rate.** It now uses today's ECB rate from `/api/fx/rate`, asked at most every half hour, not a live quote. A EURC trade bought at 1.05 read +$13,302.98 at today's 1.17 instead of +$9,094.86.
+- **A held euro position saved before its rates were fetched had no estimate.** It converts at today's rate now. The trade's stored rates stand in when today's is unavailable.
+- **So did a sold, unrepaid euro trade with no rates.** It falls back to its coin result at today's rate.
+- **With no ETH price the total counted only the sold trades.** It printed one position's gain as the whole, with no mark. It is a dash until a price arrives.
+- **The Stats tile for this year showed a dash for good.** It was drawn once, often before the first price. The estimate is shown in the hero only, which follows every quote.
+- **Many open positions widened the tile across the hero.** The per-position line has a measure and breaks between positions only.
+
 ## [1.2.3] - 2026-10-03
 
 ### Added
