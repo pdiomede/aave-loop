@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.4.0] - 2026-10-03
+
+### Changed
+
+- **An alert closes when its trade sells.** It used to stay ARMED with a "not watched" note, so that undoing the sale brought it back, and closed trades kept armed goals in the Alerts list. It is now marked CLOSED, in grey, and kept as history. It closes on the save that records the sale, at each alert check, and at startup, which closes the ones already left behind. Undoing the sale does not revive it; the bell sets a new goal. A cleared purchase closes it too.
+
+### Fixed
+
+- **The Alerts table sat on the edge of its card.** The coin logo, TRADE and the Delete column had no gutter, on a wide screen or a phone. They get the table's usual padding now.
+
 ## [1.3.5] - 2026-10-03
 
 The four smaller findings left over from the 1.3.3 audit.

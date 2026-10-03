@@ -1800,6 +1800,26 @@ th[aria-sort="ascending"] .th-sort__caret {
   white-space: nowrap;
 }
 
+/* Flush for its phone layout, but its card has no padding of its own, so the
+   outer columns get the table's usual 20px back - the logo and TRADE sat on
+   the card's edge. */
+.alerts-table thead th:first-child,
+.alerts-table tbody td:first-child {
+  padding-left: 20px;
+}
+
+.alerts-table thead th:last-child,
+.alerts-table tbody td:last-child {
+  padding-right: 20px;
+}
+
+/* An alert closed because its trade sold. Not the green of a CLOSED trade:
+   nothing was reached, the goal simply ended. */
+.alerts-table .pill--CLOSED {
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
 /* A cell whose second line sits under its first rather than beside it: the
    status and its "not sent" note, the fired date and the time and price it
    fired at. Side by side, Status alone was wide enough to push the table past
@@ -2156,6 +2176,21 @@ th[aria-sort="ascending"] .th-sort__caret {
 
   .alerts-table__act::before {
     content: none;
+  }
+
+  /* As cards the gutter goes on the row, since every cell spans it. Its card
+     has no padding of its own, so the cells sat on the card's edge here too,
+     and the 20px the outer columns take on a wide screen would push only the
+     first and last cell of each card in. */
+  .alerts-table tbody tr {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .alerts-table tbody td:first-child,
+  .alerts-table tbody td:last-child {
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .bar-col {

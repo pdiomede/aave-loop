@@ -256,9 +256,9 @@ const TIPS = {
       "Set when saved, against ETH's price at that moment. A goal above it waits for a rise; below it, for a fall.",
     status:
       'ARMED: still watched. FIRED: goal reached. FAILED: not delivered after three tries. ' +
-      '"not sent": reached, but Telegram refused it. "not watched": ETH sold.',
+      'CLOSED: the trade sold its ETH, so it can never fire. "not sent": reached, but Telegram refused it.',
     suspended:
-      'No ETH held now (sold, or the purchase undone), so this goal is not checked. It is kept for when the trade holds again.',
+      'No ETH held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',
     firedAt: 'When the goal was reached, and at what price. Blank while armed.',
   },
@@ -1641,6 +1641,24 @@ function gainCellHtml(t, d) {
 }
 
 /**
+ * The server closes a trade's armed alert when the save leaves it holding no
+ * ETH (`closeUnwatched` in alerts.js). The same here, so the bell and the
+ * Alerts list agree with it without a reload.
+ */
+function closeAlertsOnSale(id) {
+  const t = state.trades.find((x) => x.id === id);
+  if (!t || isNum(derive(t).ethHeld)) return;
+  if (!state.alerts[id]) return;
+  delete state.alerts[id];
+  if (state.alertLog) {
+    state.alertLog = state.alertLog.map((a) =>
+      a.tradeId === id && a.status === 'armed' ? { ...a, status: 'closed' } : a,
+    );
+  }
+  alertWriteSeq += 1;
+}
+
+/**
  * The `est` beside an estimate. Marked when today's rate is standing in for a
  * rate the trade itself is missing: the figure is fine as a rough guide, but
  * the trade still needs its own rate before it can close with a real result,
@@ -2444,18 +2462,21 @@ function alertLogRow(a) {
          data-tip="${esc(a.lastError)}">not sent</span></span>`
     : '';
 
-  const when = a.status === 'armed' ? dash : fmtDate(localDay(a.firedAt));
+  // Only a fired or failed alert has a firing to date. A closed one never
+  // fired: its trade sold first.
+  const unfired = a.status === 'armed' || a.status === 'closed';
+  const when = unfired ? dash : fmtDate(localDay(a.firedAt));
   const under =
-    a.status === 'armed'
+    unfired
       ? ''
       : `<small class="cell-note">${esc(localTime(a.firedAt))}${
           isNum(a.firedPrice) ? ` &middot; ${usd(a.firedPrice)}` : ''
         }</small>`;
 
   // Armed, but on a trade that is no longer holding ETH, so the sweep passes
-  // over it. Nothing is deleted when a sale is recorded - restoring the stage
-  // brings the alert back - which makes this a real state rather than a stray
-  // row, and ARMED on its own claims a watch that is not happening.
+  // over it. Brief now: such an alert is closed by the next save or sweep (see
+  // `closeUnwatched` in alerts.js), but until then ARMED on its own would claim
+  // a watch that is not happening.
   const st = t ? derive(t).stages : null;
   const suspended =
     a.status === 'armed' && st && (!st.bought || st.sold)
@@ -2652,6 +2673,7 @@ async function submitStage(form) {
     // while the row and its open detail vanish off the screen. `submitBorrow`
     // has done this since paging arrived; editing never did.
     state.page = pageOfTrade(id);
+    closeAlertsOnSale(id);
     render();
     state.draft = null;
     // A purchase is what makes an open position, and this save is the only

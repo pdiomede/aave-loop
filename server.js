@@ -30,6 +30,7 @@ import {
   alertPollMs,
   startAlertPoller,
   stopAlertPoller,
+  closeUnwatched,
 } from './alerts.js';
 import { startBotPoller, stopBotPoller } from './bot.js';
 
@@ -493,6 +494,9 @@ app.patch('/api/trades/:id', async (req, res, next) => {
       prepare(
         `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE id = @id`,
       ).run({ ...write, updated_at: new Date().toISOString(), id: current.id });
+      // A sale just recorded ends the trade's alert, now rather than at the
+      // next sweep, so the Alerts list says so as soon as it is opened.
+      closeUnwatched();
 
       return selectOne.get(current.id);
     });
@@ -862,6 +866,9 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   // Started here rather than at import, so the port being taken below cannot
   // leave a poller running in a process that is on its way out.
   reportConfig();
+  // Alerts left armed on trades sold before alerts were closed on a sale.
+  const closed = closeUnwatched();
+  if (closed) console.log(`Closed ${closed} alert${closed === 1 ? '' : 's'} on trades no longer holding ETH.`);
   startAlertPoller();
   startBotPoller();
 });

@@ -81,8 +81,8 @@ const selectLog = () => prepare('SELECT * FROM alerts ORDER BY id DESC');
  * with all three: the goal saved, the bell lit, and this query never looked at
  * it again.
  *
- * Nothing is deleted either way. Both edits can themselves be undone, and
- * restoring the stage brings the alert back with it.
+ * An alert on a trade that fails this test is closed, not kept: see
+ * `closeUnwatched`.
  */
 // The HOLDING test as SQL, for the trade aliased `t`. Shared by the read that
 // lists the armed alerts and by the claim, which has to ask again: see `fire`.
@@ -100,6 +100,35 @@ const selectArmed = () =>
   `);
 
 const selectTrade = () => prepare('SELECT * FROM trades WHERE id = ?');
+
+/**
+ * Close every armed alert whose trade no longer holds ETH - sold, or its
+ * purchase cleared - and answer how many.
+ *
+ * They used to be kept armed, so that undoing the sale brought the goal back.
+ * In practice a sold position's goal is over, and the Alerts list went on
+ * calling it ARMED, "not watched", on trades long since closed. Closed is
+ * final: undoing the sale does not revive it, and the bell sets a new one.
+ *
+ * Conditional on `armed`, so two copies of the app sharing the file cannot
+ * both close one - the same claim `fire` makes. Run after every trade edit, at
+ * startup and at the top of each sweep, which also catches an edit made by the
+ * other copy. A refused statement is logged and skipped: the trade edit that
+ * called this has already been written, and must not be reported as failed.
+ */
+export function closeUnwatched() {
+  if (!db.open) return 0;
+  try {
+    return prepare(`
+      UPDATE alerts SET status = 'closed', updated_at = @now
+      WHERE status = 'armed'
+        AND trade_id IN (SELECT t.id FROM trades t WHERE NOT (${HOLDING}))
+    `).run({ now: new Date().toISOString() }).changes;
+  } catch (err) {
+    console.error('Could not close alerts on trades that sold:', err.message);
+    return 0;
+  }
+}
 
 /** What the browser is told. The chat id and the token are never in here. */
 export const alertView = (row) =>
@@ -449,6 +478,7 @@ export async function runAlertSweep() {
     // same file holds an exclusive lock, and a read that waits longer than the
     // busy timeout is refused - and this ran on a timer, so the rejection
     // became an uncaughtException and took the whole server down with it.
+    closeUnwatched();
     const armed = selectArmed().all();
     checked = armed.length;
     if (armed.length === 0) return { checked: 0, fired: 0 };
