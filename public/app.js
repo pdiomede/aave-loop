@@ -1218,7 +1218,9 @@ function refreshHints(form, trade, stage) {
       : signedMoney(d.grossGain, c);
     set('sell_amount', isNum(d.sellPrice)
       ? `ETH price ${previewPrice(d.sellPriceUsd, d.sellPrice)}${
-          isNum(d.grossGain) ? `, gross ${gross}` : ''
+          // Its own line: run on after the price, it was wider than a stage
+          // card and ran off the edge.
+          isNum(d.grossGain) ? `<br>Gross ${gross}` : ''
         }${isNum(d.sellPriceUsd) && !grossInCoin ? '' : asSaved}`
       : '');
   }
@@ -1251,7 +1253,9 @@ function refreshHints(form, trade, stage) {
     // back to the coin when it can be had; a fee on a stage with no rate
     // leaves even that unknown, and it says when there will be a figure rather
     // than printing a euro gain that skipped the fees.
-    const annual = isNum(after.pct) ? `, <strong>${pct(after.pct)}</strong> annualized` : '';
+    // On its own line, as the sale's gross is: run on after the net gain it
+    // was wider than a stage card and ran off the edge.
+    const annual = isNum(after.pct) ? `<br><strong>${pct(after.pct)}</strong> annualized` : '';
     const realized = after.stages.repaid && isNum(after.grossGain);
     set('repay_amount', isUsdPegged(c) && isNum(after.netGain)
       ? `Net gain <strong class="${gainClass(after.netGain)}">${signedMoney(after.netGain, c)}</strong>${
@@ -1359,15 +1363,19 @@ function resultRow(row, row2, d, label, native, usdValue, c) {
 }
 
 function stageSummary(stage, t, d) {
-  const row = (label, value, cls = '') =>
-    value === '' || value == null ? '' : `<div class="stage__row"><dt>${label}</dt><dd class="${cls}">${value}</dd></div>`;
+  // `rowCls` styles the row itself rather than its figure: `stage__row--gap`
+  // opens the space that ends each card's date and amount block.
+  const row = (label, value, cls = '', rowCls = '') =>
+    value === '' || value == null
+      ? ''
+      : `<div class="stage__row${rowCls ? ` ${rowCls}` : ''}"><dt>${label}</dt><dd class="${cls}">${value}</dd></div>`;
 
   // The same row with the dollar equivalent underneath. A dollar coin has no
   // equivalent to state, so those cards stay exactly as they always were.
-  const row2 = (label, value, sub, cls = '') => {
+  const row2 = (label, value, sub, cls = '', rowCls = '') => {
     if (value === '' || value == null) return '';
     const under = d.isUsdPegged || !sub ? '' : `<small class="fx-note">${sub}</small>`;
-    return `<div class="stage__row"><dt>${label}</dt><dd class="${cls}">${value}${under}</dd></div>`;
+    return `<div class="stage__row${rowCls ? ` ${rowCls}` : ''}"><dt>${label}</dt><dd class="${cls}">${value}${under}</dd></div>`;
   };
 
   // A row with a dollar figure and no native counterpart: the two parts a loan
@@ -1398,7 +1406,7 @@ function stageSummary(stage, t, d) {
       return (
         row('Date', fmtDate(t.borrow_date)) +
         row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow)) +
-        row('APR', pct(t.borrow_apr)) +
+        row('APR', pct(t.borrow_apr), '', 'stage__row--gap') +
         row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} days` : '') +
         gasRow('borrow')
       );
@@ -1406,7 +1414,7 @@ function stageSummary(stage, t, d) {
       return (
         row('Date', fmtDate(t.buy_date)) +
         row2('Spent', money(t.buy_amount, c), fxNote(d.buyUsd, d.fx.buy)) +
-        row('Bought', eth(t.buy_eth)) +
+        row('Bought', eth(t.buy_eth), '', 'stage__row--gap') +
         // ETH is quoted in dollars, so this column is converted. Dividing a
         // euro amount by a quantity of ETH gives euros per ETH, which this
         // used to print under a dollar sign.
@@ -1421,7 +1429,7 @@ function stageSummary(stage, t, d) {
       return (
         row('Date', fmtDate(t.sell_date)) +
         row2('Received', money(t.sell_amount, c), fxNote(d.sellUsd, d.fx.sell)) +
-        row('Sold', eth(t.sell_eth)) +
+        row('Sold', eth(t.sell_eth), '', 'stage__row--gap') +
         row('ETH price', isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : RATE_MISSING) +
         (d.isPartialSale ? row2('Cost of ETH sold', money(d.costOfSoldEth, c), fxNote(d.costOfSoldEthUsd, d.fx.buy)) : '') +
         (d.isPartialSale ? row('Still held', eth(d.retainedEth)) : '') +
@@ -1449,6 +1457,8 @@ function stageSummary(stage, t, d) {
           d.isUsdPegged ? 'Interest' : 'Loan cost',
           money(d.interestPaid ?? d.accruedInterest, c),
           fxNote(d.loanCostUsd, null),
+          '',
+          'stage__row--gap',
         ) +
         // Only for a loan in another currency, and only once it is repaid. The
         // dollar cost can come out negative when the currency fell, and these

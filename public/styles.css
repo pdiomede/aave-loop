@@ -683,6 +683,9 @@ a.brand {
   color: var(--text-muted);
   min-height: 18px;
   font-variant-numeric: tabular-nums;
+  /* The stage forms sit inside the trades table, whose cells are nowrap, and a
+     hint longer than the card ran straight off its edge. */
+  white-space: normal;
 }
 
 .field__hint strong {
@@ -1456,6 +1459,12 @@ th[aria-sort="ascending"] .th-sort__caret {
 .stage__row--sub {
   margin-top: -2px;
   font-size: 12px;
+}
+
+/* The first row after a card's date and amount, which otherwise sat tight
+   under the amount's dollar note and read as part of it. */
+.stage__row--gap {
+  margin-top: 8px;
 }
 
 .stage__row--sub dt {

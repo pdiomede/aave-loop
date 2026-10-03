@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.2.2] - 2026-10-03
+
+### Fixed
+
+- **Long form hints ran off the stage card.** The forms sit in the trades table, whose cells do not wrap. Hints wrap now, the sale's *Gross* and the repayment's *annualized* rate each get their own line.
+- **The stage cards ran the amount straight into the next row.** APR, Bought, Sold and Loan cost (Interest on a dollar loan) now have space above them, closing off each card's date and amount.
+
 ## [1.2.1] - 2026-10-03
 
 Aave gas. A loop also pays gas to supply the ETH on Aave and to withdraw it, and neither reached the net gain.
