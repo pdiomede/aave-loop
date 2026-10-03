@@ -11,8 +11,9 @@
  * value that reaches the text goes through `escHtml` first.
  */
 import { db, prepare } from './db.js';
-import { derive, summarize, unrealisedUsd } from './lib/calc.js';
+import { derive, summarize, estimatedGainUsd, isUsdPegged, todayISO } from './lib/calc.js';
 import { ethPrice, ethStatus } from './eth.js';
+import { resolveRate } from './fx.js';
 import { alertPollMs } from './alerts.js';
 import { n4, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
@@ -85,7 +86,12 @@ const selectHolding = () =>
      ORDER BY t.borrow_date, t.id
   `);
 
-export function holdingText(rows, price) {
+/**
+ * `fxNow` is today's rate per borrowed coin, the one the page's Open positions
+ * tile uses, so a euro position reads the same figure in the chat as on the
+ * page (see `estimatedGainUsd`).
+ */
+export function holdingText(rows, price, fxNow = {}) {
   if (!rows.length) return 'Nothing is being held right now.';
 
   const hasPrice = Number.isFinite(price);
@@ -94,18 +100,20 @@ export function holdingText(rows, price) {
   let gainKnown = 0;
   let unpriced = 0;
   let gassed = 0;
+  const marked = new Set();
 
   const cells = rows.map((t) => {
     const d = derive(t);
     const held = Number.isFinite(d.ethHeld) ? d.ethHeld : 0;
     eth += held;
 
-    const g = hasPrice ? unrealisedUsd(d, price) : null;
+    const g = hasPrice ? estimatedGainUsd(t, d, price, fxNow) : null;
     if (g === null) unpriced += 1;
     else {
       gain += g;
       gainKnown += 1;
       if (Number.isFinite(d.feesUsd)) gassed += 1;
+      if (!d.isUsdPegged && Number.isFinite(fxNow?.[t.borrow_currency])) marked.add(t.borrow_currency);
     }
 
     return {
@@ -155,11 +163,14 @@ export function holdingText(rows, price) {
     const caveat = unpriced
       ? ` (${unpriced} without an exchange rate ${unpriced === 1 ? 'is' : 'are'} not counted)`
       : '';
-    // `unrealisedUsd` takes the gas already paid off too, and a figure has to
+    // The estimate takes the gas already paid off too, and a figure has to
     // be described by what was actually taken from it: "after interest" alone
     // under a total that is also after gas named one deduction and hid one.
     const less = gassed ? 'interest and gas' : 'interest';
-    head.push(`Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}`);
+    // A euro loan is marked at today's rate rather than the one it was bought
+    // at, and a figure has to say how it was arrived at.
+    const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');
+    head.push(`Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}${at ? `, ${escHtml(at)} today` : ''}`);
   } else if (unpriced) {
     // Two different absences. With no ETH price every row is unpriced, a
     // dollar coin included, and blaming the exchange rate sat above a table
@@ -276,7 +287,33 @@ export async function holdingMessage() {
   }
   // Asked for even with nothing held, so the answer names the price it used.
   const quote = await ethPrice();
-  return holdingText(rows, quote?.price ?? null);
+  const price = quote?.price ?? null;
+  // Not asked for without a price: every figure is a dash then, and today's
+  // rate is provisional until the ECB publishes, so asking goes to the network
+  // and held the reply back for nothing.
+  return holdingText(rows, price, Number.isFinite(price) ? await ratesToday(rows) : {});
+}
+
+/**
+ * Today's rate for every coin the rows were borrowed in that is not a dollar,
+ * from the same cached ECB lookup the page asks `/api/fx/rate` for. A coin
+ * whose rate cannot be had is left out, and its trades fall back to their
+ * stored rates.
+ */
+async function ratesToday(rows) {
+  const coins = [...new Set(rows.map((t) => t.borrow_currency).filter((c) => !isUsdPegged(c)))];
+  const today = todayISO();
+  const out = {};
+  for (const c of coins) {
+    try {
+      const hit = await resolveRate(c, today);
+      if (Number.isFinite(hit?.rate) && hit.rate > 0) out[c] = hit.rate;
+    } catch {
+      // `resolveRate` answers null rather than throwing; this is belt and braces
+      // so a chat command is never left without a reply.
+    }
+  }
+  return out;
 }
 
 /**

@@ -26,7 +26,8 @@
  * a partial unique index in db.js.
  */
 import { db, prepare } from './db.js';
-import { derive, unrealisedUsd } from './lib/calc.js';
+import { derive, estimatedGainUsd, estimateRate, isUsdPegged, todayISO } from './lib/calc.js';
+import { resolveRate, cachedRate } from './fx.js';
 import { ethPrice } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
 import { telegramConfig } from './config.js';
@@ -237,7 +238,11 @@ export function deleteAllAlerts() {
  * window shows this same text before anything is saved, so nothing arrives
  * there that was not read first.
  */
-export function alertMessage(trade, alert, price) {
+/**
+ * `fxNow` is today's rate per borrowed coin, so a euro trade's gain reads the
+ * same here as in /holding and on the page (see `estimatedGainUsd`).
+ */
+export function alertMessage(trade, alert, price, fxNow = {}) {
   const d = derive(trade);
   const c = trade.borrow_currency;
   const verb = alert.direction === 'above' ? 'hit' : 'fell to';
@@ -264,12 +269,12 @@ export function alertMessage(trade, alert, price) {
     lines.push(`Worth now: $${n2(d.ethHeld * price)}`);
   }
 
-  const gain = unrealisedUsd(d, price);
+  const gain = estimatedGainUsd(trade, d, price, fxNow);
   if (gain !== null) {
     // The cost is stated rather than alluded to. "After interest" on a loan
     // taken out this morning claimed a deduction that had not happened yet,
     // and on an older one it asked the reader to take the size of it on trust.
-    // `unrealisedUsd` is null unless this figure is a number, so it is one.
+    // `estimatedGainUsd` is null unless this figure is a number, so it is one.
     // Through `signedUsd` rather than a sign built here from the held value,
     // which put a minus on a gain too small to show: a goal typed a fraction
     // of a cent below break-even previewed as `Gain: -$0.00`.
@@ -277,7 +282,14 @@ export function alertMessage(trade, alert, price) {
     // reason the interest is. Left off when nothing was recorded, rather than
     // claiming a $0.00 deduction nobody measured.
     const gas = Number.isFinite(d.feesUsd) ? ` and $${n2(d.feesUsd)} gas` : '';
-    lines.push(`Gain: ${signedUsd(gain)} after $${n2(d.accruedInterestUsd)} interest${gas}`);
+    // The interest named is the interest taken off, so it is converted at the
+    // rate the gain was: today's for a euro loan when it is known, which the
+    // line then says, rather than the borrow day's figure from the card.
+    const rate = estimateRate(trade, d, fxNow);
+    const marked = rate !== null && !d.isUsdPegged;
+    const interestUsd = marked ? d.accruedInterest * rate : d.accruedInterestUsd;
+    const at = marked ? ` (${c} at ${rate.toFixed(4)} today)` : '';
+    lines.push(`Gain: ${signedUsd(gain)} after $${n2(interestUsd)} interest${gas}${at}`);
   }
 
   return lines.join('\n');
@@ -297,7 +309,18 @@ export function previewMessage(trade, goalPrice, price = null) {
     // Written at the goal rather than at today's price: the message only goes
     // out once the goal is reached, so those are the figures it will carry.
     goalPrice,
+    // From the cache alone, like the ETH price beside it: this answers while
+    // the goal is being typed and must not wait on the network per keystroke.
+    cachedRateToday(trade),
   );
+}
+
+/** `{ [coin]: today's cached rate }` for a coin that is not a dollar, or {}. */
+function cachedRateToday(trade) {
+  const c = trade.borrow_currency;
+  if (isUsdPegged(c)) return {};
+  const rate = cachedRate(c, todayISO())?.rate;
+  return Number.isFinite(rate) && rate > 0 ? { [c]: rate } : {};
 }
 
 /* -------------------------------------------------------------------- sweep */
@@ -336,7 +359,11 @@ async function fire(row, price) {
   const trade = selectTrade().get(row.trade_id);
   if (!trade) return;
 
-  const sent = await sendTelegramMessage(alertMessage(trade, row, price));
+  // Today's rate, asked for properly: this message leaves the machine. A lookup
+  // that fails answers null rather than throwing, and the stored rates stand in.
+  const today = isUsdPegged(trade.borrow_currency) ? null : await resolveRate(trade.borrow_currency, todayISO());
+  const fxNow = Number.isFinite(today?.rate) ? { [trade.borrow_currency]: today.rate } : {};
+  const sent = await sendTelegramMessage(alertMessage(trade, row, price, fxNow));
   if (sent.ok) {
     console.log(`Alert on trade #${row.trade_id} sent: ETH at ${price}.`);
     return;

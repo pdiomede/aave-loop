@@ -10,10 +10,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./run_myAave.sh --port 3011  # a specific port
 ./resetDatabase.sh           # empty the ledger; asks twice, backs up to data/backups
 npm start                    # node server.js, no port hunting
+npm run check                # the lib/calc.js checks in scripts/check-calc.mjs
 ```
 
-**There is no test suite, no linter and no build step.** Nothing is transpiled; the
-files on disk are the files that run. So verification means executing the thing you
+**There is no test framework, no linter and no build step.** Nothing is transpiled;
+the files on disk are the files that run. `npm run check` covers the estimate math in
+`lib/calc.js` against hand-worked figures on a fixed date; add a case there when you
+change a formula, with the expected value worked out from the inputs rather than by
+calling the function again. Beyond that, verification means executing the thing you
 changed:
 
 ```bash
@@ -58,8 +62,15 @@ Write the `CHANGELOG.md` entry **before** the bump. The `version` lifecycle ends
 `git add -u`, so an entry written first is staged with everything else; written after,
 it is left behind. Then commit by hand.
 
-Since 1.0.0 the number means what SemVer says it means, so `major` is the right verb
-for a change to the API, the database or a stored figure — not `patch` out of habit.
+Since 1.0.0 the number means what SemVer says it means: `major` for a change to the
+API, the database or a stored figure, `minor` for a new feature or figure on screen,
+`patch` for fixes and cosmetic changes only — not `patch` out of habit.
+
+Every user-visible change gets its `CHANGELOG.md` line in the commit that makes it,
+under `## [Unreleased]`, which you rename to the new number by hand at release (the
+bump does not touch `CHANGELOG.md`). A change committed with
+no entry is forgotten by the next release; two Repaid card commits went out that way
+and had to be written up after the fact. Run `npm run check` before the bump.
 
 The bump runs `scripts/stamp-version.mjs`, which writes the number into the two pages
 that print it, `public/index.html` and `landing/index.html`. **A pattern that no

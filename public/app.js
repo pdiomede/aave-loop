@@ -15,6 +15,9 @@ import {
   gasKey,
   OPTIONAL_GAS,
   openGainsUsd,
+  estimatedGainUsd,
+  hasEstimate,
+  estimateNeedsPrice,
 } from '/lib/calc.js';
 import { tradesCsv, csvFileName } from '/lib/csv.js';
 
@@ -328,7 +331,7 @@ const SORT_KEYS = {
   buy: (t, d) => d.buyPriceUsd,
   sell: (t, d) => d.sellPriceUsd,
   days: (t, d) => d.days,
-  gain: (t, d) => (isNum(d.netGainUsd) ? d.netGainUsd : d.projectedNetGainUsd),
+  gain: (t, d) => shownGain(t, d),
   pct: (t, d) => d.pct,
   status: (t, d) => STATUS_ORDER[d.status],
 };
@@ -742,6 +745,7 @@ function adoptEthQuote(quote) {
   // once the tiles are up: a quote landing before the trades would otherwise
   // draw a ledger of zeros that the trades then replace.
   if (document.getElementById('hero-stats')?.childElementCount) renderHeroStats();
+  refreshEstimateCells();
 }
 
 async function loadEth() {
@@ -790,11 +794,7 @@ async function loadFxNow() {
   const wanted = [
     ...new Set(
       state.trades
-        .filter((t) => {
-          if (isUsdPegged(t.borrow_currency)) return false;
-          const d = derive(t);
-          return isNum(d.ethHeld) || (d.stages.sold && !d.stages.repaid);
-        })
+        .filter((t) => !isUsdPegged(t.borrow_currency) && hasEstimate(derive(t)))
         .map((t) => t.borrow_currency),
     ),
   ];
@@ -814,6 +814,7 @@ async function loadFxNow() {
   if (seq !== fxNowSeq) return;
   for (const [c, rate] of got) if (isNum(rate) && rate > 0) state.fxNow[c] = rate;
   if (document.getElementById('hero-stats')?.childElementCount) renderHeroStats();
+  refreshEstimateCells();
 }
 
 /**
@@ -1607,6 +1608,52 @@ function prerequisiteMet(key, s) {
 
 /* ---------------------------------------------------------- table render */
 
+/**
+ * The figure the Net gain column shows: the result once there is one,
+ * otherwise the same estimate as the header's Open positions tile, at today's
+ * ETH price and exchange rate. The sort reads it too, so the column orders by
+ * what is on screen.
+ */
+function shownGain(t, d) {
+  return isNum(d.netGainUsd) ? d.netGainUsd : estimatedGainUsd(t, d, state.eth?.price, state.fxNow);
+}
+
+function gainCellHtml(t, d) {
+  const gain = shownGain(t, d);
+  if (isNum(gain)) {
+    return `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ' <span class="chip">est</span>'}`;
+  }
+  // The chip only where a rate is what stands between the row and a figure.
+  // A position waiting on the ETH price would be sent to fetch rates that
+  // cannot help it, so that is a dash; with the price in, a missing rate is
+  // the only thing left, and the header tile already says "no rate" for it.
+  // A trade with nothing to estimate keeps the old rule, once the ETH is sold.
+  const dash = '<span class="muted">-</span>';
+  if (hasEstimate(d)) {
+    if (estimateNeedsPrice(d) && !isNum(state.eth?.price)) return dash;
+    return d.fxComplete ? dash : RATE_MISSING;
+  }
+  return d.stages.sold && !d.fxComplete ? RATE_MISSING : dash;
+}
+
+/**
+ * Rewrite the estimate cells in place when the ETH price or today's rate moves.
+ *
+ * Not a re-render of the table: this runs on every quote, every five minutes,
+ * and redrawing the table would take focus out of a stage form being typed
+ * into. The rows keep their order until the next render, which re-sorts.
+ */
+function refreshEstimateCells() {
+  for (const tr of document.querySelectorAll('#table-mount tr.row[data-trade]')) {
+    const t = state.trades.find((x) => String(x.id) === tr.dataset.trade);
+    if (!t) continue;
+    const d = derive(t);
+    if (!hasEstimate(d)) continue;
+    const cell = tr.querySelector(':scope > td[data-label="Net gain"]');
+    if (cell) cell.innerHTML = gainCellHtml(t, d);
+  }
+}
+
 function tradeRow(t, index, total) {
   const d = t.derived || derive(t);
   const isOpen = state.openIds.has(t.id);
@@ -1626,16 +1673,7 @@ function tradeRow(t, index, total) {
       `<span class="sr-only"> to </span>${fmtDate(t.repay_date)}`
     : fmtDate(t.borrow_date);
 
-  const gain = isNum(d.netGainUsd) ? d.netGainUsd : d.projectedNetGainUsd;
-  const gainCell = isNum(gain)
-    ? `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ' <span class="chip">est</span>'}`
-    // The chip only where a rate is what stands between the row and a figure,
-    // which is once the ETH is sold. An open or held trade has no net gain at
-    // any rate, and "no rate" there sent the reader to fetch rates that could
-    // only turn it into a dash.
-    : d.stages.sold && !d.fxComplete
-      ? RATE_MISSING
-      : '<span class="muted">-</span>';
+  const gainCell = gainCellHtml(t, d);
 
   return `
   <tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0">

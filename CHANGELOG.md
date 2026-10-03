@@ -3,6 +3,34 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.3.0] - 2026-10-03
+
+One estimate for an open position, printed the same everywhere it appears.
+
+### Added
+
+- **The History table estimates held trades too.** Net gain shows the header's figure with the `est` chip, updated in place on every ETH quote so a stage form being typed into keeps focus. The column sorts on it.
+- **A partial sale counts the ETH still held.** The estimate adds it at today's price less what it cost: 6 of 10 ETH sold read $1,800 short of closing today. A closed trade's net gain is unchanged.
+- **`npm run check`**, 25 checks of the estimate math in `scripts/check-calc.mjs`, against hand-worked figures on a fixed date.
+
+### Changed
+
+- **Telegram `/holding` and price alerts use the page's estimate.** A euro trade is marked at today's ECB rate, and the line says so: `EURC at 1.1225 today`. Both used the purchase day's rate, so a 30,000 EURC trade read +$2,881.53 in an alert and +$698.91 on the page.
+- **Every open euro position is marked at today's rate, sold or held.** The stored rates stand in only when today's is unavailable.
+- **`CLAUDE.md` sets the release rules.** `minor` is for a feature and `patch` for fixes only. Every change gets its changelog line in its own commit.
+
+### Fixed
+
+A bug hunt over each addition found seven bugs, each reproduced before the fix and re-run after.
+
+- **Selling a sliver of a euro position moved its estimate by thousands.** A sold trade fell back to its stored rates, so selling 0.01 ETH of 30,000 EURC bought at 1.05 jumped the estimate by $3,612 with the euro at 1.17.
+- **A held euro trade with no rate showed a dash in the row** while the header said "no rate". The row says "no rate" now, and a dash only when the ETH price is what is missing.
+- **The CSV comment called `net_gain_estimate_usd` the table's figure.** It no longer is. The comment now says it is the projection at stored rates.
+- **`/holding` waited on a rate lookup with no ETH price**, when every figure would be a dash anyway.
+- **The checks computed the expected interest with the function under test.** It is worked out by hand now.
+- **The "imports nothing" check missed re-exports and dynamic imports.** It catches all three now.
+- **`CLAUDE.md` said the bump renames the changelog heading.** It does not, and now says so.
+
 ## [1.2.4] - 2026-10-03
 
 ### Added
