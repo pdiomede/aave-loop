@@ -15,6 +15,7 @@ import {
   gasKey,
   OPTIONAL_GAS,
 } from '/lib/calc.js';
+import { tradesCsv, csvFileName } from '/lib/csv.js';
 
 /* ------------------------------------------------------------- formatters */
 
@@ -564,6 +565,8 @@ const state = {
   // year. Kept for the session only, like the page number, and checked against
   // the ledger on every render because a delete can take a year's last trade.
   statsYear: null,
+  // The day the Stats view was last drawn for, which Export CSV reuses.
+  statsAsOf: null,
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -848,7 +851,12 @@ const EARLIEST_DATE = '2015-07-30';
  * old behaviour of dropping the separator.
  */
 function sanitizeNumeric(text, { pasted = false } = {}) {
-  const start = pasted ? normaliseAmountText(String(text ?? '')) : String(text ?? '');
+  // The one comma that can be read mid-typing: straight after a whole part of
+  // zeros, where no thousands group can start. Dropped like the others, typing
+  // a gas fee of "0,125" left "0125" and saved $125.
+  const start = pasted
+    ? normaliseAmountText(String(text ?? ''))
+    : String(text ?? '').replace(/^(\s*[+-]?0+),/, '$1.');
   let out = start.replace(/[^0-9.]/g, '');
   const firstDot = out.indexOf('.');
   if (firstDot !== -1) {
@@ -1354,12 +1362,15 @@ function feesText(d) {
  * is printed on top.
  */
 function resultRow(row, row2, d, label, native, usdValue, c, rowCls = '') {
-  if (d.isUsdPegged) return row(label, signedMoney(native, c), gainClass(native), rowCls);
+  // Right aligned, both lines: left to itself the short dollar figure started
+  // flush with the longer coin figure under it, short of the card's edge.
+  const cls = ['stage__row--result', rowCls].filter(Boolean).join(' ');
+  if (d.isUsdPegged) return row(label, signedMoney(native, c), gainClass(native), cls);
   const under = isNum(native) ? signedMoney(native, c) : '';
   // Only reached on a card whose stage is done, so a missing dollar figure is a
   // missing rate, and the coin figure underneath still stands when it is known.
-  if (!isNum(usdValue)) return row2(label, RATE_MISSING, under, '', rowCls);
-  return row2(label, signedUsd(usdValue), under, gainClass(usdValue), rowCls);
+  if (!isNum(usdValue)) return row2(label, RATE_MISSING, under, '', cls);
+  return row2(label, signedUsd(usdValue), under, gainClass(usdValue), cls);
 }
 
 function stageSummary(stage, t, d) {
@@ -1629,18 +1640,26 @@ function captureDraft() {
   };
 }
 
+/** True when the draft belonged to the form on screen and was put back. */
 function restoreDraft(draft) {
-  if (!draft) return;
+  if (!draft) return false;
   const form = document.querySelector('[data-stage-form]');
   if (!form || Number(form.dataset.trade) !== draft.id || form.dataset.stageForm !== draft.stage) {
-    return;
+    return false;
   }
   for (const [name, value] of Object.entries(draft.values)) {
     const input = form.elements[name];
     if (input && input.value !== value) input.value = value;
   }
+  // The amount's ticker is drawn from the saved trade, and only the input
+  // handler ever updated it. A currency changed in the form and then carried
+  // across a re-render came back labelled with the old coin, beside a hint
+  // already in the new one.
+  const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');
+  if (unit && draft.values.borrow_currency) unit.textContent = draft.values.borrow_currency;
   const repay = form.querySelector('input[name="repay_amount"]');
   if (repay && !draft.auto) delete repay.dataset.auto;
+  return true;
 }
 
 function renderTable() {
@@ -1678,12 +1697,15 @@ function renderTable() {
 
   const openForm = mount.querySelector('[data-stage-form]');
   if (openForm) {
-    restoreDraft(state.draft);
+    const restored = restoreDraft(state.draft);
     const trade = state.trades.find((t) => t.id === Number(openForm.dataset.trade));
     refreshHints(openForm, trade, openForm.dataset.stageForm);
     // Only take focus when the form has just been opened. Stealing it on every
     // re-render pulls the caret away from whatever else is being typed in.
-    if (!state.draft) openForm.querySelector('input, select')?.focus();
+    // Asked of the restore rather than of `state.draft`: moving from one
+    // stage's editor to another leaves the old form's draft behind, unused,
+    // and the new form opened with focus on the body.
+    if (!restored) openForm.querySelector('input, select')?.focus();
   }
   state.draft = null;
 }
@@ -1939,6 +1961,51 @@ const SUMMARY_FOOT = `<p class="summary__foot muted">
     for the day of each transaction, or for the last business day before it.
   </p>`;
 
+// A tray with an arrow into it, drawn like the bell: the file comes down to you.
+const DOWNLOAD_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
+  </svg>`;
+
+/**
+ * The trades on the year tab being looked at, as the Stats cards count them:
+ * the same `statsYear` filter over the same `asOf`, so the file and the cards
+ * above the button can never describe different trades. All is every trade.
+ */
+function tradesForYear(year, asOf) {
+  return year === 'all' ? state.trades : state.trades.filter((t) => statsYear(t, asOf) === year);
+}
+
+/**
+ * Hand the CSV for a year tab to the browser as a download.
+ *
+ * Exported as of the day the tab was drawn, not the day of the click. Nothing
+ * redraws Stats at midnight, so a tab drawn on 31 December and exported on 1
+ * January filed every open trade under the new year: the 2026 tab listed it
+ * and the 2026 file left it out.
+ */
+function exportCsv(year) {
+  const asOf = state.statsAsOf ?? todayISO();
+  const trades = tradesForYear(year, asOf);
+  if (trades.length === 0) {
+    toast('No trades to export.');
+    return;
+  }
+  const blob = new Blob([tradesCsv(trades, asOf)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = csvFileName(year);
+  document.body.append(a);
+  a.click();
+  a.remove();
+  // Revoked on the next tick rather than at once: the click starts the
+  // download asynchronously, and a URL revoked before it is read gives a
+  // failed download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  toast(`Exported ${trades.length} trade${trades.length === 1 ? '' : 's'}.`);
+}
+
 /**
  * The year tabs, newest first, with All last.
  *
@@ -1969,6 +2036,7 @@ function renderStatsView() {
   // One `asOf` for the whole render, so a view drawn across midnight cannot
   // file an open trade under one year for the tabs and another for the cards.
   const asOf = todayISO();
+  state.statsAsOf = asOf;
   const years = statsYears(state.trades, asOf);
   // A year that has lost its last trade - deleted, or its repayment moved to
   // another year - falls back to the newest rather than rendering empty cards.
@@ -1976,8 +2044,7 @@ function renderStatsView() {
     state.statsYear = years[0] ?? 'all';
   }
   const year = state.statsYear;
-  const trades =
-    year === 'all' ? state.trades : state.trades.filter((t) => statsYear(t, asOf) === year);
+  const trades = tradesForYear(year, asOf);
 
   const r = summaryReport(trades, asOf);
   const valuedAny = r.valuedCount > 0;
@@ -2013,7 +2080,10 @@ function renderStatsView() {
 
   mount.innerHTML = `
     ${fxBanner(whole.missingFx, whole.provisionalFx, year === 'all' ? null : { year, count: r.missingFx })}
-    ${yearTabs(years, year)}
+    <div class="years-bar">
+      ${yearTabs(years, year)}
+      <button class="btn btn--sm" type="button" data-export-csv>${DOWNLOAD_SVG} Export CSV</button>
+    </div>
     ${scope}
     ${overview}
     ${summaryCard(
@@ -2882,6 +2952,11 @@ function wire() {
       return;
     }
 
+    if (e.target.closest('[data-export-csv]')) {
+      exportCsv(state.statsYear);
+      return;
+    }
+
     const yearTab = e.target.closest('[data-stats-year]');
     if (yearTab) {
       // The render replaces the button that was pressed, so focus fell back to
@@ -2917,7 +2992,11 @@ function wire() {
 
     const sortBtn = e.target.closest('[data-sort]');
     if (sortBtn) {
+      // The render replaces the header, as with the year tabs below: put focus
+      // on the new copy so a keyboard user is not sent to the top of the page.
+      const hadFocus = document.activeElement === sortBtn;
       applySort(sortBtn.dataset.sort);
+      if (hadFocus) document.querySelector(`[data-sort="${state.sort.key}"]`)?.focus();
       return;
     }
 
@@ -2938,7 +3017,9 @@ function wire() {
 
     const dirBtn = e.target.closest('[data-sort-dir]');
     if (dirBtn) {
+      const hadFocus = document.activeElement === dirBtn;
       applySort(state.sort.key);
+      if (hadFocus) document.querySelector('[data-sort-dir]')?.focus();
       return;
     }
 
@@ -2997,7 +3078,11 @@ function wire() {
       } else {
         state.openIds.add(id);
       }
+      // Enter on a row opened it and then lost focus with the row the render
+      // replaced. Same remedy as the year tabs.
+      const hadFocus = document.activeElement === row;
       render();
+      if (hadFocus) document.querySelector(`.row[data-trade="${id}"]`)?.focus();
     }
   });
 

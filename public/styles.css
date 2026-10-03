@@ -1115,8 +1115,18 @@ th[aria-sort="ascending"] .th-sort__caret {
   box-shadow: var(--ring);
 }
 
+/* The tabs and the Export CSV button on one line, the button at the right
+   edge. On a phone the button wraps under the tabs rather than squeezing them. */
+.years-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 /* The fx banner is a card, and `.card + .card` is what spaces the others. */
-.card + .years {
+.card + .years-bar {
   margin-top: 16px;
 }
 
@@ -1164,7 +1174,7 @@ th[aria-sort="ascending"] .th-sort__caret {
 
 /* Whatever follows the tabs - the note or the first card - sits the same
    distance below them as one card sits below another. */
-.years + .card,
+.years-bar + .card,
 .years__note + .card {
   margin-top: 16px;
 }
@@ -1465,6 +1475,12 @@ th[aria-sort="ascending"] .th-sort__caret {
    under the amount's dollar note and read as part of it. */
 .stage__row--gap {
   margin-top: 8px;
+}
+
+/* Gross gain and Net gain: the dollar figure and the coin figure under it both
+   end at the card's edge, like every one-line value above them. */
+.stage__row--result dd {
+  text-align: right;
 }
 
 .stage__row--sub dt {

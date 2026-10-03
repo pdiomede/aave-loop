@@ -3,6 +3,27 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.2.3] - 2026-10-03
+
+### Added
+
+- **Export CSV on Stats.** A button on the line of the year tabs downloads the trades on that tab, filed by the same `statsYear` rule the cards use, as `aave-loop-trades-2026.csv` or `-all.csv`. One row per trade has the stage inputs, rates, fees and every figure `derive` works out. A stage not reached and a figure not known are empty cells, not 0. It is built in the browser by `lib/csv.js`, which Node imports unchanged.
+
+### Changed
+
+- **Gross gain and Net gain are right aligned**, both lines, on the Sold ETH and Repaid cards. Repaid also has space above Gas fee and Net gain.
+
+### Fixed
+
+Two bug hunts, every finding reproduced before the fix and re-run after.
+
+- **A Stats tab drawn on 31 December and exported on 1 January dropped its open trades.** The export took a fresh date and filed them under the new year. It now uses the date the tab was drawn.
+- **A comma after a leading 0 read as a thousands separator.** "0,125" typed or pasted as a gas fee stored $125. It is a decimal now, and "1,500" still reads as thousands.
+- **A trade flat to the cent after gas counted as a loss.** Rounding left -1.09e-12, so Stats said 0% won. Wins and losses are counted in whole cents.
+- **The Borrowed form showed the old coin after a re-render.** A currency changed in the form, then another row opened, left the amount labelled USDT beside an EURC hint.
+- **Moving from one stage editor to another left focus on the page.** The new form takes focus now.
+- **Enter on a trade row or a sort header sent focus to the top of the page.** Focus stays put, as on the year tabs.
+
 ## [1.2.2] - 2026-10-03
 
 ### Fixed
