@@ -1353,13 +1353,13 @@ function feesText(d) {
  * the page adds up the dollar figure. The colour comes from whichever figure
  * is printed on top.
  */
-function resultRow(row, row2, d, label, native, usdValue, c) {
-  if (d.isUsdPegged) return row(label, signedMoney(native, c), gainClass(native));
+function resultRow(row, row2, d, label, native, usdValue, c, rowCls = '') {
+  if (d.isUsdPegged) return row(label, signedMoney(native, c), gainClass(native), rowCls);
   const under = isNum(native) ? signedMoney(native, c) : '';
   // Only reached on a card whose stage is done, so a missing dollar figure is a
   // missing rate, and the coin figure underneath still stands when it is known.
-  if (!isNum(usdValue)) return row2(label, RATE_MISSING, under);
-  return row2(label, signedUsd(usdValue), under, gainClass(usdValue));
+  if (!isNum(usdValue)) return row2(label, RATE_MISSING, under, '', rowCls);
+  return row2(label, signedUsd(usdValue), under, gainClass(usdValue), rowCls);
 }
 
 function stageSummary(stage, t, d) {
@@ -1393,9 +1393,9 @@ function stageSummary(stage, t, d) {
   // Last on every card, in dollars whatever was borrowed. A stage saved before
   // fees were asked for has none, and says so: hiding the row would look like
   // the fee was never wanted, and $0.00 would state a fee nobody measured.
-  const gasRow = (key, label = 'Gas fee') => {
+  const gasRow = (key, label = 'Gas fee', rowCls = '') => {
     const fee = t[gasKey(key)];
-    return row(label, isNum(fee) ? usd(fee) : NOT_RECORDED);
+    return row(label, isNum(fee) ? usd(fee) : NOT_RECORDED, '', rowCls);
   };
   // An optional Aave fee left blank is a leg that was not taken, not one that
   // went unrecorded, so it gets no row rather than a "not recorded" one.
@@ -1472,9 +1472,11 @@ function stageSummary(stage, t, d) {
             // favourable one - the reason a loan cost comes out negative - red.
             rowUsd('of which currency', signedUsd(d.principalFxUsd), gainClass(-d.principalFxUsd))
           : '') +
-        gasRow('repay') +
+        // Spaced from the loan cost above it and, at Net gain, from the fees:
+        // the Repaid card reads as three blocks, the loan, its fees, the result.
+        gasRow('repay', 'Gas fee', 'stage__row--gap') +
         row('Total fees paid', feesText(d)) +
-        resultRow(row, row2, d, 'Net gain', d.netGain, d.netGainUsd, c) +
+        resultRow(row, row2, d, 'Net gain', d.netGain, d.netGainUsd, c, 'stage__row--gap') +
         // Coloured from the rate it prints, not from the dollar gain behind
         // it. A cent made on a 30,000 loan is a real gain and a green
         // +$0.01, but annualized it is 0.0002%, which prints 0.00% - and a
