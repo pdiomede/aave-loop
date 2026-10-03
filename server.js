@@ -255,12 +255,15 @@ function normalise(body, { requireBorrow }) {
   dateField('buy_date', 'Purchase date');
   numericField('buy_amount', 'Purchase amount');
   numericField('buy_eth', 'ETH purchased');
-  numericField('buy_gas_usd', 'Purchase gas fee', { allowZero: true });
+  numericField('buy_gas_usd', 'Swap gas fee', { allowZero: true });
+  // Optional: not every loop supplies the ETH on Aave, so blank is accepted.
+  numericField('buy_lend_gas_usd', 'Lending gas fee', { allowZero: true });
 
   dateField('sell_date', 'Sale date');
   numericField('sell_amount', 'Sale amount');
   numericField('sell_eth', 'ETH sold');
-  numericField('sell_gas_usd', 'Sale gas fee', { allowZero: true });
+  numericField('sell_gas_usd', 'Swap gas fee', { allowZero: true });
+  numericField('sell_unstake_gas_usd', 'Unstaking gas fee', { allowZero: true });
 
   dateField('repay_date', 'Repayment date');
   numericField('repay_amount', 'Repaid amount');
@@ -369,7 +372,8 @@ function checkChronology(row) {
  * would refuse a sale on such a trade until its purchase, long since done, was
  * edited too. A stage this request writes and that ends up reached must leave
  * with a fee; clearing a stage altogether needs none, since it is no longer
- * reached.
+ * reached. Only `gasKey(stage)` is asked for here: the Aave lending and
+ * unstaking fees (`OPTIONAL_GAS`) are legs a loop may not take.
  */
 const STAGE_KEYS = {
   borrow: ['borrow_date', 'borrow_amount', 'borrow_currency', 'borrow_apr'],
@@ -379,8 +383,8 @@ const STAGE_KEYS = {
 };
 const GAS_LABELS = {
   borrow: 'Borrow gas fee',
-  buy: 'Purchase gas fee',
-  sell: 'Sale gas fee',
+  buy: 'Swap gas fee',
+  sell: 'Swap gas fee',
   repay: 'Repayment gas fee',
 };
 

@@ -13,6 +13,7 @@ import {
   FX_STAGES,
   isUsdPegged,
   gasKey,
+  OPTIONAL_GAS,
 } from '/lib/calc.js';
 
 /* ------------------------------------------------------------- formatters */
@@ -212,7 +213,8 @@ const TIPS = {
     'A running total, not what is at risk today.',
   avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
-    "Gas paid on every stage of this tab's trades, open ones included. Unrecorded ones are counted below.",
+    "Gas paid on every stage of this tab's trades, Aave lend and unstake included, open ones too. " +
+    'Unrecorded ones are counted below.',
   best:
     "The largest dollar result among closed trades. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
@@ -878,10 +880,16 @@ const FIELD_LABELS = {
   repay_date: 'Repayment date',
   repay_amount: 'Amount repaid',
   borrow_gas_usd: 'Gas fee',
-  buy_gas_usd: 'Gas fee',
-  sell_gas_usd: 'Gas fee',
+  buy_gas_usd: 'Gas fee to swap',
+  sell_gas_usd: 'Gas fee to swap',
   repay_gas_usd: 'Gas fee',
+  buy_lend_gas_usd: 'Gas fee to lend',
+  sell_unstake_gas_usd: 'Gas fee to unstake',
 };
+
+// The Aave legs of a loop, which not every trade takes. Blank on these is
+// "none paid", so they are the only stage fields that may be left empty.
+const OPTIONAL_FIELDS = new Set(Object.values(OPTIONAL_GAS).flat());
 
 /**
  * Check one field in the context of the trade it belongs to.
@@ -891,7 +899,7 @@ function validateField(name, raw, trade = {}) {
   const label = FIELD_LABELS[name] || name;
   const text = String(raw ?? '').trim();
 
-  if (text === '') return `${label} is required.`;
+  if (text === '') return OPTIONAL_FIELDS.has(name) ? null : `${label} is required.`;
 
   if (name.endsWith('_date')) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return `${label} must be a valid date.`;
@@ -992,15 +1000,18 @@ function field({
   options = null,
   autofocus = false,
   auto = false,
+  tip = '',
+  required = true,
 }) {
   const id = `f-${name}-${Math.random().toString(36).slice(2, 7)}`;
+  const req = required ? ' aria-required="true"' : '';
   let control;
 
   if (options) {
     const opts = options
       .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`)
       .join('');
-    control = `<div class="control control--select"><select id="${id}" name="${name}">${opts}</select></div>`;
+    control = `<div class="control control--select"><select id="${id}" name="${name}"${req}>${opts}</select></div>`;
   } else {
     const cls = ['control', prefix && 'control--prefix', suffix && 'control--suffix']
       .filter(Boolean)
@@ -1020,13 +1031,20 @@ function field({
       ${prefix ? `<span class="control__prefix">${esc(prefix)}</span>` : ''}
       <input id="${id}" name="${name}" ${attrs} value="${esc(value)}"
         placeholder="${esc(placeholder)}" ${autofocus ? 'autofocus' : ''}
-        ${auto ? 'data-auto="1"' : ''} autocomplete="off" spellcheck="false" />
+        ${auto ? 'data-auto="1"' : ''}${req} autocomplete="off" spellcheck="false" />
       ${suffix ? `<span class="control__suffix">${esc(suffix)}</span>` : ''}
     </div>`;
   }
 
+  // The marker sits outside the label, so tapping it shows the sentence
+  // rather than focusing the input. The red dot is decoration: aria-required
+  // on the control is what a screen reader is told.
   return `<div class="field" data-field="${name}">
-    <label class="field__label" for="${id}">${esc(label)}</label>
+    <div class="field__head">
+      <label class="field__label" for="${id}">${esc(label)}</label>${
+        required ? '<span class="field__req" aria-hidden="true"></span>' : ''
+      }${hintMark(tip)}
+    </div>
     ${control}
     <div class="field__hint" data-hint="${name}">${hint}</div>
   </div>`;
@@ -1048,34 +1066,36 @@ const unitOf = (t) => t.borrow_currency || 'USDC';
 // The one figure on a stage that is not in the borrowed coin: gas is what the
 // transaction cost, typed in dollars whatever was borrowed, so it carries a
 // dollar sign where its neighbours carry a ticker.
-const gasField = (stage, t) =>
-  field({ name: gasKey(stage), label: 'Gas fee', type: 'number', value: t[gasKey(stage)] ?? '', prefix: '$', placeholder: '3.20' });
+const gasField = (t, name, label, tip, required = true) =>
+  field({ name, label, tip, required, type: 'number', value: t[name] ?? '', prefix: '$', placeholder: '3.20' });
 
 function borrowFields(t = {}) {
   return `<div class="grid">
-    ${field({ name: 'borrow_date', label: 'Borrow date', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
-    ${field({ name: 'borrow_amount', label: 'Amount borrowed', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
-    ${field({ name: 'borrow_currency', label: 'Currency', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
-    ${field({ name: 'borrow_apr', label: 'Borrow APR', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
-    ${gasField('borrow', t)}
+    ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened on Aave.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
+    ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed from Aave.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
+    ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The stablecoin you borrowed.', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
+    ${field({ name: 'borrow_apr', label: 'Borrow APR', tip: 'Borrow rate on the day, as a percent.', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
+    ${gasField(t, 'borrow_gas_usd', 'Gas fee', 'Gas paid to borrow, in USD.')}
   </div>`;
 }
 
 function buyFields(t) {
   return `<div class="grid">
-    ${field({ name: 'buy_date', label: 'Purchase date', type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
-    ${field({ name: 'buy_amount', label: 'Amount spent', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
-    ${field({ name: 'buy_eth', label: 'ETH purchased', type: 'number', value: t.buy_eth ?? '', suffix: 'ETH', placeholder: '8.0773' })}
-    ${gasField('buy', t)}
+    ${field({ name: 'buy_date', label: 'Purchase date', tip: 'Day you swapped the loan into ETH.', type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
+    ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Stablecoins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
+    ${field({ name: 'buy_eth', label: 'ETH purchased', tip: 'ETH received from the swap.', type: 'number', value: t.buy_eth ?? '', suffix: 'ETH', placeholder: '8.0773' })}
+    ${gasField(t, 'buy_gas_usd', 'Gas fee to swap', 'Gas paid for the swap into ETH, in USD.')}
+    ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', 'Gas paid to supply the ETH on Aave, in USD. Optional.', false)}
   </div>`;
 }
 
 function sellFields(t) {
   return `<div class="grid">
-    ${field({ name: 'sell_date', label: 'Sale date', type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
-    ${field({ name: 'sell_amount', label: 'Amount received', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
-    ${field({ name: 'sell_eth', label: 'ETH sold', type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: 'ETH' })}
-    ${gasField('sell', t)}
+    ${field({ name: 'sell_date', label: 'Sale date', tip: 'Day you swapped the ETH back.', type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
+    ${field({ name: 'sell_amount', label: 'Amount received', tip: 'Stablecoins received from the sale.', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
+    ${field({ name: 'sell_eth', label: 'ETH sold', tip: 'ETH swapped back to stablecoins.', type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: 'ETH' })}
+    ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', 'Gas paid to withdraw the ETH from Aave, in USD. Optional.', false)}
+    ${gasField(t, 'sell_gas_usd', 'Gas fee to swap', 'Gas paid for the swap out of ETH, in USD.')}
   </div>`;
 }
 
@@ -1089,17 +1109,18 @@ function repayFields(t) {
   const date = t.repay_date || t.sell_date || todayISO();
   const amount = t.repay_amount ?? suggestedRepayOn(t, date);
   return `<div class="grid">
-    ${field({ name: 'repay_date', label: 'Repayment date', type: 'date', value: date, autofocus: true })}
+    ${field({ name: 'repay_date', label: 'Repayment date', tip: 'Day the loan was repaid.', type: 'date', value: date, autofocus: true })}
     ${field({
       name: 'repay_amount',
       label: 'Amount repaid',
+      tip: 'Principal plus interest paid back.',
       type: 'number',
       value: amount,
       suffix: unitOf(t),
       // Stays in step with the date until the user types their own figure.
       auto: t.repay_amount == null,
     })}
-    ${gasField('repay', t)}
+    ${gasField(t, 'repay_gas_usd', 'Gas fee', 'Gas paid to repay, in USD.')}
   </div>`;
 }
 
@@ -1364,10 +1385,13 @@ function stageSummary(stage, t, d) {
   // Last on every card, in dollars whatever was borrowed. A stage saved before
   // fees were asked for has none, and says so: hiding the row would look like
   // the fee was never wanted, and $0.00 would state a fee nobody measured.
-  const gasRow = (key) => {
+  const gasRow = (key, label = 'Gas fee') => {
     const fee = t[gasKey(key)];
-    return row('Gas fee', isNum(fee) ? usd(fee) : NOT_RECORDED);
+    return row(label, isNum(fee) ? usd(fee) : NOT_RECORDED);
   };
+  // An optional Aave fee left blank is a leg that was not taken, not one that
+  // went unrecorded, so it gets no row rather than a "not recorded" one.
+  const optionalGasRow = (key, label) => (isNum(t[key]) ? row(label, usd(t[key])) : '');
 
   switch (stage) {
     case 'borrow':
@@ -1390,7 +1414,8 @@ function stageSummary(stage, t, d) {
         // Only when there is one. A card that says "Alert: none" on every
         // trade nobody set one on is four words of noise per row.
         alertRow(row, t, d) +
-        gasRow('buy')
+        gasRow('buy', 'Gas fee to swap') +
+        optionalGasRow('buy_lend_gas_usd', 'Gas fee to lend')
       );
     case 'sell':
       return (
@@ -1406,7 +1431,8 @@ function stageSummary(stage, t, d) {
         // Net gain and Loan cost, the other figures built from more than one
         // rate, already pass null for the same reason.
         resultRow(row, row2, d, 'Gross gain', d.grossGain, d.grossGainUsd, c) +
-        gasRow('sell')
+        optionalGasRow('sell_unstake_gas_usd', 'Gas fee to unstake') +
+        gasRow('sell', 'Gas fee to swap')
       );
     case 'repay':
       // The interest the loan actually cost, which is what the net gain is
@@ -2420,6 +2446,7 @@ function alertDialogBody(t, d, a) {
         ${field({
           name: 'goal_price',
           label: 'ETH goal price',
+          tip: 'ETH price in USD that triggers the alert.',
           type: 'number',
           value: goal,
           prefix: '$',

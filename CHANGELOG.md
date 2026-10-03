@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.2.1] - 2026-10-03
+
+Aave gas. A loop also pays gas to supply the ETH on Aave and to withdraw it, and neither reached the net gain.
+
+### Added
+
+- **Gas fee to lend on Bought ETH and Gas fee to unstake on Sold ETH.** Both are optional, and blank means none was paid, not *not recorded*. They are two nullable columns, `buy_lend_gas_usd` and `sell_unstake_gas_usd`, added to the DDL and the migration list. `derive` adds them to `feesUsd`, so Net gain, the estimate, the unrealised gain and Stats' Total fees paid all include them. For example, $3, $5, $4 and $0 of gas plus $2 to lend and $1.50 to unstake now take $15.50 off instead of $12.00.
+- **A red dot on every required field and a `?` tooltip on every field**, in all four stage forms and the alert form.
+
+### Changed
+
+- **Gas fee is now *Gas fee to swap* on Bought ETH and Sold ETH**, in the form, on the card and in the server's error message.
+
+A bug hunt over the new fields and over the fee and net gain figures in History and Stats found nothing to fix. Per-trade fees and net gains on a copy of the ledger summed exactly to Stats' Total fees paid and Realized net gain.
+
 ## [1.2.0] - 2026-10-03
 
 Gas fees. Every stage is an on-chain transaction, and the ledger treated them as free, so every net gain was overstated.

@@ -55,6 +55,8 @@ db.exec(`
     buy_gas_usd     REAL,
     sell_gas_usd    REAL,
     repay_gas_usd   REAL,
+    buy_lend_gas_usd     REAL,
+    sell_unstake_gas_usd REAL,
     borrow_fx       REAL,
     borrow_fx_date  TEXT,
     buy_fx          REAL,
@@ -311,11 +313,17 @@ const ETH_MARKET_COLUMNS = [
 // purpose: every trade recorded before fees were asked for has none, and an
 // unrecorded fee is not a free one, so it stays NULL rather than becoming 0.
 // The same pairing as above applies - the DDL and this list both carry them.
+//
+// The last two are the Aave legs of a loop: supplying the ETH once bought, and
+// withdrawing it before the sale. Not every trade does either, so they are
+// optional, and on them NULL means "none paid" rather than "not recorded".
 const GAS_COLUMN_TYPES = [
   ['borrow_gas_usd', 'REAL'],
   ['buy_gas_usd', 'REAL'],
   ['sell_gas_usd', 'REAL'],
   ['repay_gas_usd', 'REAL'],
+  ['buy_lend_gas_usd', 'REAL'],
+  ['sell_unstake_gas_usd', 'REAL'],
 ];
 
 function addMissingColumns(table, columns) {
@@ -350,6 +358,8 @@ export const FIELDS = [
   'buy_gas_usd',
   'sell_gas_usd',
   'repay_gas_usd',
+  'buy_lend_gas_usd',
+  'sell_unstake_gas_usd',
   'notes',
 ];
 

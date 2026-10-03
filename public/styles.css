@@ -545,6 +545,27 @@ a.brand {
   letter-spacing: 0.01em;
 }
 
+/* The label, its required dot and its explanation marker. Also the anchor for
+   the marker's tooltip, like .kv is for a summary row: the bubble is capped at
+   the width of the field and drops over the input below it rather than off
+   the side of a narrow stage card. */
+.field__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* A required field. The optional Aave fees are the only ones without it. */
+.field__req {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--negative);
+}
+
 .control {
   position: relative;
   display: flex;
