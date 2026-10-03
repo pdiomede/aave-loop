@@ -16,8 +16,7 @@
  *
  * The second is that armed alerts are found by joining the trade and asking
  * whether it is still holding ETH. Selling it, or undoing the purchase, ends
- * the reason for the alert, and this way nothing has to remember to go and
- * switch it off.
+ * the reason for the alert, and `closeUnwatched` then closes it for good.
  *
  * The third is that an alert is kept after it fires. A trade can therefore have
  * many, so every statement here keys on the alert's own id and never on the
@@ -26,7 +25,7 @@
  * a partial unique index in db.js.
  */
 import { db, prepare } from './db.js';
-import { derive, derivedOn, estimatedGainUsd, estimateRate, isUsdPegged, todayISO } from './lib/calc.js';
+import { derive, derivedOn, estimatedGainUsd, estimateRate, isUsdPegged, todayISO, intervalMs } from './lib/calc.js';
 import { resolveRate, cachedRate } from './fx.js';
 import { ethPrice } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
@@ -39,7 +38,7 @@ import { n2, n4, fmtDate, signedUsd } from './format.js';
  * the point, and asking a free service four times an hour keeps us a polite
  * distance from its rate limit.
  */
-const POLL_MS = Number(process.env.MYAAVE_ALERT_POLL_MS) || 900_000;
+const POLL_MS = intervalMs(process.env.MYAAVE_ALERT_POLL_MS, 900_000);
 
 /** A first look shortly after boot, so a restart is not blind for the interval. */
 const FIRST_RUN_MS = 10_000;
@@ -317,7 +316,17 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
     const rate = estimateRate(trade, d, fxNow);
     const marked = rate !== null && !d.isUsdPegged;
     const interestUsd = marked ? d.accruedInterest * rate : d.accruedInterestUsd;
-    const at = marked ? ` (${c} at ${rate.toFixed(4)} today)` : '';
+    // And what the move since the purchase did, because the lines above price
+    // the purchase at the rate it was made at: without it "Worth now" less
+    // that cost, the interest and the gas came to +$2,876.60 above a gain of
+    // -$723.40, the missing $3,600 being 30,000 EURC from 1.05 to 1.17.
+    const moved =
+      marked && Number.isFinite(trade.buy_fx) ? -trade.buy_amount * (rate - trade.buy_fx) : null;
+    const at = !marked
+      ? ''
+      : moved === null
+        ? ` (${c} at ${rate.toFixed(4)} today)`
+        : ` (${c} at ${rate.toFixed(4)} today, bought at ${trade.buy_fx.toFixed(4)}: ${signedUsd(moved)})`;
     lines.push(`Gain: ${signedUsd(gain)} after $${n2(interestUsd)} interest${gas}${at}`);
   }
 
@@ -431,6 +440,11 @@ async function fire(row, price) {
     prepare(`
       UPDATE alerts SET
         status = CASE
+          -- Not back to armed on a trade sold while the send was in flight:
+          -- that put an armed goal on a sold trade until the next sweep.
+          WHEN @status = 'armed' AND NOT EXISTS (
+            SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING}
+          ) THEN 'closed'
           WHEN @status = 'armed' AND EXISTS (
             SELECT 1 FROM alerts other
              WHERE other.trade_id = alerts.trade_id

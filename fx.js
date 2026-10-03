@@ -29,6 +29,7 @@ import {
   FX_PROVISIONAL_DAYS,
   parseDate,
   todayISO,
+  intervalMs,
 } from './lib/calc.js';
 
 const DAY_MS = 86400000;
@@ -88,7 +89,7 @@ function recordSuccess() {
 /* -------------------------------------------------------------------- cache */
 
 const selectRate = () =>
-  prepare('SELECT rate, rate_date, source FROM fx_rates WHERE base = ? AND quote = ? AND date = ?');
+  prepare('SELECT rate, rate_date, source, fetched_at FROM fx_rates WHERE base = ? AND quote = ? AND date = ?');
 
 // Two servers can point at the same file, so a second one writing the same day
 // is expected rather than exceptional.
@@ -110,11 +111,32 @@ const upsertRate = () =>
  * cannot be written is still the right rate for the caller holding it; neither
  * is a reason to fail a lookup that had already succeeded.
  */
+/**
+ * Whether a cached rate for `date` may be a stand-in that asking again could
+ * still replace.
+ *
+ * Judged against when it was fetched as well as against today. Today alone
+ * made a stand-in final once its day was four days old, whether or not anyone
+ * had asked after the ECB published: the page asks for today's rate in the
+ * morning, the day before's is cached under today, and a trade dated that day
+ * and entered a week later was given the day before's rate for good. A row
+ * fetched while it could still change is asked about once more; the answer is
+ * written with a new fetch time, so it settles after that.
+ */
+function unconfirmed(date, hit) {
+  if (!hit) return false;
+  if (isProvisionalFx(date, hit.rateDate)) return true;
+  const fetchedDay = typeof hit.fetchedAt === 'string' ? hit.fetchedAt.slice(0, 10) : null;
+  return fetchedDay !== null && isProvisionalFx(date, hit.rateDate, fetchedDay);
+}
+
 function cacheGet(base, date) {
   if (!db.open) return null;
   try {
     const row = selectRate().get(base, QUOTE, date);
-    return row ? { rate: row.rate, rateDate: row.rate_date, source: row.source } : null;
+    return row
+      ? { rate: row.rate, rateDate: row.rate_date, source: row.source, fetchedAt: row.fetched_at }
+      : null;
   } catch (err) {
     console.error('Could not read the rate cache:', err.message);
     return null;
@@ -189,7 +211,7 @@ export async function resolveRate(currency, isoDate) {
   // never asked again, so the afternoon's real rate never reached the ledger.
   // While the day is recent enough for the real rate to still arrive, go past
   // the cache; the stand-in is kept as the answer if asking gets us nothing.
-  const provisional = hit !== null && isProvisionalFx(isoDate, hit.rateDate);
+  const provisional = unconfirmed(isoDate, hit);
   if (hit && !provisional) return hit;
 
   if (networkIsOut()) return hit;
@@ -474,7 +496,7 @@ export async function backfillRates({ refresh = false } = {}) {
         // instead meant a refresh could not fill in a rate that was simply
         // missing, which is most of what a refresh has to do.
         const cached = cachedRate(currency, date);
-        if (cached && !isProvisionalFx(date, cached.rateDate)) hit = cached;
+        if (cached && !unconfirmed(date, cached)) hit = cached;
       }
       if (!hit) {
         if (Date.now() > deadline) {
@@ -534,4 +556,59 @@ export async function backfillRates({ refresh = false } = {}) {
   apply();
 
   return { scanned, filled, stillMissing, timedOut, ...fxStatus() };
+}
+
+/* ------------------------------------------------------------- refresher */
+
+/**
+ * Hourly. The ECB publishes once a business day, in the afternoon in
+ * Frankfurt, and a trade saved before then carries the day before's rate until
+ * someone asks again. That used to be a button on Stats, pressed by hand for a
+ * difference of cents; now the server asks by itself until the real rate is in.
+ */
+const FX_REFRESH_MS = intervalMs(process.env.MYAAVE_FX_REFRESH_MS, 3_600_000);
+const FX_FIRST_REFRESH_MS = 15_000;
+
+let refreshTimer = null;
+let firstRefresh = null;
+let refreshing = false;
+
+/**
+ * Fill in missing rates and replace stand-ins, but only when some trade is
+ * waiting on one: a ledger with nothing to fix never touches the network.
+ * Never throws - it runs on a timer, and a rejection there would take the
+ * server down - and with two copies of the app on one file both may run it,
+ * which is harmless: the backfill re-reads each row and writes the same rate.
+ */
+export async function refreshRatesNow() {
+  if (OFFLINE || refreshing || !db.open) return null;
+  refreshing = true;
+  try {
+    const since = shiftDays(todayISO(), -FX_PROVISIONAL_DAYS);
+    if (tradesMissingFx().length === 0 && tradesWithSubstitutedFx(since).length === 0) return null;
+    const out = await backfillRates({ refresh: true });
+    if (out.filled) console.log(`Exchange rates: filled in ${out.filled}.`);
+    return out;
+  } catch (err) {
+    console.error('Could not refresh exchange rates:', err.message);
+    return null;
+  } finally {
+    refreshing = false;
+  }
+}
+
+export function startFxRefresher() {
+  if (OFFLINE || refreshTimer) return;
+  firstRefresh = setTimeout(refreshRatesNow, FX_FIRST_REFRESH_MS);
+  refreshTimer = setInterval(refreshRatesNow, FX_REFRESH_MS);
+  // Neither should keep the process alive on its own.
+  firstRefresh.unref?.();
+  refreshTimer.unref?.();
+}
+
+export function stopFxRefresher() {
+  clearTimeout(firstRefresh);
+  clearInterval(refreshTimer);
+  firstRefresh = null;
+  refreshTimer = null;
 }

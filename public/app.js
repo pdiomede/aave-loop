@@ -247,7 +247,7 @@ const TIPS = {
     share: "This month's result compared with the largest month in the table.",
   },
   noRate: 'No rate yet. Use Fetch rates on Stats.',
-  estToday: "Estimated at today's exchange rate. This trade's own rate is not fetched yet. Use Fetch rates on Stats.",
+  estToday: "Estimated at today's exchange rate. This trade's own rate is not fetched yet; it is looked up every hour.",
   alerts: {
     trade:
       'The trade the goal is on. A trade can appear twice: a new goal adds a row instead of replacing the old one.',
@@ -260,7 +260,7 @@ const TIPS = {
     suspended:
       'No ETH held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',
-    firedAt: 'When the goal was reached, and at what price. Blank while armed.',
+    firedAt: 'When the goal was reached, and at what price. A dash while armed, or once closed.',
   },
 };
 
@@ -632,6 +632,10 @@ async function loadTrades() {
   const rows = (await api('/api/trades')).map(withoutDerived);
   if (seq !== loadSeq || wroteAt !== writeSeq) return false;
   state.trades = rows;
+  // A load that works ends a failed one. Left set, a trade created after a
+  // failed boot was saved, toasted, and never drawn: every render still
+  // returned early with "Could not load the ledger".
+  state.loadFailed = false;
   // Not awaited: the ledger draws now and the estimate follows the rate. A new
   // euro position asks at once, anything else at most every half hour.
   loadFxNow().catch(() => {});
@@ -752,6 +756,36 @@ function adoptEthQuote(quote) {
   refreshEstimateCells();
 }
 
+/**
+ * Pick up rates the server filled in by itself (`startFxRefresher` in fx.js).
+ *
+ * Rides the ETH poll, at most every fifteen minutes, and only while some trade
+ * is waiting on a rate - missing, or a stand-in the ECB may have replaced.
+ * Redrawn only when a rate actually changed, and not under someone's hands
+ * (`underUsersHands`): what is on screen stays, and the next render draws the
+ * new figures anyway.
+ */
+let ratePollAt = 0;
+const RATE_POLL_MS = 15 * 60_000;
+
+const rateSignature = (trades) =>
+  trades.map((t) => FX_STAGES.map((s) => `${t[`${s}_fx`]}@${t[`${s}_fx_date`]}`).join()).join('|');
+
+async function pickUpServerRates() {
+  if (state.loadFailed || Date.now() - ratePollAt < RATE_POLL_MS) return;
+  const waiting = state.trades.some((t) => {
+    const d = derive(t);
+    return !d.fxComplete || d.fxProvisional?.length > 0;
+  });
+  if (!waiting) return;
+  ratePollAt = Date.now();
+  const before = rateSignature(state.trades);
+  if (!(await loadTrades())) return;
+  if (rateSignature(state.trades) === before) return;
+  if (underUsersHands()) return;
+  render();
+}
+
 async function loadEth() {
   const seq = ++ethSeq;
   try {
@@ -762,6 +796,7 @@ async function loadEth() {
     // Rides the same poll, so a tab left open past the ECB's publication
     // picks today's rate up. It throttles itself to every half hour.
     loadFxNow().catch(() => {});
+    pickUpServerRates().catch(() => {});
   } catch (err) {
     /*
      * The figure is left exactly as it was. A price lookup that could not get
@@ -1624,8 +1659,11 @@ function shownGain(t, d) {
 
 function gainCellHtml(t, d) {
   const gain = shownGain(t, d);
+  // One span around the figure and its chip: below 760px the cell is a flex
+  // row, and as two items the figure floated mid-row with `est` pinned to the
+  // far edge, apart from the number it qualifies.
   if (isNum(gain)) {
-    return `<span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ` ${estChip(t, d)}`}`;
+    return `<span><span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ` ${estChip(t, d)}`}</span>`;
   }
   // The chip only where a rate is what stands between the row and a figure.
   // A position waiting on the ETH price would be sent to fetch rates that
@@ -1708,13 +1746,7 @@ function refreshEstimateCells() {
 function resortByEstimate() {
   if (state.view !== 'trades' || state.sort.key !== 'gain') return false;
   const mount = document.getElementById('table-mount');
-  if (
-    !mount ||
-    document.querySelector('[data-stage-form], dialog[open]') ||
-    mount.contains(document.activeElement)
-  ) {
-    return false;
-  }
+  if (!mount || underUsersHands()) return false;
   const page = clampPage(state.trades.length);
   const want = sortedTrades()
     .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -1722,9 +1754,25 @@ function resortByEstimate() {
   const have = [...mount.querySelectorAll('tr.row[data-trade]')].map((tr) => tr.dataset.trade);
   // No rows drawn yet means boot has not rendered the table; that render sorts.
   if (!have.length || want.join() === have.join()) return false;
-  if (have.some((id) => state.openIds.has(Number(id)))) return false;
   renderTable();
   return true;
+}
+
+/**
+ * Whether a redraw nobody asked for would land under someone's hands: a row
+ * expanded, a stage form or a dialog open, or focus anywhere in the page's
+ * main area. Shared by the two redraws that arrive on their
+ * own - a re-sort by a new estimate and new rates from the server - because the
+ * second was written with a narrower copy of the first's checks and moved an
+ * expanded row to another page, and took focus off a year tab or a Delete.
+ */
+function underUsersHands() {
+  // Any expanded row, not only one on the page drawn: read from state rather
+  // than the table, which a new order may already have moved it out of. A row
+  // left open on another page only delays the redraw to the next render.
+  if (state.openIds.size > 0) return true;
+  if (document.querySelector('[data-stage-form], dialog[open]')) return true;
+  return !!document.querySelector('main')?.contains(document.activeElement);
 }
 
 function tradeRow(t, index, total) {
@@ -2054,27 +2102,23 @@ function monthTable(rows) {
 
 /**
  * Says so out loud when some trades have no exchange rate yet, rather than
- * quietly leaving them out of the totals. The button asks the server to go and
- * look the missing rates up, which is the other half of letting a trade save
- * with the network unplugged.
+ * quietly leaving them out of the totals. The server looks missing rates up by
+ * itself every hour (`startFxRefresher` in fx.js); the button asks now, for
+ * when the network has just come back.
  *
- * It also offers itself for a trade saved before the ECB had published, whose
- * rate is the day before's standing in until the real one is asked for. That
- * is not an omission from the totals, so it is said quietly and only while the
- * real rate could still arrive, but the button was the only thing that asks
- * and it used to appear only when something was missing outright.
+ * Nothing is said any more about a stand-in rate - the day before's, used for
+ * a trade saved before the ECB had published. It is a full answer, not an
+ * omission from the totals, and the server replaces it by itself once the real
+ * one is out, so a banner asking to press a button for it was asking for work
+ * that is now done anyway.
  */
-function fxBanner(count, provisional = 0, tab = null) {
-  if (!count && !provisional) return '';
+function fxBanner(count, tab = null) {
+  if (!count) return '';
   const noun = count === 1 ? 'trade has' : 'trades have';
-  const message = count
-    ? `${count} ${noun} no exchange rate yet, so ${
-        count === 1 ? 'its result is' : 'their results are'
-      } left out of the totals${missingOnTab(count, tab)}`
-    : `${provisional} recent ${
-        provisional === 1 ? 'trade is' : 'trades are'
-      } converted at the rate published the day before. The ECB may have published since.`;
-  return `<section class="card ${count ? 'card--warn' : ''}">
+  const message = `${count} ${noun} no exchange rate yet, so ${
+    count === 1 ? 'its result is' : 'their results are'
+  } left out of the totals${missingOnTab(count, tab)}`;
+  return `<section class="card card--warn">
     <div class="card__body fx-banner">
       <span>${message}</span>
       <button class="btn btn--sm btn--primary" type="button" id="fetch-rates">Fetch rates</button>
@@ -2255,7 +2299,7 @@ function renderStatsView() {
         );
 
   mount.innerHTML = `
-    ${fxBanner(whole.missingFx, whole.provisionalFx, year === 'all' ? null : { year, count: r.missingFx })}
+    ${fxBanner(whole.missingFx, year === 'all' ? null : { year, count: r.missingFx })}
     <div class="years-bar">
       ${yearTabs(years, year)}
       <button class="btn btn--sm" type="button" data-export-csv>${DOWNLOAD_SVG} Export CSV</button>
@@ -3500,13 +3544,20 @@ function wire() {
   // to have started there: a click goes to the nearest element both ends share,
   // so selecting the typed goal and letting go past the edge of the window was
   // a click on the dialog too, and closed it with the goal thrown away.
+  // Both ends, since the same holds the other way: pressed on the backdrop and
+  // let go over the goal field is also a click on the dialog.
   let pressedBackdrop = false;
+  let releasedBackdrop = false;
   dlg.addEventListener('pointerdown', (e) => {
     pressedBackdrop = e.target === dlg;
   });
+  dlg.addEventListener('pointerup', (e) => {
+    releasedBackdrop = e.target === dlg;
+  });
   dlg.addEventListener('click', (e) => {
-    if (e.target === dlg && pressedBackdrop) closeAlertDialog();
+    if (e.target === dlg && pressedBackdrop && releasedBackdrop) closeAlertDialog();
     pressedBackdrop = false;
+    releasedBackdrop = false;
   });
 
   // A second line of defence for a close that did not come through
@@ -3601,7 +3652,9 @@ async function boot() {
     await loadTrades();
   } catch (err) {
     state.loadFailed = true;
-    render();
+    // Through setView rather than render, so #alerts or #stats is the view
+    // shown and underlined - the Alerts view needs no ledger at all.
+    setView(viewFromHash(), { updateHash: false });
     return;
   }
 

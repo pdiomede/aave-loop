@@ -16,6 +16,8 @@ Opens on http://localhost:3000, bound to loopback only. Requires Node 18 or newe
 
 `./resetDatabase.sh` empties the ledger. It asks twice, refuses to run while a server has the file open, and keeps a timestamped backup under `data/backups`.
 
+`npm run check` runs the checks on the formulas in `lib/calc.js`: estimates, amount parsing and rounding, each against a figure worked out by hand.
+
 ## How a trade works
 
 A trade is created with the borrow alone, then each stage is added as it happens.
@@ -31,6 +33,8 @@ Every stage asks what its transaction cost in gas, in dollars whatever was borro
 
 **Trades** is the history table; expand a row to see its four stages and edit them. **Stats** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed, average hold and total fees paid. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money. Stats is split into a tab per year, plus **All** for the whole ledger: a trade counts in the year it was repaid, and one still open counts in the current year. The four figures above the tabs stay all-time. **Export CSV**, beside the tabs, downloads the trades on the tab you are looking at (`aave-loop-trades-2026.csv`, or `-all`), one row per trade with its stage inputs and every figure `derive` works out; a figure nobody measured is an empty cell, not 0. The file is semicolon-separated with decimal commas, so Excel in a European locale opens it straight into columns.
 
+**Open positions** shows what the trades still open would make if closed today: an estimated gain at the current ETH price, in total and per trade, two to a row. The table's Net gain column shows the same figure for each open trade, tagged `est`, and sorts by it. A trade still holding ETH is its ETH at today's price less what it cost, the interest so far and the gas paid; one sold but not yet repaid is its sale less cost, interest and gas, plus any ETH still held after a partial sale at today's price. A loan with nothing bought yet has no estimate. Telegram's `/holding` and the alert messages use the same figure.
+
 ## The math
 
 | Figure | Formula |
@@ -44,6 +48,8 @@ Every stage asks what its transaction cost in gas, in dollars whatever was borro
 | Fees | `borrow_gas + buy_gas + buy_lend_gas + sell_unstake_gas + sell_gas + repay_gas`, in dollars |
 | Net gain | `gross_gain - interest_paid - fees` (`sell_amount - repay_amount - fees` on a full exit) |
 | Annualized return | `net_gain_usd / borrow_usd * 365 / days` |
+| Estimated gain, holding | `buy_eth * eth_price_now - (buy_amount + accrued_interest) * rate_today - fees` |
+| Estimated gain, sold | `(gross_gain - accrued_interest) * rate_today - fees + eth_still_held * eth_price_now - its_cost * rate_today` |
 
 Gross gain uses the cost basis of the ETH actually sold, so a partial exit is not reported as a loss. The return is annualized, so a 3 day trade netting 7% shows as roughly 877%.
 
@@ -64,14 +70,15 @@ The loan cost can be negative: if the euro fell between borrowing and repaying, 
 
 - **Rates are the ECB's**, read through a public mirror of its daily file rather than from the Bank directly - `MYAAVE_FX_URL` points somewhere else if you would rather it did. The ECB publishes once per business day, so a Sunday transaction is converted at Friday's rate. The publication date is stored and shown next to the figure, so any conversion can be checked against [the ECB's own tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
 - **EURC is valued as one euro.** There is no free historical feed for the coin itself, and it tracks the euro closely enough for this to be the honest approximation. It is an approximation all the same.
-- **Working offline.** A trade always saves, whether or not a rate could be fetched. One without a rate is marked rather than guessed at and left out of the totals; **Fetch rates** on Stats fills in everything outstanding once the network is back. Each day is only ever looked up once.
-- **A known limitation.** An open position is not marked to today's rate. Its dollar value is its cost basis on the day it was borrowed, so the currency's movement on capital still at work is not shown until the loan is repaid.
+- **Rates fill themselves in.** A transaction recorded before the ECB has published that day's rate is converted at the day before's for now, and the server asks again every hour until the real one is out. A trade with no rate at all - saved with the network down - is looked up the same way. Neither needs a button; **Fetch rates** appears on Stats only while a trade still has no rate, and asks at once.
+- **Working offline.** A trade always saves, whether or not a rate could be fetched. One without a rate is marked rather than guessed at and left out of the totals until its rate arrives.
+- **Open positions are estimated at today's rate.** The estimated gain marks a euro loan at today's ECB rate, as it marks the ETH at today's price; without today's rate the trade's own rates stand in. The trade's own dollar figures are not: until the loan is repaid they stay at the rates of the days they happened, so the currency's movement on capital still at work reaches the realized result only at repayment.
 
 ## Price alerts
 
 While a trade is HOLDING - the ETH is bought and not yet sold - the **Bought ETH** card carries a bell. It opens a window showing what the trade cost, when, and what ETH is worth now, and takes one figure: the price you want to be told about. The message that will be sent is shown in full before anything is saved.
 
-One *armed* alert per trade. Saving again replaces it; **Remove alert** deletes it. Which way it reads is settled when you save, against what ETH costs at that moment: a goal above alerts when ETH rises to it, a goal below alerts when it falls. Selling the ETH, or undoing the purchase, stops the alert being checked without deleting it - put the stage back and it picks up where it was.
+One *armed* alert per trade. Saving again replaces it; **Remove alert** deletes it. Which way it reads is settled when you save, against what ETH costs at that moment: a goal above alerts when ETH rises to it, a goal below alerts when it falls. Selling the ETH, or undoing the purchase, closes the alert: it stays in the **Alerts** view marked CLOSED, and undoing the sale does not bring it back - the bell sets a new goal.
 
 **A fired alert is kept.** The bell goes back to unselected once the message has gone, so a new goal can be set on the same trade, and the one that fired stays in the **Alerts** view with the time it was sent and the price it fired at. That view lists every alert ever set, fifteen to a page, and each row can be deleted - as can the whole list at once.
 
@@ -86,7 +93,7 @@ The bot answers in the group named by `TELEGRAM_CHAT_ID`, and only there. It can
 | Command | Returns |
 | --- | --- |
 | `/price` | ETH now, with 24h, 7d and 30d change |
-| `/holding` | every open position, one line each, with the total and what it is worth |
+| `/holding` | every open position, one line each, with its estimated gain at today's price and exchange rate, the total and what it is worth |
 | `/summary` | realized net gain, blended annualized, closed trades, open positions |
 | `/watch` | the price report every twenty minutes |
 | `/unwatch` | stops it |
@@ -188,7 +195,7 @@ bot.js         reads commands from Telegram and answers them, server only
 report.js      builds what the bot says, server only
 format.js      number and date formatting for those messages, server only
 config.js      reads config.env, server only
-scripts/       release tooling, run by npm rather than by hand
+scripts/       release tooling and `npm run check`, run by npm rather than by hand
 lib/calc.js    all formulas, shared by the server and the browser
 public/        interface
 data/          SQLite file, not committed

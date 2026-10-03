@@ -101,6 +101,10 @@ export function holdingText(rows, price, fxNow = {}) {
   let unpriced = 0;
   let gassed = 0;
   const marked = new Set();
+  // What the euro's move since each purchase did to the total, for the same
+  // reason the alert line names it: "paid" is at the purchase's rate.
+  let moved = 0;
+  let movedKnown = false;
 
   const cells = rows.map((t) => {
     const d = derive(t, derivedOn(t));
@@ -113,7 +117,14 @@ export function holdingText(rows, price, fxNow = {}) {
       gain += g;
       gainKnown += 1;
       if (Number.isFinite(d.feesUsd)) gassed += 1;
-      if (!d.isUsdPegged && Number.isFinite(fxNow?.[t.borrow_currency])) marked.add(t.borrow_currency);
+      const today = fxNow?.[t.borrow_currency];
+      if (!d.isUsdPegged && Number.isFinite(today)) {
+        marked.add(t.borrow_currency);
+        if (Number.isFinite(t.buy_fx)) {
+          moved += -t.buy_amount * (today - t.buy_fx);
+          movedKnown = true;
+        }
+      }
     }
 
     return {
@@ -170,7 +181,10 @@ export function holdingText(rows, price, fxNow = {}) {
     // A euro loan is marked at today's rate rather than the one it was bought
     // at, and a figure has to say how it was arrived at.
     const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');
-    head.push(`Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}${at ? `, ${escHtml(at)} today` : ''}`);
+    const move = movedKnown ? ` (${signedUsd(moved)} of it from the move since purchase)` : '';
+    head.push(
+      `Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
+    );
   } else if (unpriced) {
     // Two different absences. With no ETH price every row is unpriced, a
     // dollar coin included, and blaming the exchange rate sat above a table

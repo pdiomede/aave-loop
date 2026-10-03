@@ -12,11 +12,20 @@ import {
   reachedStages,
   gasKey,
   todayISO,
+  intervalMs,
   CURRENCIES,
   FX_STAGES,
   STATUS,
 } from './lib/calc.js';
-import { fillFxColumns, staleFxColumns, backfillRates, resolveRate, fxStatus } from './fx.js';
+import {
+  fillFxColumns,
+  staleFxColumns,
+  backfillRates,
+  resolveRate,
+  fxStatus,
+  startFxRefresher,
+  stopFxRefresher,
+} from './fx.js';
 import { telegramConfig, reportConfig } from './config.js';
 import { ethPrice, cachedEthPrice, ethStatus } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
@@ -193,7 +202,10 @@ function toNumber(value, field, label, { allowZero = false } = {}) {
 }
 
 function toDate(value, field, label) {
-  const iso = String(value).trim();
+  // Text only. `String()` on an object with a `toString` key threw, and the
+  // request was answered 500 with a stack in the log instead of a 400.
+  if (typeof value !== 'string') throw new BadRequest(`${label} must be a valid date.`, field);
+  const iso = value.trim();
   const ts = parseDate(iso);
   if (ts === null) throw new BadRequest(`${label} must be a valid date.`, field);
   // One calendar day of slack, counted in calendar days and no more. The old
@@ -248,7 +260,7 @@ function normalise(body, { requireBorrow }) {
   // is a figure. Blank is not; `checkGas` refuses it on a stage being written.
   numericField('borrow_gas_usd', 'Borrow gas fee', { allowZero: true });
   if (has('borrow_currency')) {
-    const c = String(body.borrow_currency || '').toUpperCase();
+    const c = typeof body.borrow_currency === 'string' ? body.borrow_currency.toUpperCase() : '';
     if (!CURRENCIES.includes(c)) throw new BadRequest('Pick a supported currency.', 'borrow_currency');
     out.borrow_currency = c;
   }
@@ -270,7 +282,14 @@ function normalise(body, { requireBorrow }) {
   numericField('repay_amount', 'Repaid amount');
   numericField('repay_gas_usd', 'Repayment gas fee', { allowZero: true });
 
-  if (has('notes')) out.notes = isBlank(body.notes) ? null : String(body.notes).slice(0, 2000);
+  if (has('notes')) {
+    // Text or nothing. Anything else was coerced - {"a":1} stored as
+    // "[object Object]" - or threw on a `toString` key and answered 500.
+    if (!isBlank(body.notes) && typeof body.notes !== 'string') {
+      throw new BadRequest('Notes must be text.', 'notes');
+    }
+    out.notes = isBlank(body.notes) ? null : body.notes.slice(0, 2000);
+  }
 
   // Exchange rates are resolved here from a published source, never accepted
   // from the caller. A request that could set its own rate could move every
@@ -527,10 +546,20 @@ app.get('/api/fx/rate', async (req, res, next) => {
 });
 
 async function rateLookup(req, res) {
-  const currency = String(req.query.currency || '').toUpperCase();
-  const date = String(req.query.date || '').trim();
-  if (!CURRENCIES.includes(currency) || parseDate(date) === null) {
-    return res.json({ currency, date, rate: null, reason: 'That is not a currency and date I can look up.' });
+  const currency = typeof req.query.currency === 'string' ? req.query.currency.toUpperCase() : '';
+  const raw = typeof req.query.date === 'string' ? req.query.date.trim() : '';
+  // The same bounds as a trade's own dates. Any parseable date was asked for:
+  // one before 1999 is refused by the service, which put every rate lookup -
+  // saves included - to sleep for a minute, and one in the future cached a
+  // stand-in under a day that has not happened.
+  let date = null;
+  try {
+    date = toDate(raw, 'date', 'Date');
+  } catch {
+    date = null;
+  }
+  if (!CURRENCIES.includes(currency) || date === null) {
+    return res.json({ currency, date: raw, rate: null, reason: 'That is not a currency and date I can look up.' });
   }
   const hit = await resolveRate(currency, date);
   if (!hit) {
@@ -576,7 +605,7 @@ app.post('/api/fx/backfill', async (req, res, next) => {
  * a long time to sit watching a ticker to find out whether it ticks. The page
  * refuses anything under thirty seconds whatever this says.
  */
-const ETH_TICKER_MS = Number(process.env.MYAAVE_ETH_POLL_MS) || 300_000;
+const ETH_TICKER_MS = intervalMs(process.env.MYAAVE_ETH_POLL_MS, 300_000);
 
 /**
  * Everything the alert window needs, in one call: whether there is anywhere to
@@ -599,10 +628,12 @@ app.get('/api/alerts', async (req, res, next) => {
     // read by a person and compared against a goal, and on a ledger with no
     // armed alerts nothing has asked for a price in hours. Page load does not
     // send it, because a boot should not wait on an outside service.
-    if (req.query.refresh === '1') await ethPrice();
+    //
+    // Its answer is used, rather than the cache read back after it: a write to
+    // the cache that was refused left the window on a price from days before.
+    const quote = req.query.refresh === '1' ? await ethPrice() : cachedEthPrice();
 
     const { configured, chatName, reason } = telegramConfig();
-    const quote = cachedEthPrice();
     res.json({
       config: { configured, chatName, reason },
       // The change windows ride along, so this answer can feed the header
@@ -698,6 +729,13 @@ app.get('/api/alerts/log', (_req, res) => res.json({ alerts: alertLog() }));
  * the change still holds the old script, and its delete would otherwise have
  * removed a different trade's alert and answered 204. This way it 404s.
  */
+/**
+ * A goal ETH could plausibly be asked to reach, in dollars. Under a dollar was
+ * saved and armed - "fell to your $0.00 goal", a goal that never fires - and
+ * the preview rendered goals above the ceiling that the save then refused.
+ */
+const goalInRange = (goal) => Number.isFinite(goal) && goal >= 1 && goal <= 1_000_000;
+
 app.put('/api/trades/:id/alert', async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -711,7 +749,7 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     // The same parser the browser uses, so "3,000" cannot mean one thing in
     // the form and another here.
     const goal = toNumber(req.body?.goal_price, 'goal_price', 'ETH goal price');
-    if (goal > 1_000_000) {
+    if (!goalInRange(goal)) {
       throw new BadRequest('That looks like a slipped digit. The price is in dollars.', 'goal_price');
     }
 
@@ -721,7 +759,19 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     // cache, so an unreachable service costs a moment and nothing else.
     const quote = await ethPrice();
 
-    res.json(saveAlert(trade, goal, quote?.price ?? null));
+    // Asked again after the wait, which can be seconds: a sale recorded in the
+    // meantime still had a goal saved on it - an armed alert on a sold trade -
+    // and a delete made the insert fail its foreign key and answer 500.
+    const live = selectOne.get(id);
+    if (!live) return res.status(404).json({ error: 'Trade not found.' });
+    if (derive(live).status !== STATUS.HOLDING) {
+      throw new BadRequest('A price alert only applies while the ETH is held.', 'goal_price');
+    }
+    const saved = saveAlert(live, goal, quote?.price ?? null);
+    // A second copy of the app can still sell it between that read and this
+    // save; the sweep would close the alert, but there is no reason to wait.
+    closeUnwatched();
+    res.json(saved);
   } catch (err) {
     next(err);
   }
@@ -789,7 +839,8 @@ app.get('/api/trades/:id/alert/preview', (req, res) => {
   if (!trade) return res.status(404).json({ error: 'Trade not found.' });
 
   const goal = parseAmount(req.query.goal);
-  if (goal === null || goal <= 0) return res.json({ text: null });
+  // The save's own bounds, so the window never previews a goal it would refuse.
+  if (goal === null || !goalInRange(goal)) return res.json({ text: null });
 
   // The live price only settles which way the alert reads; the message itself
   // is written at the goal, because that is the position it will describe when
@@ -871,6 +922,7 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   if (closed) console.log(`Closed ${closed} alert${closed === 1 ? '' : 's'} on trades no longer holding ETH.`);
   startAlertPoller();
   startBotPoller();
+  startFxRefresher();
 });
 
 server.on('error', (err) => {
@@ -881,6 +933,7 @@ server.on('error', (err) => {
   }
   stopAlertPoller();
   stopBotPoller();
+  stopFxRefresher();
   closeDb();
   process.exit(1);
 });
@@ -895,6 +948,7 @@ function shutdown(signal) {
   // which stopping would wait out the rest of a fifty second request.
   stopAlertPoller();
   stopBotPoller();
+  stopFxRefresher();
   server.close(() => {
     closeDb();
     process.exit(0);
@@ -911,6 +965,7 @@ process.on('uncaughtException', (err) => {
   console.error(err);
   stopAlertPoller();
   stopBotPoller();
+  stopFxRefresher();
   closeDb();
   process.exit(1);
 });

@@ -40,10 +40,16 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | --- | --- |
 | `MYAAVE_DB` | database file. Always set it when testing. |
 | `MYAAVE_FX_OFFLINE=1` / `MYAAVE_ETH_OFFLINE=1` | no network lookups at all |
-| `MYAAVE_ETH_PRICE=3450` | a fixed ETH price, so alerts can be driven deterministically |
+| `MYAAVE_ETH_PRICE=3450` | a fixed ETH price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning |
 | `MYAAVE_BOT_OFF=1` | no Telegram long-poll |
 | `MYAAVE_FX_URL` / `MYAAVE_ETH_URL` / `MYAAVE_TELEGRAM_URL` | point at a mock |
 | `MYAAVE_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
+| `MYAAVE_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
+
+Every interval read from the environment (`MYAAVE_FX_REFRESH_MS`, `MYAAVE_ALERT_POLL_MS`,
+`MYAAVE_ETH_POLL_MS`) goes through `intervalMs` in `lib/calc.js`: below a second it is
+the default, above 2^31 − 1 ms it is capped. Node turns an out-of-range timer into 1 ms,
+so a huge value meant to switch something off made it fire continuously.
 
 `MYAAVE_CONFIG` relocates `config.env`. Everything in that file can be overridden by
 exporting it for one run; the shell always wins over the file.
@@ -102,6 +108,13 @@ and every derived figure; anything that needs to know whether a trade is HOLDING
 should ask `derive`, not re-implement the test. Several past bugs were exactly that
 drift between a hand-written SQL predicate and `stages()`.
 
+`estimatedGainUsd(t, d, price, fxNow)` is the same for an open position's estimate:
+the header's Open positions tile (`openGainsUsd`), the table's `est` figures and their
+sort, Telegram's `/holding` and the alert message all print it, so one trade never
+reads two ways. It takes the ETH price and today's rate per coin as arguments rather
+than fetching them, which is what keeps it in `lib/`. It is the one place an open
+position is marked to today's exchange rate; `derive`'s own figures never are.
+
 `fx.js`, `eth.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
 `report.js` and `format.js` sit at the root **because they are server-only** — the
 browser is served `lib/` wholesale. `format.js` duplicates some of `public/app.js`'s
@@ -118,6 +131,11 @@ way, so concurrent access is a supported state, not an edge case. This is why:
 - the Telegram bot takes a **lease** in `bot_state` (only one caller of `getUpdates`
   may exist), and an instance without it never touches the network;
 - a partial unique index allows one *armed* alert per trade;
+- an armed alert whose trade no longer holds ETH is closed by `closeUnwatched()`, a
+  conditional `UPDATE ... WHERE status = 'armed'`, run after a trade edit, at startup
+  and at the top of every sweep — the sweep is what catches the other copy's edits;
+- both copies run the hourly rate refresher (`startFxRefresher` in `fx.js`), which
+  is harmless: the backfill re-reads each row and writes the same rate;
 - cache reads and writes in `fx.js` / `eth.js` swallow database errors — a statement
   can be refused while the connection is open, and a cache that cannot be read is a
   miss, not a failure.
@@ -166,8 +184,8 @@ This codebase documents *why*, at length, and usually names the specific failure
 line prevents. Match that: a comment explaining a past bug is the reason the code
 looks the way it does, and deleting or contradicting one is a regression. When an
 apparent oddity has a comment defending it, either accept it or explain why it is
-wrong anyway — several are deliberate (an open position is not marked to today's
-exchange rate; a loan cost can be negative when the euro falls; the headline
+wrong anyway — several are deliberate (an open position's own figures are not marked
+to today's exchange rate — only its estimate is; a loan cost can be negative when the euro falls; the headline
 annualized figure is a blended return on capital over time, not a mean of per-trade
 rates).
 

@@ -3,6 +3,43 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.4.1] - 2026-10-03
+
+### Added
+
+- **Exchange rates fill themselves in.** The server re-asks every hour for a rate still missing or standing in for one the ECB has not published yet, and an open page picks the new figures up. The Stats banner and its **Fetch rates** button now appear only while a trade has no rate at all. `MYAAVE_FX_REFRESH_MS` sets the interval.
+
+### Fixed
+
+Four audits, of everything added this session and of `server.js`, `eth.js` and `telegram.js`, each finding reproduced or traced before its fix and re-run after. `telegram.js` came back clean. `npm run check` is at 32.
+
+Added this session:
+
+- **A ledger that failed to load stayed failed.** A trade created afterwards was saved and toasted, and never drawn. A load that works now clears it, and a failed boot shows the view the address names.
+- **Rates arriving on their own redrew under the reader's hands**, moving an expanded row to another page and taking focus off a control. They wait for no row open, no form, no dialog and no focus on the page.
+- **On a phone, `est` sat apart from its figure** at the far edge of the Net gain cell. They stay together.
+- **Pressing on the alert window's backdrop and letting go inside it closed the window**, losing the goal. Both ends of the click must be on the backdrop.
+- **The Fired at tooltip said "blank while armed"** though a closed alert shows a dash too.
+- **A goal saved while the trade was sold was armed on a sold trade**, a delete in that moment answered 500, and a failed send could re-arm on a trade sold during it. The save checks again after its wait, and a failed send on a sold trade closes.
+- **The CSV still rounded some half-cents differently from the page.** Gas of 1.005 read $1.01 on the page and 1,00 in the file. It now rounds with the page's own call.
+- **An out-of-range interval in the environment made a timer fire every millisecond.** `MYAAVE_FX_REFRESH_MS=99999999999` sent 1,052 rate requests in three seconds. Intervals are now bounded, the alert and ticker ones too.
+- **A euro trade's Gain line in alerts and `/holding` did not add up** from the lines above it, which price the purchase at its own rate. It now names the euro's move since: `bought at 1.0500: -$3,600.00`.
+
+`eth.js`:
+
+- **A price fetched while the cache refused the write was lost**, and the alert window fell back to one from days before, previewing "hit" for a goal the save filed as "fell to". The last price is kept in memory and the window uses the fetch's own answer.
+- **A Retry-After given as a date was ignored.** Asked for 55 minutes, the app waited 10. Dates and seconds are both honoured.
+- **A cached price stamped ahead of the clock read as fresh** until the clock caught up. It is stale.
+- **Stepping the clock back stretched the rate-limit pause** past its one hour cap. The pause runs on the monotonic clock.
+- **`MYAAVE_ETH_PRICE` was not checked.** -3450 was served as the price, and "3,450" silently went to the live network. It is read like a typed amount, and a value that is not a usable price is ignored with a warning.
+
+`server.js`:
+
+- **A stand-in rate cached on its own morning became final four days later** without anyone asking again, so a trade dated that day and entered later kept the day before's rate. A stand-in fetched while it could still change is asked about once more.
+- **The rate lookup accepted any date.** 1990 put every rate lookup, saves included, to sleep for a minute, and a future date cached a stand-in. It takes a trade's own date bounds.
+- **Fields sent as objects were coerced.** Notes `{"a":1}` stored "[object Object]", and a `toString` key answered 500. Dates, currency and notes must be text.
+- **An alert goal under a dollar was saved**, reading "fell to your $0.00 goal", and the preview showed goals the save refused. Both take $1 to $1,000,000.
+
 ## [1.4.0] - 2026-10-03
 
 ### Changed

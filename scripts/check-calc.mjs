@@ -21,6 +21,7 @@ import {
   parseAmount,
   summaryReport,
   derivedOn,
+  intervalMs,
 } from '../lib/calc.js';
 import { tradesCsv } from '../lib/csv.js';
 
@@ -250,6 +251,22 @@ check('the CSV rounds a half cent away from zero, as the page prints it', () => 
   const [head, row] = tradesCsv([flat(1.375)]).trim().split(/\r?\n/).map((l) => l.split(';'));
   assert.equal(row[head.indexOf('net_gain_usd')], '-1,38');
   assert.equal(row[head.indexOf('fees_usd')], '1,38');
+});
+
+check('the CSV rounds 1.005 to 1.01, as the page prints it', () => {
+  // Multiplying by 100 first lands on 100.49999999999999 and rounds down.
+  const [head, row] = tradesCsv([flat(1.005)]).trim().split(/\r?\n/).map((l) => l.split(';'));
+  assert.equal(row[head.indexOf('fees_usd')], '1,01');
+  assert.equal(row[head.indexOf('net_gain_usd')], '-1,01');
+});
+
+check('a timer interval from the environment stays where a timer can use it', () => {
+  assert.equal(intervalMs(undefined, 3600000), 3600000);
+  assert.equal(intervalMs('abc', 3600000), 3600000);
+  assert.equal(intervalMs('-5', 3600000), 3600000);
+  assert.equal(intervalMs('2000', 3600000), 2000);
+  // Above 2^31 - 1 Node fires every millisecond instead.
+  assert.equal(intervalMs('99999999999', 3600000), 2147483647);
 });
 
 check('a loss that prints as -$0.01 is counted as a loss', () => {
