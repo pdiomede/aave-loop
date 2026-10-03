@@ -1485,15 +1485,16 @@ function stageSummary(stage, t, d) {
           : '') +
         // Spaced from the loan cost above it and, at Net gain, from the fees:
         // the Repaid card reads as three blocks, the loan, its fees, the result,
-        // and the result is ruled off from the rest like a total under a sum.
+        // and the result is ruled off from the rest like a total under a sum,
+        // and set bold like one.
         gasRow('repay', 'Gas fee', 'stage__row--gap') +
         row('Total fees paid', feesText(d)) +
-        resultRow(row, row2, d, 'Net gain', d.netGain, d.netGainUsd, c, 'stage__row--gap stage__row--rule') +
+        resultRow(row, row2, d, 'Net gain', d.netGain, d.netGainUsd, c, 'stage__row--gap stage__row--rule stage__row--strong') +
         // Coloured from the rate it prints, not from the dollar gain behind
         // it. A cent made on a 30,000 loan is a real gain and a green
         // +$0.01, but annualized it is 0.0002%, which prints 0.00% - and a
         // green nothing is a claim the digits do not make.
-        row('Annualized', pct(d.pct), pctClass(d.pct))
+        row('Annualized', pct(d.pct), pctClass(d.pct), 'stage__row--strong')
       );
     default:
       return '';

@@ -1484,6 +1484,12 @@ th[aria-sort="ascending"] .th-sort__caret {
   padding-top: 10px;
 }
 
+/* The rows under that rule, the result itself, set bold like a total. */
+.stage__row--strong dt,
+.stage__row--strong dd {
+  font-weight: 700;
+}
+
 /* Gross gain and Net gain: the dollar figure and the coin figure under it both
    end at the card's edge, like every one-line value above them. */
 .stage__row--result dd {
