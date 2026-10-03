@@ -18,11 +18,20 @@
     <!-- Behind basic auth, so nothing should try to index or preview it. -->
     <meta name="robots" content="noindex, nofollow" />
     <script>
-      // Applied before first paint so a dark session never flashes white.
-      try {
-        const saved = localStorage.getItem('myaave-theme');
-        if (saved) document.documentElement.dataset.theme = saved;
-      } catch (e) {}
+      // Applied before first paint so a dark session never flashes white. With
+      // no choice saved it follows the system, as the landing page does: only
+      // a saved choice was read, so a dark machine went from a dark landing
+      // page to a light ledger.
+      (function () {
+        var theme = null;
+        try {
+          theme = localStorage.getItem('myaave-theme');
+        } catch (e) {}
+        try {
+          if (!theme) theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        } catch (e) {}
+        if (theme) document.documentElement.dataset.theme = theme;
+      })();
     </script>
   </head>
   <body>
@@ -120,7 +129,7 @@
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v1.3.4</span> - Built by
+          &copy; 2026 &middot; <span id="version">v1.3.5</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>

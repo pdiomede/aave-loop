@@ -210,7 +210,7 @@ const TIPS = {
     'Return on the capital used, weighted by loan size and days held. ' +
     'Not an average of the rates in the table.',
   interestPaid:
-    'Interest on closed loans, converted at the rate on each repay date. Open loans are not included.',
+    'Interest on closed loans with a dollar result, at each repay date\'s rate. Open loans and trades waiting on a rate are left out.',
   currencyEffect:
     'How the currency moved the principal between borrowing and repaying. ' +
     'Negative means it moved your way. Always zero on a dollar loan.',
@@ -222,14 +222,14 @@ const TIPS = {
     "Gas paid on every stage of this tab's trades, Aave lend and unstake included, open ones too. " +
     'Unrecorded ones are counted below.',
   best:
-    "The largest dollar result among closed trades. The rate under it is that trade's own. " +
+    "The largest dollar result among closed trades that have one. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
-  worst: 'The smallest dollar result among closed trades. With a loss, it is the biggest one.',
+  worst: 'The smallest dollar result among closed trades that have one. With a loss, it is the biggest one.',
   bestPct:
-    'The best annualized return among closed trades, often not the biggest dollar gain. ' +
+    'The best annualized return among closed trades with a dollar result, often not the biggest dollar gain. ' +
     'Short trades are scaled to a full year, so one good day can show a huge rate.',
   worstPct:
-    'The weakest annualized return among closed trades, or the biggest loss by rate. ' +
+    'The weakest annualized return among closed trades with a dollar result, or the biggest loss by rate. ' +
     'Trades whose rate cannot be worked out are left out, not counted as zero.',
   cur: {
     currency: 'The stablecoin borrowed. Trades are grouped by what you borrowed.',
@@ -2711,11 +2711,14 @@ function alertDialogBody(t, d, a) {
   const cfg = state.alertConfig;
   const goal = a ? String(a.goalPrice) : '';
 
-  // The figures the goal is being judged against, in the same order and the
-  // same words the card behind the window uses.
+  // The figures the goal is being judged against: the Bought ETH card's, in
+  // its order. Named for the purchase, because out of that card "Trade date"
+  // and "Trade amount" read as the table's Trade date column - the borrow's -
+  // and the two differ whenever the ETH was bought another day or for another
+  // amount than was borrowed.
   const rows = [
-    ['Trade amount', money(t.buy_amount, c)],
-    ['Trade date', fmtDate(t.buy_date)],
+    ['Bought on', fmtDate(t.buy_date)],
+    ['Spent', money(t.buy_amount, c)],
     ['ETH purchase price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING],
     ['ETH now', isNum(state.ethPrice?.price) ? usd(state.ethPrice.price) : '<span class="muted">not known yet</span>'],
   ]
@@ -3251,8 +3254,20 @@ function wire() {
         // Same reasoning as a sort change: an open editor may belong to a row
         // that is no longer on screen. Only the trades table has one.
         if (scope === 'trades') state.editing = null;
+        // The render replaces the pager, so a keyboard user was sent to the
+        // top of the page on every page turn. Back to the same button, or to
+        // the current page's when that one is now disabled (Next on the last).
+        const hadFocus = document.activeElement === pageBtn;
+        const label = pageBtn.getAttribute('aria-label');
         render();
         document.getElementById(PAGERS[scope].mount)?.scrollIntoView({ block: 'start' });
+        // Without scrolling: the pager sits under the table, and a plain focus
+        // scrolled straight back down to it, undoing the scroll to the top.
+        if (hadFocus) {
+          const inScope = `[data-page-scope="${scope}"]`;
+          const same = document.querySelector(`button${inScope}[aria-label="${label}"]:not(:disabled)`);
+          (same || document.querySelector(`button${inScope}[aria-current="page"]`))?.focus({ preventScroll: true });
+        }
       }
       return;
     }
@@ -3374,7 +3389,10 @@ function wire() {
       saveSort();
       state.editing = null;
       state.page = 1;
+      // Replaced by the render like the pager, so put focus back on it.
+      const hadFocus = document.activeElement === select;
       render();
+      if (hadFocus) document.querySelector('[data-sort-select]')?.focus();
     }
   });
 

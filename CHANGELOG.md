@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.3.5] - 2026-10-03
+
+The four smaller findings left over from the 1.3.3 audit.
+
+### Fixed
+
+- **Turning a page or choosing a sort on a phone sent keyboard focus to the top of the page.** Both put it back on the control, without scrolling the page back down to the pager.
+- **The alert window called the purchase "Trade date" and "Trade amount"**, the table's name for the borrow. It now says *Bought on* and *Spent*, as the Bought ETH card does.
+- **The ledger ignored a dark system setting** that the landing page follows. With no saved choice it follows the system now.
+- **Interest paid and the four Biggest and Smallest tiles** did not say they leave out trades waiting on a rate. Their tooltips say so now.
+
+A check of these four changes found one bug before release: putting focus back on the pager scrolled the page down to it, undoing the jump to the top of the table. Focus is now restored without scrolling.
+
 ## [1.3.4] - 2026-10-03
 
 ### Fixed
