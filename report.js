@@ -11,7 +11,7 @@
  * value that reaches the text goes through `escHtml` first.
  */
 import { db, prepare } from './db.js';
-import { derive, summarize, estimatedGainUsd, isUsdPegged, todayISO } from './lib/calc.js';
+import { derive, derivedOn, summarize, estimatedGainUsd, isUsdPegged, todayISO } from './lib/calc.js';
 import { ethPrice, ethStatus } from './eth.js';
 import { resolveRate } from './fx.js';
 import { alertPollMs } from './alerts.js';
@@ -103,7 +103,7 @@ export function holdingText(rows, price, fxNow = {}) {
   const marked = new Set();
 
   const cells = rows.map((t) => {
-    const d = derive(t);
+    const d = derive(t, derivedOn(t));
     const held = Number.isFinite(d.ethHeld) ? d.ethHeld : 0;
     eth += held;
 

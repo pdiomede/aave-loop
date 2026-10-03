@@ -54,12 +54,19 @@ const signOf = (v, dp) => (Number(Math.abs(v).toFixed(dp)) === 0 ? '' : v < 0 ? 
 
 export const usd = (v) => (isNum(v) ? `${signOf(v, 2)}$${n2(Math.abs(v))}` : MISSING);
 
-/** Always carries its sign, because a gain and a loss must not look alike. */
+/**
+ * A plus on anything that is not a loss, because a gain and a loss must not
+ * look alike - but nothing on a figure that prints as zero, as on the page.
+ * `|| '+'` put one there too, so the chat read "+$0.00" and "24h +0.0%" where
+ * the page beside it read "$0.00" and "0.0%".
+ */
+const plusOf = (v, dp) => signOf(v, dp) || (Number(Math.abs(v).toFixed(dp)) === 0 ? '' : '+');
+
 export const signedUsd = (v) =>
-  isNum(v) ? `${signOf(v, 2) || '+'}$${n2(Math.abs(v))}` : MISSING;
+  isNum(v) ? `${plusOf(v, 2)}$${n2(Math.abs(v))}` : MISSING;
 
 export const pct1 = (v) =>
-  isNum(v) ? `${signOf(v, 1) || '+'}${Math.abs(v).toFixed(1)}%` : MISSING;
+  isNum(v) ? `${plusOf(v, 1)}${Math.abs(v).toFixed(1)}%` : MISSING;
 
 export const pct2 = (v) => (isNum(v) ? `${signOf(v, 2)}${Math.abs(v).toFixed(2)}%` : MISSING);
 

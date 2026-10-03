@@ -26,7 +26,7 @@
  * a partial unique index in db.js.
  */
 import { db, prepare } from './db.js';
-import { derive, estimatedGainUsd, estimateRate, isUsdPegged, todayISO } from './lib/calc.js';
+import { derive, derivedOn, estimatedGainUsd, estimateRate, isUsdPegged, todayISO } from './lib/calc.js';
 import { resolveRate, cachedRate } from './fx.js';
 import { ethPrice } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
@@ -243,7 +243,7 @@ export function deleteAllAlerts() {
  * same here as in /holding and on the page (see `estimatedGainUsd`).
  */
 export function alertMessage(trade, alert, price, fxNow = {}) {
-  const d = derive(trade);
+  const d = derive(trade, derivedOn(trade));
   const c = trade.borrow_currency;
   const verb = alert.direction === 'above' ? 'hit' : 'fell to';
 

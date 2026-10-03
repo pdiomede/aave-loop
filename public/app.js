@@ -535,6 +535,8 @@ function applySort(key) {
 
 const state = {
   view: 'trades',
+  // Set when the first load of the ledger failed, so nothing draws it as empty.
+  loadFailed: false,
   draft: null,
   trades: [],
   // Every trade whose stages are showing. A set rather than one id: opening a
@@ -2407,6 +2409,7 @@ function openGainLines() {
 }
 
 function renderHeroStats() {
+  if (state.loadFailed) return;
   document.getElementById('hero-stats').innerHTML = statTiles(summarize(state.trades), { estimate: true });
 }
 
@@ -2521,7 +2524,27 @@ function renderAlerts() {
   ${pager(total, 'alerts')}`;
 }
 
+/**
+ * What the Trades and Stats views say when the ledger never loaded.
+ *
+ * Kept up for as long as the page is, rather than drawn once by `boot`: the
+ * next click on a tab rendered the empty ledger - "No trades yet", a hero of
+ * zeros - over it, and the ETH poll redrew those zeros every five minutes.
+ * Counts nobody measured. And not "could not reach": a server that answered
+ * 500 was reached.
+ */
+const LOAD_FAILED = `<div class="empty">
+  <h3>Could not load the ledger</h3>
+  <p>The server did not answer, or could not read the ledger. Check that it is running, then reload this page.</p>
+</div>`;
+
 function render() {
+  if (state.loadFailed) {
+    document.getElementById('hero-stats').innerHTML = '';
+    if (state.view === 'alerts') renderAlerts();
+    else document.getElementById(state.view === 'stats' ? 'stats-mount' : 'table-mount').innerHTML = LOAD_FAILED;
+    return;
+  }
   state.draft = captureDraft();
   renderHeroStats();
   if (state.view === 'stats') renderStatsView();
@@ -2631,6 +2654,11 @@ async function submitStage(form) {
     state.page = pageOfTrade(id);
     render();
     state.draft = null;
+    // A purchase is what makes an open position, and this save is the only
+    // way one is recorded, with no reload behind it to ask for today's rate.
+    // Without this a new euro position sat at its stored rates until the
+    // next ETH poll, five minutes on, then jumped.
+    loadFxNow().catch(() => {});
     toast(`${STAGES.find((s) => s.key === stage).name} saved.`);
   } catch (err) {
     showFormError(form, err.message, err.field);
@@ -2758,10 +2786,14 @@ function alertDialogBody(t, d, a) {
  * Asked for before the markup is built rather than after, because rewriting it
  * underneath someone would take away whatever they had begun to type.
  */
+/** The trade whose bell opened the window, so focus can go back to it. */
+let alertDialogTrade = null;
+
 async function openAlertDialog(id) {
   await loadAlerts({ refresh: true }).catch(() => {});
   const t = state.trades.find((x) => x.id === id);
   if (!t) return;
+  alertDialogTrade = id;
 
   // The card behind the window may have been saying the wrong thing too.
   render();
@@ -2780,6 +2812,19 @@ async function openAlertDialog(id) {
 
 function closeAlertDialog() {
   const dlg = alertDialog();
+  // Focus back on the bell, by hand. The window remembers what opened it, but
+  // it is opened after a render that replaced that bell, and the callers below
+  // render again after closing - so it handed focus to the top of the page.
+  // After this task, once those renders have drawn the bell that will stay.
+  if (dlg?.open && alertDialogTrade !== null) {
+    const id = alertDialogTrade;
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      document.querySelector(`[data-alert-trade="${id}"]`)?.focus();
+    }, 0);
+  }
+  alertDialogTrade = null;
   if (dlg?.open) dlg.close();
   // Emptied here rather than left to the `close` event, for the reason given
   // in `settleConfirm`: that event cannot be relied on, and leaning on it left
@@ -3411,9 +3456,17 @@ function wire() {
   const dlg = document.getElementById('alert-dialog');
 
   // A click on the backdrop lands on the dialog element itself rather than on
-  // anything inside it, which is the only way to tell the two apart.
+  // anything inside it, which is the only way to tell the two apart. And it has
+  // to have started there: a click goes to the nearest element both ends share,
+  // so selecting the typed goal and letting go past the edge of the window was
+  // a click on the dialog too, and closed it with the goal thrown away.
+  let pressedBackdrop = false;
+  dlg.addEventListener('pointerdown', (e) => {
+    pressedBackdrop = e.target === dlg;
+  });
   dlg.addEventListener('click', (e) => {
-    if (e.target === dlg) closeAlertDialog();
+    if (e.target === dlg && pressedBackdrop) closeAlertDialog();
+    pressedBackdrop = false;
   });
 
   // A second line of defence for a close that did not come through
@@ -3507,11 +3560,8 @@ async function boot() {
   try {
     await loadTrades();
   } catch (err) {
-    document.getElementById('table-mount').innerHTML = `<div class="empty">
-      <h3>Could not reach the server</h3>
-      <p>Check that it is still running, then reload this page.</p>
-    </div>`;
-    renderHeroStats();
+    state.loadFailed = true;
+    render();
     return;
   }
 

@@ -845,6 +845,12 @@ app.use((err, _req, res, _next) => {
       error: 'The ledger is busy, probably a second copy of the app writing to it. Try again.',
     });
   }
+  // Anything else Express or the body parser already judged the caller's fault:
+  // a path that is not valid percent-encoding, a body compressed in a way it
+  // is not. Both are tagged 4xx and were answered 500, read as a server fault.
+  if (err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ error: 'That request could not be read.' });
+  }
   console.error(err);
   res.status(500).json({ error: 'Something went wrong on the server.' });
 });

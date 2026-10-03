@@ -18,7 +18,11 @@ import {
   hasEstimate,
   estimateNeedsPrice,
   openGainsUsd,
+  parseAmount,
+  summaryReport,
+  derivedOn,
 } from '../lib/calc.js';
+import { tradesCsv } from '../lib/csv.js';
 
 const AS_OF = '2026-10-01';
 const PRICE = 3450;
@@ -215,6 +219,48 @@ check('openGainsUsd: an unknown position is missing, never a zero', () => {
   const g = openGainsUsd([held({ id: 1 }), held({ id: 2, ...eur(null) })], PRICE, {}, AS_OF);
   near(g.total, 10 * PRICE - 30000 - INTEREST - 8, 'total');
   assert.equal(g.missing, 1);
+});
+
+/* ------------------------------------------------------- typed amounts */
+
+check('amounts in either convention, including three decimals', () => {
+  const cases = {
+    '1.234,567': 1234.567, '26.810,928': 26810.928, '1.234,5678': 1234.5678,
+    '32.000,00': 32000, '12,345.67': 12345.67, '1.234.567,89': 1234567.89,
+    '12,000': 12000, '0,125': 0.125, '8,0773': 8.0773, '$1.234,56': 1234.56,
+  };
+  for (const [text, want] of Object.entries(cases)) assert.equal(parseAmount(text), want, text);
+});
+
+check('malformed grouping is refused, not read as some other number', () => {
+  for (const text of ['1,5.3', '12,34.56', '1,25.50', '1.2.3,4']) assert.equal(parseAmount(text), null, text);
+});
+
+/* ---------------------------------------------- rounding as printed */
+
+// A dollar loan flat but for its gas, so the net gain is minus the gas.
+const flat = (gas) => ({
+  id: 7, borrow_date: '2026-09-01', borrow_amount: 10000, borrow_currency: 'USDC', borrow_apr: 0,
+  borrow_gas_usd: 0, buy_date: '2026-09-02', buy_amount: 10000, buy_eth: 3, buy_gas_usd: gas,
+  sell_date: '2026-09-03', sell_amount: 10000, sell_eth: 3, sell_gas_usd: 0,
+  repay_date: '2026-09-04', repay_amount: 10000, repay_gas_usd: 0, created_at: '2026-09-01T00:00:00Z',
+});
+
+check('the CSV rounds a half cent away from zero, as the page prints it', () => {
+  const [head, row] = tradesCsv([flat(1.375)]).trim().split(/\r?\n/).map((l) => l.split(';'));
+  assert.equal(row[head.indexOf('net_gain_usd')], '-1,38');
+  assert.equal(row[head.indexOf('fees_usd')], '1,38');
+});
+
+check('a loss that prints as -$0.01 is counted as a loss', () => {
+  const r = summaryReport([flat(0.005)], AS_OF);
+  assert.equal(r.losses, 1);
+  assert.equal(r.wins, 0);
+});
+
+check('a trade dated after today is derived on its own day', () => {
+  assert.equal(derivedOn(held({ borrow_date: '2026-10-02', buy_date: '2026-10-02' }), AS_OF), '2026-10-02');
+  assert.equal(derivedOn(held(), AS_OF), AS_OF);
 });
 
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);

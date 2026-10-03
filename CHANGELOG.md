@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.3.3] - 2026-10-03
+
+### Fixed
+
+An audit of the whole app's math, interface and server, in three independent parts, found these ten. Each was reproduced or traced through the code before the fix and re-checked after, and `npm run check` grew to 30 checks. The derive and total arithmetic held across 300 random ledgers.
+
+- **A European amount with three decimals was read a thousand times too small.** "26.810,928" stored 26.81, and malformed groupings like "1,25.50" went through. With both separators the last one is now the decimal point, and grouping not in threes is refused.
+- **The CSV rounded half-cent losses toward zero.** A net gain the page prints as -$1.38 was written -1,37 beside fees of 1,38. It now rounds the way the page does.
+- **A trade printing -$0.01 was scored neither won nor lost** in Stats, for the same reason. It is a loss now.
+- **Telegram put a plus on zero.** "+$0.00" and "24h +0.0%" now read "$0.00" and "0.0%", as on the page.
+- **`/holding` called a dollar trade unpriced when it was dated the server's tomorrow**, which the server accepts from a reader ahead of UTC. The row read "-1d". Server messages now derive a trade on its own day when that is later.
+- **Malformed requests answered 500.** A broken path encoding or body compression is now a 400.
+- **A ledger that failed to load was drawn as empty.** One click on a tab showed "No trades yet" and a hero of zeros. Trades and Stats now say the ledger could not be loaded until the page is reloaded.
+- **Letting go of a drag past the alert window closed it**, with the typed goal lost. Only a click that starts on the backdrop closes it now.
+- **Closing the alert window sent keyboard focus to the top of the page.** It now goes back to the bell.
+- **A new euro position waited up to five minutes for today's rate.** Recording the purchase now asks for it at once.
+
 ## [1.3.2] - 2026-10-03
 
 ### Fixed
