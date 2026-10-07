@@ -17,9 +17,10 @@ node scripts/check-server.mjs  # one suite on its own; there is no per-check fil
 
 **There is no test framework, no linter and no build step.** Nothing is transpiled;
 the files on disk are the files that run. `npm run check` runs four scripts.
-`scripts/check-calc.mjs` covers the estimate math in `lib/calc.js` against hand-worked
-figures on a fixed date; add a case there when you change a formula, with the expected
-value worked out from the inputs rather than by calling the function again.
+`scripts/check-calc.mjs` covers `lib/calc.js` - the estimates, the totals adding up as
+printed - and the CSV's rounding, against hand-worked figures on a fixed date; add a
+case there when you change a formula, with the expected value worked out from the
+inputs rather than by calling the function again.
 `scripts/check-input.mjs` covers `lib/input.js` - how a typed or pasted figure is read
 and what the forms accept - typing each figure a keystroke at a time as the page does;
 add a case there when you change an input rule.
@@ -130,7 +131,8 @@ drift between a hand-written SQL predicate and `stages()`.
 `estimatedGainUsd(t, d, price, fxNow)` is the same for an open position's estimate:
 the header's Open positions tile (`openGainsUsd`), the table's `est` figures and their
 sort, Telegram's `/holding` and the alert message all print it, so one trade never
-reads two ways. It takes the ETH price and today's rate per coin as arguments rather
+reads two ways. `/holding` lists only trades still holding ETH; a trade sold and not
+repaid is open (the tile and `/summary` count it) but not in `/holding`. It takes the ETH price and today's rate per coin as arguments rather
 than fetching them, which is what keeps it in `lib/`. It is the one place an open
 position is marked to today's exchange rate; `derive`'s own figures never are.
 
@@ -189,7 +191,9 @@ alert back to armed and counts a try; three end in FAILED. **Setup** (401, 403, 
 or a 400 naming the chat or the bot's rights) puts it back without counting, because
 fixing `config.env` or the group cures it. Anything else is a refusal of the message
 itself and is final. An armed alert with `fired_at` set has already reached its goal
-and is sent on the next sweep whatever ETH costs; a goal saved afresh has none.
+and is sent on the next sweep whatever ETH costs; a goal saved afresh has none. The
+Alerts table's Fired at reads `firedAt`, not the status, so such a row shows when and
+where its goal was reached.
 `scripts/check-server.mjs` drives each path against a mock Telegram.
 
 ### The frontend
@@ -227,10 +231,11 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   every result is a difference of those, so a stage card adds up line by line; the
   currency effect is what is left of the loan cost after the interest. Every total in
   `summarize`, `summaryReport`, `openGainsUsd` and `/holding` (`report.js`) then adds
-  `cents(v)`, never raw
-  floats, so By month closed and By currency add up to Realized net gain. Rounded
-  only at the end, cards missed their result by a cent on a quarter of euro trades and
-  totals their rows on nearly half of random ledgers. New figures follow the same rule.
+  `cents(v)`, never raw floats, so By month closed and By currency add up to Realized
+  net gain, and the CSV writes amounts and fees as printed too (`money` in
+  `lib/csv.js`), so its columns add up across a row. Rounded only at the end, cards
+  missed their result by a cent on a quarter of euro trades and totals their rows on
+  nearly half of random ledgers. New figures follow the same rule.
 - **A figure and its label must describe the same thing.** A number that is
   arithmetically correct under a label describing something else is a bug here.
 - **Exchange rates are resolved server-side and never accepted from a request.** A
@@ -277,6 +282,9 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
   without a password, besides `/` itself. An image at the root goes to the app, behind
   auth, and the browser shows a login prompt on the public page — the landing logo did
   exactly that, in every browser without saved credentials. Keep a copy in `landing/`.
+- **Text can change freely; inline scripts cannot.** The landing page describes what
+  `lib/calc.js` computes (net gain after interest *and fees*, partial exits, weekend
+  rates), so a formula change may mean a copy change there too.
 - **Inline scripts are admitted by hash.** nginx's Content-Security-Policy lists the
   SHA-256 of each inline script on `landing/index.html` and `landing/404.html`; edit one
   and the browser silently blocks it until the user updates nginx. The ledger page has
