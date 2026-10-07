@@ -16,6 +16,10 @@
      the soft violet behind the badges, which fails for small bold type. This
      clears 4.9:1 there and 5.7:1 on white while staying the same hue. */
   --violet-ink: #584fe6;
+  /* Behind white text: the buttons and the step numbers. #9896ff gave white
+     2.58:1, under the 4.5:1 that type this size needs; this gives 5.71:1. The
+     same in both themes, since white on it reads the same on either. */
+  --violet-fill: #584fe6;
 
   --ink: #1b1b1d;
   --ink-fg: #ffffff;
@@ -244,7 +248,7 @@ p {
 }
 
 .btn--violet {
-  background: var(--violet);
+  background: var(--violet-fill);
   color: #ffffff;
   box-shadow: none;
 }
@@ -471,7 +475,7 @@ p {
   height: 30px;
   margin-bottom: 16px;
   border-radius: 50%;
-  background: var(--violet);
+  background: var(--violet-fill);
   color: #ffffff;
   font-size: 13.5px;
   font-weight: 700;
