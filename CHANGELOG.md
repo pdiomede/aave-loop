@@ -56,6 +56,8 @@ A second round over the whole app, in three parts: the server, the interface in 
 - **Escape anywhere threw away the open stage editor**, from the new trade form or a Stats tab too. It now works on the Trades view, outside the new trade card.
 - **Deleting a trade another tab had deleted left it on screen**, with "Trade not found.". The row goes, as for an alert already gone.
 - **Save, Cancel and Escape on a stage form, and deleting a trade, sent keyboard focus to the top of the page.** It goes back to the stage's Edit button, and after a delete to the row that took its place, or New trade when none is left.
+- **Leaving a field checked it against the saved trade, not the form.** ETH purchased was judged against the old amount spent, so a warning Save would not give appeared mid-edit. It is checked against what is typed, as Save does.
+- **Save on one form did nothing while another form was saving**, with no sign why: the alert window's Save while a euro stage waited on its rate, or Create trade. Each form has its own lock now, and a stage reply overtaken by a later save of the same trade no longer puts the row back.
 - **The Alerts view drew a bare "Trade #23"** for a trade added in another tab. It loads the trades when the log names one it does not have.
 - **The Alerts Trade tooltip said a new goal always adds a row.** One set over a goal still armed replaces it, and the tooltip says so.
 - **`/help` and `/watch` rounded the watch interval to minutes**, so 90 seconds read "every 2 minutes" and `/watch` said "1 minutes". They name it in minutes or seconds as set.

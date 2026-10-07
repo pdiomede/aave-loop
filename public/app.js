@@ -2840,18 +2840,27 @@ function showFormError(form, message, fieldName, { focus = true } = {}) {
  * was the server's, so a blank form made a round trip just to be told the
  * first thing it disliked.
  */
+/**
+ * The trade a field is judged against: the saved one, with what is typed in
+ * the form's other fields laid over it, so a sale is checked against the ETH
+ * bought and the ETH against the amount as they stand in the form.
+ */
+function formContext(form, trade, except) {
+  return {
+    ...trade,
+    ...Object.fromEntries(
+      Object.entries(payloadOf(form))
+        .filter(([k]) => k !== except)
+        .map(([k, v]) => [k, k.endsWith('_date') || k === 'borrow_currency' || k === 'notes' ? v || null : parseAmount(v)]),
+    ),
+  };
+}
+
 function validateForm(form, trade = {}) {
   const data = payloadOf(form);
   for (const [name, raw] of Object.entries(data)) {
     if (name === 'borrow_currency' || name === 'notes') continue;
-    // The merged trade lets a field be judged against its siblings, such as a
-    // sale that cannot exceed the ETH bought.
-    const context = { ...trade, ...Object.fromEntries(
-      Object.entries(data)
-        .filter(([k]) => k !== name)
-        .map(([k, v]) => [k, k.endsWith('_date') ? v : parseAmount(v)]),
-    ) };
-    const error = validateField(name, raw, context);
+    const error = validateField(name, raw, formContext(form, trade, name));
     if (error) {
       showFormError(form, error, name);
       return false;
@@ -2870,17 +2879,30 @@ function payloadOf(form) {
 /**
  * Neither form disabled its button while a request was in flight, so a double
  * click on Create trade posted the same borrow twice and the duplicate then
- * double counted in every total. Returns null when a submit is already running.
+ * double counted in every total. Returns null when that form is already
+ * submitting.
+ *
+ * One lock per form, not one for the page. A single flag silently ignored
+ * Save on any form while another was saving - the alert window's while a
+ * euro stage waited on its rate. Keyed by what the form saves rather than by
+ * the element, which a re-render replaces mid-request.
  */
-let submitting = false;
+const submitting = new Set();
+
+const submitKey = (form) =>
+  form.id ||
+  (form.dataset.stageForm ? `stage:${form.dataset.trade}:${form.dataset.stageForm}` : '') ||
+  (form.dataset.alertForm ? `alert:${form.dataset.alertForm}` : '') ||
+  'form';
 
 function beginSubmit(form) {
-  if (submitting) return null;
-  submitting = true;
+  const key = submitKey(form);
+  if (submitting.has(key)) return null;
+  submitting.add(key);
   const btn = form.querySelector('button[type="submit"]');
   if (btn) btn.disabled = true;
   return () => {
-    submitting = false;
+    submitting.delete(key);
     if (btn) btn.disabled = false;
   };
 }
@@ -2897,7 +2919,12 @@ async function submitStage(form) {
       method: 'PATCH',
       body: JSON.stringify(payloadOf(form)),
     });
-    state.trades = state.trades.map((t) => (t.id === id ? withoutDerived(updated) : t));
+    // Two stages of one trade can now be saved at once. The server writes them
+    // in turn, and a reply overtaken on the way back by the later one must not
+    // put the row back as it was before that write.
+    state.trades = state.trades.map((t) =>
+      t.id === id && !(t.updated_at > updated.updated_at) ? withoutDerived(updated) : t,
+    );
     writeSeq += 1;
     // Only the editor this save came from. A slow save - a euro rate being
     // looked up - closed whatever was open when it landed, and took a sale
@@ -3811,7 +3838,10 @@ function wire() {
       const trade = stageForm
         ? state.trades.find((t) => t.id === Number(stageForm.dataset.trade)) || {}
         : {};
-      const error = validateField(input.name, input.value, trade);
+      // Against the form as typed, as Save judges it. Against the saved trade
+      // alone, ETH purchased was checked against the old amount spent, and a
+      // warning the save would not give appeared mid-edit.
+      const error = validateField(input.name, input.value, formContext(form, trade, input.name));
       if (error) showFormError(form, error, input.name, { focus: false });
     },
     true,
