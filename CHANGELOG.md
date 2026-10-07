@@ -7,75 +7,52 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Changed
 
-- **Currency comes before Amount borrowed** on the borrow form, so the amount's unit is set before it is typed.
-- **Currency is a picker with each coin's icon and name**, listed alphabetically: DAI, EURC, GHO (Aave GHO), USDC, USDT. It works by mouse, touch and keyboard (arrows, a ticker's first letter, Enter, Escape), and a new trade starts on DAI, the first.
-- **Gas on the borrow and the repayment is optional.** A fee left blank is saved as not recorded and its card says so; 0 still means none was paid.
-- **The swap fee is now Costs & Fees (swap)**, on the purchase and the sale: gas plus the DEX or aggregator fee, as one dollar figure. Still required.
-- **The Telegram alert reads more clearly.** "ETH reached your goal" whichever way it moved, the value lines set apart by a blank line, and a new **Gain (%)** over what the ETH cost beside **Gain ($)**. The alert and `/holding` say "fees", not "gas", since the figure carries the swaps' DEX fees too.
+- **Currency is a picker with each coin's icon and name**, alphabetical (DAI, EURC, GHO as Aave GHO, USDC, USDT), before Amount borrowed, by mouse, touch or keyboard. A new trade starts on DAI.
+- **Gas on the borrow and the repayment is optional.** Blank is saved as not recorded; 0 is still none paid.
+- **The swap fee is now Costs & Fees (swap)**: gas plus the DEX or aggregator fee, one dollar figure, still required.
+- **The Telegram alert reads more clearly**: "ETH reached your goal" either way, the value lines set apart, and **Gain (%)** over what the ETH cost beside **Gain ($)**. Telegram says "fees", not "gas".
+- **`npm run check` runs three suites**: 38 checks of `lib/calc.js`, 18 of the form input rules (moved to `lib/input.js` so the page and the checks run one file), and 20 of the server, the alert sweep and the bot against a throwaway database with Telegram and prices mocked. Run against the code before these fixes, 15 of them fail.
 
 ### Fixed
 
-- **The Total fees paid tooltip said gas only**, though the total also carries the swaps' DEX and aggregator fees. It now names them.
+Three audits, every finding reproduced before its fix and re-run after.
+
+Input:
+
+- **A typed decimal comma was dropped**: "3,20" saved a $320 fee, "32.000,00" a loan of 32. The form keeps the separators and the server's parser reads them.
+- **A paste or exponent was turned into another number**: "1.5 ETH ($5175)" saved 1.55175 ETH, "1e5" saved 15. Both are refused, as the server does.
+- **Nothing checked the ETH price a purchase or sale implies**, so 80,773 ETH for 25,000 stored ETH at $0.31. Outside $1 to $1,000,000 is refused, and the form's lower bound for an alert goal now matches the server's.
+- **Selling ETH withdrawn from Aave with its interest was refused** past 0.01% over the purchase. A sale may run 10% over.
+- **Leaving a field checked it against the saved trade**, not what was typed, so a warning Save would not give appeared mid-edit.
+
+Interface:
+
+- **A slow save closed whichever stage editor was open** and lost what was typed there, and a failed one showed nowhere. It closes only its own and shows its error.
+- **Escape anywhere threw away the stage editor**, from Stats, the new trade form, or the currency list in Safari and Firefox.
+- **Save on one form did nothing while another was saving.** Each form has its own lock, and a late reply no longer rolls a row back.
+- **Keyboard focus fell to the top of the page** after Save, Cancel, Escape or a delete. It returns to the stage's Edit button or the next row.
+- **Deleting a trade another tab had deleted left it on screen**, and the Alerts view drew a bare "Trade #23" for one added there.
+- **The currency list ran off a short window and swallowed Cmd and Ctrl shortcuts.** It fits and scrolls, and leaves modifiers to the browser.
+- **Three tooltips misdescribed their figures**: Total fees paid (gas only), and the Alerts Trade and Status columns.
+- **By month closed drew every bar short** when no month reached a dollar.
+
+Math:
+
+- **A sale within 0.01% of the purchase showed a full exit with a partial cost**, +$3,001.50 under a card adding to +$3,000.00.
+- **The repayment preview counted to today** with the amount blank, not to the date in the form.
+- **`/holding` gave the euro move for some trades under the total of all.**
 
 Telegram and alerts:
 
-- **An alert whose send failed was retried only if ETH was past the goal again**, so a dip that came back left it armed with no message sent. It is now retried every check, up to three times, and keeps the price that triggered it.
-- **A bot reply sent as plain text showed `&lt;` and `&amp;`** where the values had `<` and `&`. The HTML fallback now unescapes them.
-- **A huge or negative bot timing setting made the bot poll in a 1 ms loop.** `MYAAVE_BOT_POLL_S`, `MYAAVE_BOT_LEASE_MS`, `MYAAVE_BOT_LEASE_RETRY_MS` and `MYAAVE_WATCH_MS` are now bounded like the other intervals.
-- **`/help` said `/watch` sends every 20 minutes** whatever `MYAAVE_WATCH_MS` set. It names the interval in use.
+- **A failed send was retried only if ETH was still past the goal**, so the message could be lost. It retries every check, up to three times, keeping the triggering price.
+- **A wrong Telegram setup used up a reached alert**: a revoked or malformed token, a bot removed from the group or not allowed to post. It waits, armed, and goes once fixed. A refusal of the message itself is still final.
+- **`/watch` timing**: the interval was rounded in `/help`, a one-minute report came every 100 seconds, and a bad timing setting made the bot poll every millisecond. Intervals are bounded, at least a minute, and kept.
+- **The bot's plain-text fallback showed `&lt;` and `&amp;`.**
 
-Three audits, of input checks, of the math and of the database, each finding reproduced before its fix and re-run after. `npm run check` is at 37.
+Server and database:
 
-Input checks:
-
-- **A typed decimal comma was dropped.** "3,20" saved a $320 fee and "32.000,00" a loan of 32, and on a phone whose decimal keypad offers only "," every decimal was multiplied. The form keeps the separators and the server's parser reads the finished figure.
-- **A paste the parser refuses was cut down to a number it accepts.** "1.5 ETH ($5,175.00)" saved 1.55175 ETH, and a typed "1e5" saved 15. Both now say the field is not a number, as the server does.
-- **Nothing checked the ETH price a purchase or sale implies.** 25,000 for 80,773 ETH stored ETH at $0.31. Both sides now refuse a price outside $1 to $1,000,000.
-- **Selling ETH withdrawn from Aave with its interest was refused.** Only 0.01% over the purchase was allowed, two days of supply interest. A sale may run 10% over.
-- **The form accepted an alert goal under $1** that the save refused. Both use one range.
-
-Math and Stats:
-
-- **A sale within 0.01% of the purchase showed as a full exit with a partial cost.** 9.9995 of 10 ETH read +$3,001.50 under a card adding to +$3,000.00. It takes off the whole purchase now.
-- **The repayment preview counted to today with the amount blank.** It said 36 days and suggested 30,118.36 beside a date giving 19 days and 30,062.47. It uses the date in the form.
-- **`/holding` gave the euro's move for some trades under the total of all.** With a purchase rate missing, it now leaves the move out.
-- **By month closed drew every bar short when no month reached a dollar.** +$0.40 filled 40% of its bar. The largest month fills it now.
-
-Database:
-
-- **Fetch rates failed at once while the other copy of the app was writing**, rather than waiting its turn, and the hourly refresh left rates missing another hour. Its write now takes the lock first.
-- **An edit could be saved over a row the other copy had just changed** while a rate lookup was away, pinning a rate to the wrong date or moving a purchase past a sale. It is now written only to the row it was worked out from, and worked out again otherwise.
-- **A failed alert send could be counted over a failure the other copy recorded**, so the alert retried past its three tries. The count is kept in SQL.
-
-Measured at 200 and 5,000 trades, every query already uses an index and nothing on the read or write path is worth changing at a personal ledger's size.
-
-`npm run check` also runs `scripts/check-input.mjs`: 18 checks of how the forms read a typed or pasted figure and what they accept, on `lib/input.js`, where `sanitizeNumeric`, `validateField` and the field labels moved out of `public/app.js` so the browser and the checks run the same file. With the sanitizer as it was before 1.4.3, 7 of them fail. And it runs `scripts/check-server.mjs`: 20 checks of the API's write rules, the alert message, the sweep's handling of every kind of failed send, and the bot's reports, against the real server on a throwaway database with Telegram and the price service mocked. Run against the code from before these fixes, 8 of them fail.
-
-A second round over the whole app, in three parts: the server, the interface in a browser, and Telegram, alerts and the math. The server's fuzz of 3,500 requests found no 500 and no broken invariant. `npm run check` is at 38.
-
-- **A pasted amount could still be glued into another number.** "1.5 ETH ($5175)" saved 1.55175 ETH and "3 (≈$3.20)" saved 33.20. Text with anything but spaces between two numbers is now left whole, and refused.
-- **A slow save closed whichever stage editor was open when it landed**, taking a sale typed into another card meanwhile, and a failed one wrote its error into a form no longer on screen. It closes only its own editor, and the error shows on the live form or as a toast.
-- **Escape anywhere threw away the open stage editor**, from the new trade form or a Stats tab too. It now works on the Trades view, outside the new trade card.
-- **Deleting a trade another tab had deleted left it on screen**, with "Trade not found.". The row goes, as for an alert already gone.
-- **Save, Cancel and Escape on a stage form, and deleting a trade, sent keyboard focus to the top of the page.** It goes back to the stage's Edit button, and after a delete to the row that took its place, or New trade when none is left.
-- **Leaving a field checked it against the saved trade, not the form.** ETH purchased was judged against the old amount spent, so a warning Save would not give appeared mid-edit. It is checked against what is typed, as Save does.
-- **Save on one form did nothing while another form was saving**, with no sign why: the alert window's Save while a euro stage waited on its rate, or Create trade. Each form has its own lock now, and a stage reply overtaken by a later save of the same trade no longer puts the row back.
-- **The Alerts view drew a bare "Trade #23"** for a trade added in another tab. It loads the trades when the log names one it does not have.
-- **The Alerts Trade tooltip said a new goal always adds a row.** One set over a goal still armed replaces it, and the tooltip says so.
-- **`/help` and `/watch` rounded the watch interval to minutes**, so 90 seconds read "every 2 minutes" and `/watch` said "1 minutes". They name it in minutes or seconds as set, and the interval is at least a minute: the bot comes round every 50 seconds, so a shorter one could not be kept.
-- **The comment on Gain (%) described a dollar figure it does not compute.** It is the return in the coin spent, both sides at today's rate. The comment says so, and a euro case is checked.
-- **A reached alert was used up when Telegram's setup was wrong.** A revoked token, a bot removed from the group or a chat id that names nothing marked it fired with an error, and fixing config.env never sent it. It now waits, armed with the reason on the card, and goes on the first check after the fix. A refusal of the message itself is still final.
-- **`DELETE /api/alerts/` with a trailing slash deleted every alert.** The delete-all route is strict now, and the slash gets the 404.
-- **An unknown `/API/...` path got the HTML 404 page** where `/api/...` gets JSON. Both get JSON.
-
-A third, narrower pass over the code added after it - the currency picker, the form locks, the alert setup errors, `lib/input.js` and the checks - found six more:
-
-- **On a Mac in Safari or Firefox, Escape meant for the currency list threw away the stage editor.** Those browsers do not focus a clicked button, so the key reached the page. Opening the list now focuses its button.
-- **A bot token pasted with its "bot" prefix still used an alert up**, and so did a bot the group's admins had not let post. Telegram answers those 404 and 400 "not enough rights", which were not counted as setup errors. They are now, and the alert waits.
-- **In a short window the currency list ran off the bottom of the screen**, and scrolling to the last coins closed it. It fits the room on the side it opens and scrolls within itself.
-- **With the currency list open, Cmd and Ctrl shortcuts were swallowed** - Cmd+R jumped to a coin. A letter with a modifier is left to the browser.
-- **The one-minute `/watch` floor still came round every 100 seconds**, after each 50-second poll. The poll is cut short when a report is due.
-- **The Alerts Status tooltip said every "not sent" alert would still go.** Only an ARMED one does; a FIRED or FAILED one will not.
+- **`DELETE /api/alerts/` with a trailing slash deleted every alert**, and an unknown `/API/...` path got the HTML 404 page.
+- **With two copies of the app on one file**, Fetch rates failed at once, an edit could land on a row the other had changed, and an alert's failed sends could be miscounted. The backfill waits for the lock, an edit is written only to the row it was worked out from, and failures are counted in SQL.
 
 ## [1.4.2] - 2026-10-03
 
