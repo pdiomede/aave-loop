@@ -226,7 +226,8 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   dollar conversion and fee to the cent as its card prints it (`asPrinted`), and
   every result is a difference of those, so a stage card adds up line by line; the
   currency effect is what is left of the loan cost after the interest. Every total in
-  `summarize`, `summaryReport` and `openGainsUsd` then adds `cents(v)`, never raw
+  `summarize`, `summaryReport`, `openGainsUsd` and `/holding` (`report.js`) then adds
+  `cents(v)`, never raw
   floats, so By month closed and By currency add up to Realized net gain. Rounded
   only at the end, cards missed their result by a cent on a quarter of euro trades and
   totals their rows on nearly half of random ledgers. New figures follow the same rule.

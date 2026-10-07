@@ -406,6 +406,25 @@ await check('/holding leaves out the euro move when a purchase rate is missing',
   assert.match(one, /-\$1,200\.00 of it from the move since purchase/);
 });
 
+await check('/holding: the Unrealised total is the sum of the rows as printed', async () => {
+  // Three USDT positions, 1,000 on 1 ETH at 4% for 30 days: 3.2877 of
+  // interest, so each is up 96.7123 at $1,100 and prints +$96.71. The total
+  // is the rows' sum, 3 x 96.71 = 290.13, not the raw 290.137 printed .14.
+  const from = new Date(Date.parse(today) - 30 * 86_400_000).toISOString().slice(0, 10);
+  const row = (id) => ({ id, borrow_date: from, borrow_amount: 1000, borrow_currency: 'USDT', borrow_apr: 4,
+    borrow_gas_usd: 0, buy_date: from, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 });
+  const text = holdingText([row(1), row(2), row(3)], 1100, {});
+  assert.equal(text.match(/\+\$96\.71/g)?.length, 3);
+  assert.match(text, /Unrealised \+\$290\.13 /);
+});
+
+await check('/help says what /holding lists: trades still holding ETH', async () => {
+  // Not "open positions": /summary counts a sold, unrepaid trade as open, and
+  // /holding does not list it.
+  assert.match(helpText(), /\/holding - trades still holding ETH/);
+  assert.doesNotMatch(helpText(), /open positions/);
+});
+
 await check('/help names the watch interval it is given', async () => {
   assert.match(helpText(), /every 20 minutes/);
   assert.match(helpText('90 seconds'), /every 90 seconds/);

@@ -93,7 +93,7 @@ The bot answers in the group named by `TELEGRAM_CHAT_ID`, and only there. It can
 | Command | Returns |
 | --- | --- |
 | `/price` | ETH now, with 24h, 7d and 30d change |
-| `/holding` | every open position, one line each, with its estimated gain at today's price and exchange rate, the total and what it is worth |
+| `/holding` | every trade still holding ETH, one line each, with its estimated gain at today's price and exchange rate, the total and what it is worth. A trade sold but not yet repaid holds no ETH and is not listed, though `/summary` counts it as open |
 | `/summary` | realized net gain, blended annualized, closed trades, open positions |
 | `/watch` | the price report every twenty minutes |
 | `/unwatch` | stops it |

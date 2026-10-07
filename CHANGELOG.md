@@ -33,6 +33,11 @@ An audit of the Alerts page - the goal and its direction, when it counts as reac
 
 - **A reached goal waiting to be sent showed no firing.** When Telegram turned the message away for a setup fault, or a send was being retried, the alert went back to ARMED with the time and price it was reached at kept, but Fired at showed a dash beside "not sent". It now shows them whenever the goal was reached.
 
+An audit of the Telegram bot - `/price`, `/holding`, `/summary`, `/watch` and `/help`, the polling and the sends. Two bugs, both about `/holding`:
+
+- **`/holding`'s total did not add up from its rows.** Three positions printed +$96.71 each under an Unrealised total of +$290.14. It now adds each row as printed.
+- **`/help` called `/holding` the open positions.** It lists the trades still holding ETH; a trade sold but not yet repaid is open, and `/summary` counts it, but it holds no ETH and was not there. `/help` and the README now say what it lists.
+
 ## [1.5.0] - 2026-10-07
 
 ### Changed

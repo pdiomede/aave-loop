@@ -11,7 +11,7 @@
  * value that reaches the text goes through `escHtml` first.
  */
 import { db, prepare } from './db.js';
-import { derive, derivedOn, summarize, estimatedGainUsd, isUsdPegged, todayISO } from './lib/calc.js';
+import { derive, derivedOn, summarize, estimatedGainUsd, isUsdPegged, todayISO, cents } from './lib/calc.js';
 import { ethPrice, ethStatus } from './eth.js';
 import { resolveRate } from './fx.js';
 import { alertPollMs } from './alerts.js';
@@ -62,7 +62,11 @@ export function priceText(quote) {
 /* ----------------------------------------------------------------- holding */
 
 /**
- * Open positions, with the alert on each where there is one.
+ * The trades still holding ETH, with the alert on each where there is one.
+ *
+ * Not every open position: a trade whose ETH is sold but whose loan is not
+ * repaid is open - /summary and the page count it - and holds no ETH, so it is
+ * not here, and /help says so rather than calling this the open positions.
  *
  * The WHERE clause is the one the alert sweep uses, spelled out rather than
  * asking whether the ETH has been sold: a purchase can be undone as well as
@@ -96,6 +100,9 @@ export function holdingText(rows, price, fxNow = {}) {
 
   const hasPrice = Number.isFinite(price);
   let eth = 0;
+  // In whole cents as each row prints it (see `cents` in lib/calc.js), so the
+  // Unrealised total is the sum of the gains listed under it. Summed raw, three
+  // rows of +$96.71 sat under a total of +$290.14.
   let gain = 0;
   let gainKnown = 0;
   let unpriced = 0;
@@ -119,7 +126,7 @@ export function holdingText(rows, price, fxNow = {}) {
     const g = hasPrice ? estimatedGainUsd(t, d, price, fxNow) : null;
     if (g === null) unpriced += 1;
     else {
-      gain += g;
+      gain += cents(g);
       gainKnown += 1;
       if (Number.isFinite(d.feesUsd)) gassed += 1;
       const today = fxNow?.[t.borrow_currency];
@@ -189,7 +196,7 @@ export function holdingText(rows, price, fxNow = {}) {
     const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');
     const move = movedKnown && !moveGap ? ` (${signedUsd(moved)} of it from the move since purchase)` : '';
     head.push(
-      `Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
+      `Unrealised ${escHtml(signedUsd(gain / 100))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
     );
   } else if (unpriced) {
     // Two different absences. With no ETH price every row is unpriced, a
@@ -273,7 +280,7 @@ export function helpText(every = '20 minutes') {
     '<b>Aave Loop</b>',
     '',
     '/price - ETH now, with 24h, 7d and 30d change',
-    '/holding - open positions, one line each',
+    '/holding - trades still holding ETH, one line each',
     '/summary - realized gain, annualized, closed and open',
     `/watch - send the price every ${every}`,
     '/unwatch - stop the price updates',
