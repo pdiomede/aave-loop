@@ -9,8 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./run_myAave.sh --kill       # reclaim port 3000 instead of moving to the next one
 ./run_myAave.sh --port 3011  # a specific port
 ./resetDatabase.sh           # empty the ledger; asks twice, backs up to data/backups
+./backupDatabase.sh          # online SQLite backup, safe while the server runs; --help has the cron line
 npm start                    # node server.js, no port hunting
 npm run check                # scripts/check-calc.mjs, check-input.mjs, then check-server.mjs
+node scripts/check-server.mjs  # one suite on its own; there is no per-check filter
 ```
 
 **There is no test framework, no linter and no build step.** Nothing is transpiled;
@@ -37,6 +39,8 @@ PORT=3011 MYAAVE_DB=/tmp/scratch.db npm start                     # never data/m
 Drive a throwaway ledger rather than reasoning about a figure: import `lib/calc.js`
 directly for math, or run a server on a temp database and hit it with curl. Claims of
 correctness in this repo are expected to come with the command that produced them.
+Stop a scratch server by the PID you started it with, never `pkill -f "node server.js"`:
+the user's own instance, or another scratch server, is often running too.
 
 Every non-GET `/api` request must send `Content-Type: application/json`, or it gets a
 415. That is the cross-site guard, so a bare `curl -X POST` fails by design: add
@@ -56,9 +60,11 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | `MYAAVE_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
 
 Every interval read from the environment (`MYAAVE_FX_REFRESH_MS`, `MYAAVE_ALERT_POLL_MS`,
-`MYAAVE_ETH_POLL_MS`) goes through `intervalMs` in `lib/calc.js`: below a second it is
+`MYAAVE_ETH_POLL_MS`, and the bot's `MYAAVE_BOT_LEASE_MS`, `MYAAVE_BOT_LEASE_RETRY_MS`,
+`MYAAVE_WATCH_MS`) goes through `intervalMs` in `lib/calc.js`: below a second it is
 the default, above 2^31 − 1 ms it is capped. Node turns an out-of-range timer into 1 ms,
 so a huge value meant to switch something off made it fire continuously.
+`MYAAVE_BOT_POLL_S` is clamped to 1–50 seconds, and `/watch` to at least a minute.
 
 `MYAAVE_CONFIG` relocates `config.env`. Everything in that file can be overridden by
 exporting it for one run; the shell always wins over the file.
@@ -137,7 +143,8 @@ be wrong in a Telegram message.
 ### Two instances can share one database
 
 `run_myAave.sh` starts a second copy on the next free port when the first is in the
-way, so concurrent access is a supported state, not an edge case. This is why:
+way, so concurrent access is a supported state, not an edge case. Production runs one
+copy; this is mostly a dev-machine state, but the code holds for both. This is why:
 
 - alerts are claimed with a conditional `UPDATE ... WHERE id = ? AND status = 'armed'`
   before the message is sent, so of two processes exactly one gets `changes === 1`;
@@ -147,11 +154,28 @@ way, so concurrent access is a supported state, not an edge case. This is why:
 - an armed alert whose trade no longer holds ETH is closed by `closeUnwatched()`, a
   conditional `UPDATE ... WHERE status = 'armed'`, run after a trade edit, at startup
   and at the top of every sweep — the sweep is what catches the other copy's edits;
+- a `PATCH` writes only to the row it read (`WHERE id = ? AND updated_at IS ?`) and
+  works the edit out again from a fresh read when the other copy got there first,
+  because the rate lookup in between can take seconds; three misses answer 503;
+- an alert's failed sends are counted in SQL (`attempts = attempts + 1`), never from
+  the row the sweep read at its start;
 - both copies run the hourly rate refresher (`startFxRefresher` in `fx.js`), which
-  is harmless: the backfill re-reads each row and writes the same rate;
+  is harmless: the backfill re-reads each row and writes the same rate, in an
+  immediate transaction so it waits on the busy timeout instead of failing at once;
 - cache reads and writes in `fx.js` / `eth.js` swallow database errors — a statement
   can be refused while the connection is open, and a cache that cannot be read is a
   miss, not a failure.
+
+### How an alert's send can fail
+
+`telegram.js` answers every send with `{ ok, retryable, setup }`, and `alerts.js`
+treats the three failures differently. **Retryable** (5xx, 429, a timeout) puts the
+alert back to armed and counts a try; three end in FAILED. **Setup** (401, 403, 404,
+or a 400 naming the chat or the bot's rights) puts it back without counting, because
+fixing `config.env` or the group cures it. Anything else is a refusal of the message
+itself and is final. An armed alert with `fired_at` set has already reached its goal
+and is sent on the next sweep whatever ETH costs; a goal saved afresh has none.
+`scripts/check-server.mjs` drives each path against a mock Telegram.
 
 ### The frontend
 
@@ -165,6 +189,13 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   into `state` needs the same treatment.
 - **`captureDraft`/`restoreDraft`** keep a half-typed stage form alive across
   re-renders. A change that re-renders the table must not discard it.
+- **Submit locks are per form**, keyed by what the form saves (`submitKey`), so a
+  re-render mid-request cannot reopen one and one form saving never blocks another.
+- **Currency is a custom combobox** (`coinSelect`), not a `<select>`: the value lives
+  in a hidden `borrow_currency` input, a pick fires `input` on it, and code that sets
+  it directly must call `syncCoinSelect`. `CURRENCIES` is the picker's order and
+  `CURRENCIES[0]` is a new trade's coin (`unitOf`). Its list is `position: fixed`
+  because the trades table's scroll wrapper clips anything positioned inside it.
 
 ### Rules the code holds itself to
 
@@ -226,11 +257,3 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
   SHA-256 of each inline script on `landing/index.html` and `landing/404.html`; edit one
   and the browser silently blocks it until the user updates nginx. The ledger page has
   no inline script at all for that reason — its theme runs from `public/theme.js`.
-
-## Importing other agent configs
-
-An OpenAI Codex config exists at `~/.codex/config.toml`. Reply `/import` to scan and
-list what is importable (MCP servers, slash commands, subagents, skills,
-instructions), then `/import --yes=<digest>` with the digest that scan prints to apply
-the user-level items. If `/import` is unavailable on this surface, run `claude import`
-from a terminal instead.
