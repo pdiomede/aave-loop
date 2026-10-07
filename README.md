@@ -2,9 +2,7 @@
 
 Track leveraged trade cycles on Aave: borrow a stablecoin, buy ETH, sell it, repay the loan, and see what the round trip actually earned.
 
-Local web app, SQLite storage, no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is reported in US dollars, shown to two decimals with ETH to four.
-
-Release notes for every version are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
+A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH to four places. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
 
 ## Run
 
@@ -12,15 +10,15 @@ Release notes for every version are in [CHANGELOG.md](CHANGELOG.md). Licensed [M
 ./run_myAave.sh
 ```
 
-Opens on http://localhost:3000, bound to loopback only. Requires Node 18 or newer. The script checks Node, installs dependencies if needed, and moves to the next free port when 3000 is taken (`--kill` reclaims it instead, `--port N` picks another).
+Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script installs dependencies if needed and moves to the next free port when 3000 is taken (`--kill` reclaims it, `--port N` picks one).
 
-`./resetDatabase.sh` empties the ledger. It asks twice, refuses to run while a server has the file open, and keeps a timestamped backup under `data/backups`.
-
-`npm run check` runs the checks on the formulas in `lib/calc.js` - estimates, amount parsing and rounding, each against a figure worked out by hand - then on the forms' input rules in `lib/input.js`, typing each figure as the page does, and then on the server: the rules a write must pass, the alert message, how the alert sweep handles a failed send, and the bot's reports, against a throwaway database with Telegram and the price service mocked. Nothing reaches the network.
+- `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open, and keeps a backup under `data/backups`.
+- `./backupDatabase.sh` takes a backup that is safe while the server runs; `--help` gives the cron line.
+- `npm run check` runs four offline suites: the formulas in `lib/calc.js` against hand-worked figures, the forms' input rules, the Statement PDF, and the server itself against a throwaway database with Telegram and the price service mocked.
 
 ## How a trade works
 
-A trade is created with the borrow alone, then each stage is added as it happens.
+A trade starts with the borrow; each stage is added as it happens.
 
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
@@ -29,178 +27,120 @@ A trade is created with the borrow alone, then each stage is added as it happens
 | Sell ETH | date, ETH sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
 | Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
 
-Every stage asks what its transaction cost, in dollars whatever was borrowed, and 0 is accepted. The two swaps require it, as **Costs & Fees (swap)**: gas plus the DEX or aggregator fee. On the borrow and the repayment the gas fee may be left blank, and shows as *not recorded* rather than $0.00, as on trades recorded before fees were asked for. The Aave lend and unstake fees are optional: blank means none was paid.
+Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank Aave lend or unstake fee means none was paid.
 
-**Trades** is the history table; expand a row to see its four stages and edit them. **Stats** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed, average hold and total fees paid. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money. Stats is split into a tab per year, plus **All** for the whole ledger: a trade counts in the year it was repaid, and one still open counts in the current year. The four figures above the tabs stay all-time. **Export CSV**, beside the tabs, downloads the trades on the tab you are looking at (`aave-loop-trades-2026.csv`, or `-all`), one row per trade with its stage inputs and every figure `derive` works out; a figure nobody measured is an empty cell, not 0. The file is semicolon-separated with decimal commas, so Excel in a European locale opens it straight into columns.
-
-**Open positions** shows what the trades still open would make if closed today: an estimated gain at the current ETH price, in total and per trade, two to a row. The table's Net gain column shows the same figure for each open trade, tagged `est`, and sorts by it. A trade still holding ETH is its ETH at today's price less what it cost, the interest so far and the fees paid; one sold but not yet repaid is its sale less cost, interest and fees, plus any ETH still held after a partial sale at today's price. A loan with nothing bought yet has no estimate. Telegram's `/holding` and the alert messages use the same figure.
+- **Trades** is the history table. Expand a row to see and edit its four stages.
+- **Stats** shows performance, net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
+- **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
+- **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.
+- **Open positions**, in the header, estimates what the open trades would make if closed today, at the current ETH price and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
 
 ## The math
 
 | Figure | Formula |
 | --- | --- |
-| ETH buy price | `buy_amount / buy_eth` |
-| ETH sell price | `sell_amount / sell_eth` |
+| ETH buy / sell price | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
 | Gross gain | `sell_amount - buy_amount * (sell_eth / buy_eth)` |
-| Days | borrow date to repay date |
 | Accrued interest | `borrow_amount * apr% * days / 365` |
-| Suggested repayment | `borrow_amount + accrued_interest` |
-| Fees | `borrow_gas + buy_gas + buy_lend_gas + sell_unstake_gas + sell_gas + repay_gas`, in dollars |
-| Net gain | `gross_gain - interest_paid - fees` (`sell_amount - repay_amount - fees` on a full exit) |
-| Annualized return | `net_gain_usd / borrow_usd * 365 / days` |
-| Estimated gain, holding | `buy_eth * eth_price_now - (buy_amount + accrued_interest) * rate_today - fees` |
-| Estimated gain, sold | `(gross_gain - accrued_interest) * rate_today - fees + eth_still_held * eth_price_now - its_cost * rate_today` |
+| Fees | the six stage fees, in dollars |
+| Net gain | `gross_gain - interest_paid - fees` |
+| Annualized | `net_gain_usd / borrow_usd * 365 / days` |
+| Estimate, holding | `buy_eth * eth_price_now - (buy_amount + accrued_interest) * rate_today - fees` |
+| Estimate, sold | `(gross_gain - accrued_interest) * rate_today - fees`, plus any ETH still held at today's price less its cost |
 
-Gross gain uses the cost basis of the ETH actually sold, so a partial exit is not reported as a loss. The return is annualized, so a 3 day trade netting 7% shows as roughly 877%.
+Gross gain uses the cost of the ETH actually sold, so a profitable partial exit is never reported as a loss. The return is annualized: a 3 day trade netting 7.2% reads 876%. Every amount, conversion and fee is taken to the cent as printed, so each card and total adds up from its lines.
 
-## Currencies and exchange rates
+## Exchange rates
 
-Amounts are recorded in the coin that was borrowed, and every total is reported in US dollars, because adding euros to dollars gives a number that means nothing. For a dollar coin the two are the same thing. For EURC each stage is converted at the European Central Bank euro reference rate published for the day of that transaction, so a loan taken in January and repaid in March is converted at two different rates and the euro's own movement lands in the dollar result, as it did in reality.
+Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage converts at the European Central Bank reference rate for its own day, so the euro's movement between borrowing and repaying lands in the result.
 
 | Figure | Formula |
 | --- | --- |
-| Any amount in dollars | `amount * rate_for_that_day` |
 | Loan cost | `repaid_usd - borrowed_usd` |
 | of which interest | `interest_paid * repay_rate` |
-| of which currency | `borrowed * (repay_rate - borrow_rate)` |
+| of which currency | the rest: `borrowed * (repay_rate - borrow_rate)` |
 | Net gain | `gross_gain_usd - loan_cost - fees` |
-| Net gain in EURC | `gross_gain - interest_paid - sum(fee / rate_of_its_stage)` |
 
-The loan cost can be negative: if the euro fell between borrowing and repaying, the loan was cheaper in dollars than its interest alone. The Repaid card shows the two parts separately so this reads as an explanation rather than a mistake.
+A loan cost can be negative: if the euro fell, the loan was cheaper in dollars than its interest.
 
-- **Rates are the ECB's**, read through a public mirror of its daily file rather than from the Bank directly - `MYAAVE_FX_URL` points somewhere else if you would rather it did. The ECB publishes once per business day, so a Sunday transaction is converted at Friday's rate. The publication date is stored and shown next to the figure, so any conversion can be checked against [the ECB's own tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
-- **EURC is valued as one euro.** There is no free historical feed for the coin itself, and it tracks the euro closely enough for this to be the honest approximation. It is an approximation all the same.
-- **Rates fill themselves in.** A transaction recorded before the ECB has published that day's rate is converted at the day before's for now, and the server asks again every hour until the real one is out. A trade with no rate at all - saved with the network down - is looked up the same way. Neither needs a button; **Fetch rates** appears on Stats only while a trade still has no rate, and asks at once.
-- **Working offline.** A trade always saves, whether or not a rate could be fetched. One without a rate is marked rather than guessed at and left out of the totals until its rate arrives.
-- **Open positions are estimated at today's rate.** The estimated gain marks a euro loan at today's ECB rate, as it marks the ETH at today's price; without today's rate the trade's own rates stand in. The trade's own dollar figures are not: until the loan is repaid they stay at the rates of the days they happened, so the currency's movement on capital still at work reaches the realized result only at repayment.
+- **Rates are the ECB's**, through a public mirror of its daily file (`MYAAVE_FX_URL` points elsewhere). It publishes on business days, so a Sunday trade takes Friday's rate; the publication date is shown beside each figure so it can be checked against [the ECB's tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
+- **EURC is valued as one euro**, the honest approximation with no free feed for the coin itself.
+- **Rates fill themselves in.** A trade always saves. One without a rate is marked, left out of the totals, and looked up every hour; **Fetch rates** on Stats asks at once.
+- **Only estimates use today's rate.** A trade's own dollar figures stay at the rates of the days they happened.
 
 ## Price alerts
 
-While a trade is HOLDING - the ETH is bought and not yet sold - the **Bought ETH** card carries a bell. It opens a window showing what the trade cost, when, and what ETH is worth now, and takes one figure: the price you want to be told about. The message that will be sent is shown in full before anything is saved.
+While a trade holds ETH, the **Bought ETH** card has a bell. It takes one goal price and shows the message in full before saving. A goal above today's ETH price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it.
 
-One *armed* alert per trade. Saving again replaces it; **Remove alert** deletes it. Which way it reads is settled when you save, against what ETH costs at that moment: a goal above alerts when ETH rises to it, a goal below alerts when it falls. Selling the ETH, or undoing the purchase, closes the alert: it stays in the **Alerts** view marked CLOSED, and undoing the sale does not bring it back - the bell sets a new goal.
-
-**A fired alert is kept.** The bell goes back to unselected once the message has gone, so a new goal can be set on the same trade, and the one that fired stays in the **Alerts** view with the time it was sent and the price it fired at. That view lists every alert ever set, fifteen to a page, and each row can be deleted - as can the whole list at once.
-
-The price comes from CoinGecko, which answers without a key, and is checked every fifteen minutes - but only when at least one alert is armed, so a ledger with none on it never calls out. An alert fires once, and a second copy of the app running against the same database cannot send the same message twice.
-
-Sending needs a Telegram bot of its own, set up once in `config.env`. Without that file nothing breaks: the bell works, goals are saved and kept, and the window says what is missing.
+The price comes from CoinGecko, without a key, every fifteen minutes, and only while an alert is armed. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling the ETH closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
 
 ## Bot commands
 
-The bot answers in the group named by `TELEGRAM_CHAT_ID`, and only there. It can be found by anyone who knows its username, and `/holding` is the whole of your position, so a command from any other chat is ignored without a reply.
+The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat if `TELEGRAM_OWNER_ID` is set. Anything from another chat is ignored, since `/holding` is your whole position.
 
 | Command | Returns |
 | --- | --- |
 | `/price` | ETH now, with 24h, 7d and 30d change |
-| `/holding` | every trade still holding ETH, one line each, with its estimated gain at today's price and exchange rate, the total and what it is worth. A trade sold but not yet repaid holds no ETH and is not listed, though `/summary` counts it as open |
+| `/holding` | each trade still holding ETH, with its estimated gain, the total and what it is worth. A trade sold but not repaid is open, and `/summary` counts it, but it holds no ETH and is not listed |
 | `/summary` | realized net gain, blended annualized, closed trades, open positions |
-| `/watch` | the price report every twenty minutes |
-| `/unwatch` | stops it |
+| `/watch` / `/unwatch` | the price every twenty minutes, or stop |
 
-`/help` lists them; `/start` does the same, because Telegram sends it by itself the first time a chat with a bot is opened. Anything unrecognised gets the same list. A `@name` suffix, capitals and trailing arguments are all fine: `/Price@aave_loop_bot now` is `/price`.
+`/help`, `/start` and anything unrecognised list the commands. A `@name` suffix, capitals and arguments are fine. Commands are read by long polling, so nothing needs to be reachable from the internet; two copies of the app share one reader by a lease. `/watch` survives a restart.
 
-**The Menu button is a private-chat feature.** Telegram draws it in a one-to-one chat with a bot and nowhere else; in a group the equivalent is the `/` icon in the message box, which appears once a bot with commands is a member. Set `TELEGRAM_CHAT_ID` to your own user id and everything happens in that private chat, button included. If you want the group *and* the button, set `TELEGRAM_OWNER_ID` to your user id as well and the bot answers in both; alerts still go to the group alone.
-
-A group has one more way to reach the commands, and it needs no setup at all: post them in the chat and pin it. Telegram makes each `/command` in a message tappable, and a tap sends it.
-
-Nothing registers these with Telegram, so the menu that appears as you type `/` is yours to set. Send `/setcommands` to [@BotFather](https://t.me/BotFather), pick the bot, and paste:
+Telegram draws the Menu button only in a private chat. To get it, set `TELEGRAM_CHAT_ID` to your own user id, or keep the group and set `TELEGRAM_OWNER_ID` too; alerts still go to the group alone. To fill the `/` menu, send `/setcommands` to [@BotFather](https://t.me/BotFather) and paste:
 
 ```
 price - ETH price now, with 24h, 7d and 30d change
-holding - open positions, one line each
+holding - trades still holding ETH, one line each
 summary - realized gain, annualized, closed and open
 watch - send the price every 20 minutes
 unwatch - stop the price updates
 help - what this bot can do
 ```
 
-`/watch` survives a restart and carries on from where it was rather than reporting on every boot. Commands are read by long polling, so nothing needs to be reachable from the internet; and because Telegram allows only one reader per bot, two copies of the app running against one database settle it between themselves with a lease — one polls, the other waits, and it changes hands on its own if the first stops.
-
 ## Setting up config.env
 
-Alerts are the one part of this app that speaks to the outside world on your behalf, so they need a bot and somewhere to send to. Five minutes, once.
+1. **Make a bot.** Send `/newbot` to [@BotFather](https://t.me/BotFather). The token it returns is the bot; keep it like a password.
+2. **Choose the chat.** For a private chat, send `/start` to the bot and take your id from [@userinfobot](https://t.me/userinfobot). For a group, add the bot (it needs no admin rights), post a message starting with `/`, and read the id, which is negative:
+   ```bash
+   curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*'
+   ```
+   Do this with the app stopped or started with `MYAAVE_BOT_OFF=1`: only one reader is allowed, and a running app takes the updates first. A group's id changes when it becomes a supergroup, which making the bot an admin can trigger; the log prints the id of every chat it ignores.
+3. **Write the file** in the app's directory, then fill it in:
+   ```bash
+   cp config.env.example config.env && chmod 600 config.env
+   ```
 
-**Somewhere to send to is a chat id, and it does not have to be a group.** Your own user id sends everything to your private chat with the bot, which is the whole setup if you are the only one reading it - and the only arrangement that gets Telegram's Menu button, since that is drawn in private chats and nowhere else. Use a group when other people should see the alerts. Steps 2 and 3 below are the group route; for a private chat, send `/start` to the bot and use your own id from [@userinfobot](https://t.me/userinfobot) instead.
+   | Key | What it is |
+   | --- | --- |
+   | `TELEGRAM_BOT_TOKEN` | the token |
+   | `TELEGRAM_CHAT_ID` | the chat id |
+   | `TELEGRAM_CHAT_NAME` | display only |
+   | `TELEGRAM_OWNER_ID` | optional: your user id, so a group bot answers you privately too |
+4. **Restart.** The file is read at startup, which logs either `Price alerts will message <chat>.` or what is missing.
+5. **Send a test:**
+   ```bash
+   curl -X POST -H 'Content-Type: application/json' http://localhost:3000/api/alerts/test
+   ```
+   `{"ok":true}` and a message means it works; otherwise the answer says why (`chat not found`, `Unauthorized`). One test per ten seconds.
 
-**1. Make a bot.** Message [@BotFather](https://t.me/BotFather) and send `/newbot`. It asks for a display name, then a username ending in `bot`, and answers with a token like `123456789:AAE...`. That token *is* the bot: anyone holding it can post as it, so treat it the way you would a password.
-
-**2. Put the bot in the group.** Open the group, add a member, search for the username you just chose. A bot can post to a group without being an administrator.
-
-**3. Find the group's chat id.** Send a message beginning with `/` in the group, then ask Telegram what it saw:
-
-```bash
-curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*'
-```
-
-It has to be a `/` message: a bot in a group gets Telegram's privacy mode by default and is shown only commands and replies to itself, so ordinary chat leaves `getUpdates` empty and looks like a failure. The id is negative, and begins `-100` for a supergroup. Privacy mode has no bearing on anything after this step.
-
-**A group's id changes when it becomes a supergroup**, which making the bot an administrator is enough to trigger, and the old id then matches nothing. If the bot goes quiet after working, this is the first thing to check - the log prints the id of every chat it ignores, so the new one is already there.
-
-**Do this before the app is running**, or start it with `MYAAVE_BOT_OFF=1` while you do. The app reads commands from the same queue this curl reads, and only one reader is allowed: with it running, this either answers `409 Conflict` or hands back an empty list it has already taken.
-
-**4. Write the file**, in the directory the app runs from:
-
-```bash
-cp config.env.example config.env && chmod 600 config.env
-```
-
-| Key | What it is |
-| --- | --- |
-| `TELEGRAM_BOT_TOKEN` | the token from step 1 |
-| `TELEGRAM_CHAT_ID` | the id from step 3 |
-| `TELEGRAM_CHAT_NAME` | display only: shown in the alert window and at startup |
-| `TELEGRAM_OWNER_ID` | optional, and only useful when the id above is a group: your own user id, so the bot answers you privately too |
-
-**5. Restart, and read the line it prints.** The file is read once, when the process starts, so an app already running will not notice an edit. On the way up it says one of:
-
-```
-Price alerts will message Aave Loop.
-Bot commands are listening in Aave Loop.
-```
-
-or, if something is missing:
-
-```
-Price alerts are not configured: TELEGRAM_CHAT_ID is missing from config.env.
-Bot commands are off: TELEGRAM_CHAT_ID is missing from config.env.
-```
-
-**6. Send a test**, rather than waiting for the market to tell you whether it works:
-
-```bash
-curl -X POST -H 'Content-Type: application/json' http://localhost:3000/api/alerts/test
-```
-
-`{"ok":true,"error":null}` and a message in the group means it is done. Anything else comes back as a sentence rather than a stack trace: `Bad Request: chat not found` for a wrong id, `Unauthorized` for a wrong token. One test per ten seconds.
-
-### Notes on the file
-
-- **The format** is `KEY=value`, one per line. Blank lines and `#` comments are skipped, a leading `export ` is tolerated because these get pasted out of a shell, and one matching pair of surrounding quotes is stripped. There is no interpolation and no escapes: a bot token needs neither, and every such feature is another way to read a secret wrong.
-- **Anything in it can be overridden for one run** by exporting it first, the same rule every other setting follows: `TELEGRAM_CHAT_ID=-1009876543210 npm start`.
-- **On a server, where the app directory is not yours to write to**, the copy is refused. Either put the file there as root and hand it to whichever user the app runs as, or keep it somewhere you own and point the app at it, which needs no root: `MYAAVE_CONFIG=/home/you/aave-loop.env npm start`. The user that runs the service is not necessarily the one that owns the checkout - `systemctl show <unit> -p User` says which, and a `config.env` the process cannot open is reported as such at startup.
-- **`config.env` is gitignored by name**, because `.env.*` does not match it. Only `config.env.example`, which holds placeholders, is committed. The app warns once at startup if the file is readable by other users on the machine, and the token appears in no log line, no error message and no API response.
+The format is `KEY=value` per line, with `#` comments, an optional `export ` and one pair of quotes stripped; no interpolation. An exported variable overrides the file for one run. Where the app directory is not yours to write, point at a file you own with `MYAAVE_CONFIG=/path/to/file`. `config.env` is gitignored, the app warns if others can read it, and the token never appears in a log or a response.
 
 ## Layout
 
 ```
-landing/       public marketing page, served by nginx rather than by the app
+landing/       public page, served by nginx
 server.js      Express API and static host
 db.js          SQLite connection and schema
-fx.js          exchange rate lookup and cache, server only
-eth.js         ETH spot price lookup and cache, server only
-telegram.js    sending one message to a group, server only
-alerts.js      price alerts and the timer that checks them, server only
-bot.js         reads commands from Telegram and answers them, server only
-report.js      builds what the bot says, server only
-format.js      number and date formatting for those messages, server only
-config.js      reads config.env, server only
-scripts/       release tooling and `npm run check`, run by npm rather than by hand
-lib/calc.js    all formulas, shared by the server and the browser
+fx.js eth.js   exchange rates and the ETH price, cached
+telegram.js    sending one message
+alerts.js      price alerts and their timer
+bot.js         reading and answering commands
+report.js      what the bot says, with format.js
+config.js      reads config.env
+lib/           shared with the browser: calc.js (every formula), input.js (form rules),
+               csv.js (the export), statement.js and logo.js (the PDF)
 public/        interface
+scripts/       release tooling and npm run check
 data/          SQLite file, not committed
 ```
-
-## License
-
-MIT. See [LICENSE.md](LICENSE.md).

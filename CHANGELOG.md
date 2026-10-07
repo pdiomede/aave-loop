@@ -10,6 +10,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads.
 - **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain five more.
+- **The README is 44% shorter** and corrected: four check suites, the Statement, ten alerts to a page, 7.2% (not 7%) over three days reading 876%, and a profitable partial exit, not any, never shown as a loss.
 
 ### Fixed
 
