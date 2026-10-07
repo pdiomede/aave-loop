@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 ./run_myAave.sh              # start it; checks Node, installs deps, finds a free port
-./run_myAave.sh --kill       # reclaim port 3000 instead of moving to the next one
+./run_myAave.sh --kill       # stop another program on port 3000 instead of moving on
 ./run_myAave.sh --port 3011  # a specific port
 ./resetDatabase.sh           # empty the ledger; asks twice, backs up to data/backups
 ./backupDatabase.sh          # online SQLite backup, safe while the server runs; --help has the cron line
@@ -159,8 +159,10 @@ be wrong in a Telegram message.
 
 ### Two instances can share one database
 
-`run_myAave.sh` starts a second copy on the next free port when the first is in the
-way, so concurrent access is a supported state, not an edge case. Production runs one
+`run_myAave.sh` replaces an earlier copy started from the same folder, but moves to
+the next free port when anything else holds it, and a copy started by hand (`PORT=3011
+npm start`, a second checkout pointed at the same `MYAAVE_DB`) runs beside it. So
+concurrent access is a supported state, not an edge case. Production runs one
 copy; this is mostly a dev-machine state, but the code holds for both. This is why:
 
 - alerts are claimed with a conditional `UPDATE ... WHERE id = ? AND status = 'armed'`

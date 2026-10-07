@@ -10,7 +10,7 @@ A local web app on SQLite, with no account and no wallet connection. Borrow in U
 ./run_myAave.sh
 ```
 
-Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script installs dependencies if needed and moves to the next free port when 3000 is taken (`--kill` reclaims it, `--port N` picks one).
+Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script installs dependencies when the lockfile's packages change, and replaces an earlier Aave Loop from this folder on the port. Another program there moves it to the next free port (`--kill` stops that program instead, `--port N` picks one).
 
 - `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open, and keeps a backup under `data/backups`.
 - `./backupDatabase.sh` takes a backup that is safe while the server runs; `--help` gives the cron line.

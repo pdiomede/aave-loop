@@ -12,6 +12,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain ten more.
 - **The README is 44% shorter** and corrected: four check suites, the Statement, ten alerts to a page, 7.2% (not 7%) over three days reading 876%, and a profitable partial exit, not any, never shown as a loss.
 - **`config.env.example` called `TELEGRAM_CHAT_ID` the only chat the bot answers**, and a private chat the only way to the Menu button; `TELEGRAM_OWNER_ID` gives both. It says so, and that the chat name is in the test message too.
+- **`run_myAave.sh` reinstalled everything after each release.** A version bump made the lockfile look changed, so the next launch deleted `node_modules` and ran `npm ci`, which offline could fail with nothing left. It now compares the packages installed against the lockfile. Its help, the README and CLAUDE.md also said an earlier Aave Loop on the port is moved past; it is replaced, and only another program is.
 - **`make-logo.mjs` did nothing, silently, from a path with a space in it.** It now runs from any checkout.
 - **Four behaviours had no check**, so breaking them passed `npm run check`: the blended rate's weighting, a partial sale's cost in the coin, the CSV's formula defusing and a Telegram 429 being retried. Each has one now.
 

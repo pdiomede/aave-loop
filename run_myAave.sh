@@ -23,8 +23,10 @@ usage() {
 Usage: ./run_myAave.sh [options]
 
   --port N     Start on port N instead of 3000.
-  --kill       If the port is taken, stop whatever holds it and reuse the port.
+  --kill       If another program holds the port, stop it and reuse the port.
                Without this flag the script moves to the next free port.
+               An earlier Aave Loop started from this folder is always
+               stopped and replaced, flag or not.
   --help       Show this message.
 
 Environment:
@@ -63,9 +65,30 @@ command -v npm >/dev/null 2>&1 || die "npm is not installed alongside Node."
 needs_install=0
 reason=""
 
+# Whether node_modules holds what the lockfile names, package by package, read
+# from npm's own record of the installed tree. Not the files' dates: `npm
+# version` rewrites the lockfile's version number on every release, so the
+# first launch after one deleted node_modules and reinstalled everything - and
+# offline, `npm ci` could fail after the delete and leave nothing to start.
+# Without npm's record (an npm before 7) the date is all there is to go on.
+lock_differs() {
+  if [ ! -f node_modules/.package-lock.json ]; then
+    [ package-lock.json -nt node_modules ]
+    return
+  fi
+  ! node -e '
+    const fs = require("fs");
+    const want = JSON.parse(fs.readFileSync("package-lock.json", "utf8")).packages || {};
+    const have = JSON.parse(fs.readFileSync("node_modules/.package-lock.json", "utf8")).packages || {};
+    const ok = Object.entries(want).every(([k, p]) =>
+      k === "" || (have[k] ? have[k].version === p.version : Boolean(p.optional)));
+    process.exit(ok ? 0 : 1);
+  ' 2>/dev/null
+}
+
 if [ ! -d node_modules ]; then
   needs_install=1; reason="node_modules is missing"
-elif [ -f package-lock.json ] && [ package-lock.json -nt node_modules ]; then
+elif [ -f package-lock.json ] && lock_differs; then
   needs_install=1; reason="package-lock.json changed"
 elif ! node -e 'import("better-sqlite3").then(()=>{},()=>process.exit(1))' 2>/dev/null; then
   needs_install=1; reason="the better-sqlite3 native binding did not load"
