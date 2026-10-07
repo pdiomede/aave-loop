@@ -9,18 +9,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain ten more.
-- **The README is 44% shorter** and corrected: four check suites, the Statement, ten alerts to a page, 7.2% (not 7%) over three days reading 876%, and a profitable partial exit, not any, never shown as a loss.
-- **`config.env.example` called `TELEGRAM_CHAT_ID` the only chat the bot answers**, and a private chat the only way to the Menu button; `TELEGRAM_OWNER_ID` gives both. It says so, and that the chat name is in the test message too.
-- **The landing and 404 pages ignored a dark system until their last script ran**, or for good without JavaScript: `<html>` was hard-coded to light, which switched off the stylesheet's own rule. They now follow the system from the first paint.
-- **White text on the landing page's violet buttons and step numbers was 2.58:1**, under the 4.5:1 it needs. They use a darker violet, 5.71:1.
-- **`run_myAave.sh` reinstalled everything after each release.** A version bump made the lockfile look changed, so the next launch deleted `node_modules` and ran `npm ci`, which offline could fail with nothing left. It now compares the packages installed against the lockfile. Its help, the README and CLAUDE.md also said an earlier Aave Loop on the port is moved past; it is replaced, and only another program is.
-- **`make-logo.mjs` did nothing, silently, from a path with a space in it.** It now runs from any checkout.
-- **Four behaviours had no check**, so breaking them passed `npm run check`: the blended rate's weighting, a partial sale's cost in the coin, the CSV's formula defusing and a Telegram 429 being retried. Each has one now.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain nine more.
 
 ### Fixed
 
-Audits of every tab, each finding reproduced before its fix and re-run after.
+Audits of every tab, script and document, each finding reproduced before its fix and re-run after.
 
 Statement:
 
@@ -38,7 +31,21 @@ Interface:
 - **On a touch screen the Statement and Export CSV tooltips stayed up after the tap.**
 - **Alerts showed no firing on a reached goal waiting to be sent.** Fired at now shows its time and price.
 - **`/help` called `/holding` the open positions**, though a trade sold and not repaid is not in it. It says "trades still holding ETH".
-- **The landing page said the net gain was after interest alone** (it is after fees too), that a partial sale is never a loss (a profitable one is never shown as one), and that euro rates are each day's own (a weekend takes the business day before).
+- **The landing and 404 pages ignored a dark system until their last script ran**, or for good without JavaScript: `<html>` was hard-coded to light. They follow the system from the first paint.
+- **White on the landing page's violet buttons was 2.58:1**, under the 4.5:1 it needs. A darker violet gives 5.71:1.
+
+Tooling:
+
+- **`run_myAave.sh` reinstalled everything after each release**, because a version bump made the lockfile look changed; offline that could leave nothing to start. It compares the installed packages with the lockfile instead.
+- **`make-logo.mjs` did nothing, silently, from a path with a space in it.**
+- **Four behaviours had no check**, so breaking them passed `npm run check`: the blended rate's weighting, a partial sale's cost in the coin, the CSV's formula defusing and a Telegram 429 being retried.
+
+Documents:
+
+- **The landing page** said the net gain was after interest alone, that a partial sale is never a loss, and that euro rates are each day's own; it is after fees too, only a profitable one, and a weekend takes the business day before.
+- **The README is 44% shorter** and corrected in nine places, among them four check suites, ten alerts to a page and 7.2% (not 7%) over three days reading 876%.
+- **`config.env.example`** called `TELEGRAM_CHAT_ID` the only chat the bot answers and a private chat the only way to the Menu button; `TELEGRAM_OWNER_ID` gives both.
+- **`run_myAave.sh`'s help, the README and CLAUDE.md** said an earlier Aave Loop on the port is moved past; it is replaced, and only another program is.
 
 ## [1.5.0] - 2026-10-07
 
