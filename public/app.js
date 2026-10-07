@@ -263,7 +263,7 @@ const TIPS = {
       "Set when saved, against ETH's price at that moment. A goal above it waits for a rise; below it, for a fall.",
     status:
       'ARMED: still watched. FIRED: goal reached. FAILED: not delivered after three tries. ' +
-      'CLOSED: the trade sold its ETH, so it can never fire. "not sent": reached, but Telegram refused it; still ARMED, it goes once Telegram takes it.',
+      'CLOSED: the trade sold its ETH, so it can never fire. "not sent": reached, but Telegram refused it. Under ARMED it goes once Telegram takes it; under FIRED or FAILED it will not.',
     suspended:
       'No ETH held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',
@@ -1025,9 +1025,16 @@ function placeCoinList(box) {
   // inside the window on the right.
   list.style.minWidth = `${r.width}px`;
   list.style.left = `${Math.max(Math.min(r.left, window.innerWidth - list.offsetWidth - 8), 8)}px`;
-  const below = window.innerHeight - r.bottom;
-  const room = list.offsetHeight + 8;
-  list.style.top = below < room && r.top > below ? `${Math.max(r.top - room + 2, 8)}px` : `${r.bottom + 6}px`;
+  // Below the button, or above it when there is more room there, and never
+  // taller than the side it opens on: in a short window - a phone on its side
+  // - it ran off the bottom, and scrolling the page to reach the last coins
+  // closed it. It scrolls within itself instead.
+  list.style.maxHeight = '';
+  const below = window.innerHeight - r.bottom - 14;
+  const above = r.top - 14;
+  const up = list.offsetHeight > below && above > below;
+  list.style.maxHeight = `${Math.min(280, Math.max(up ? above : below, 80))}px`;
+  list.style.top = up ? `${Math.max(r.top - list.offsetHeight - 6, 8)}px` : `${r.bottom + 6}px`;
 }
 
 function setCoinActive(box, option) {
@@ -1046,6 +1053,10 @@ function openCoinSelect(box) {
   const { input, trigger, list, options } = coinParts(box);
   list.hidden = false;
   trigger.setAttribute('aria-expanded', 'true');
+  // Safari and Firefox on a Mac do not focus a button that is clicked, and the
+  // keys the list answers to are read from the button. Without this, Escape
+  // meant for the list reached the page and threw away the stage editor.
+  trigger.focus({ preventScroll: true });
   placeCoinList(box);
   setCoinActive(box, options.find((o) => o.dataset.value === input.value) ?? options[0]);
   coinOpen = box;
@@ -1104,7 +1115,8 @@ function coinKeydown(e, box) {
   } else if (e.key === 'Tab') {
     closeCoinSelect(box);
     return;
-  } else if (/^[a-z]$/i.test(e.key)) {
+  } else if (/^[a-z]$/i.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    // A letter on its own; with Cmd, Ctrl or Alt it is the browser's shortcut.
     const letter = e.key.toUpperCase();
     const order = [...options.slice(active + 1), ...options.slice(0, active + 1)];
     const hit = order.find((o) => o.dataset.value.startsWith(letter));

@@ -77,9 +77,12 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
     // config.env or the group cures these, so whatever was being sent is worth
     // sending again once it is - an alert waits for that rather than being
     // used up, which is what `setup` tells it.
+    // A 404 too: sendMessage exists, so Telegram answering "Not Found" means
+    // the token in the URL is malformed - pasted with its "bot" prefix, say.
     const setup =
       res.status === 401 ||
       res.status === 403 ||
+      res.status === 404 ||
       (res.status === 400 && /chat not found|upgraded to a supergroup|not a member|bot was kicked/i.test(described));
     return { ok: false, retryable, setup, error: described };
   } catch (err) {

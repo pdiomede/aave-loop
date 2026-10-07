@@ -777,6 +777,9 @@ a.brand {
   list-style: none;
   max-height: 280px;
   overflow-y: auto;
+  /* Its own scroll stays its own: reaching the end does not scroll the page,
+     which would close it. */
+  overscroll-behavior: contain;
   background: var(--surface);
   border-radius: var(--radius-field);
   box-shadow: var(--ring-raised);

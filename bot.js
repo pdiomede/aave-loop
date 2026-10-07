@@ -69,9 +69,8 @@ const MAX_AGE_S = Number(process.env.MYAAVE_BOT_MAX_AGE_S) || 600;
 // Added to the clock and written as a date, which throws past year 275760, so
 // bounded the same way.
 //
-// And at least a minute. The report goes out from the poll loop, which comes
-// round once a long poll returns - every 50 seconds when nobody is typing - so
-// "every 20 seconds" was a promise the bot could not keep.
+// And at least a minute: the price it quotes may be up to five minutes old
+// (see `watchMessage`), and a chat message more often than that is noise.
 const WATCH_MS = Math.max(intervalMs(process.env.MYAAVE_WATCH_MS, 1_200_000), 60_000);
 
 /**
@@ -311,17 +310,17 @@ async function textFor(command) {
 
 /* --------------------------------------------------------------- the polling */
 
-async function getUpdates(offset) {
+async function getUpdates(offset, pollS = POLL_S) {
   controller = new AbortController();
   // A hard stop a little past Telegram's own, for a connection that dies
   // without saying so. Unreferenced, so it cannot hold the process open.
-  const guard = setTimeout(() => controller?.abort(), POLL_S * 1000 + 10_000);
+  const guard = setTimeout(() => controller?.abort(), pollS * 1000 + 10_000);
   guard.unref?.();
 
   try {
     const { token } = telegramConfig();
     const url =
-      `${API}/bot${token}/getUpdates?timeout=${POLL_S}&offset=${offset}` +
+      `${API}/bot${token}/getUpdates?timeout=${pollS}&offset=${offset}` +
       // Server-side filtering. Without it, editing an old message arrives as an
       // update of its own and would run the command a second time.
       `&allowed_updates=${encodeURIComponent('["message"]')}`;
@@ -406,7 +405,12 @@ export async function runBotTick() {
   if (!takeLease()) return { polled: false, reason: 'lease held elsewhere' };
 
   const row = selectState().get();
-  const answer = await getUpdates(row.next_offset);
+  // The watch report goes out after a poll returns, so a poll is cut short to
+  // end when the next report is due. Held for the full 50 seconds, a report
+  // every minute came every 100.
+  const dueIn = row.watch && row.watch_next_at ? Date.parse(row.watch_next_at) - Date.now() : Infinity;
+  const pollS = Math.min(POLL_S, Math.max(1, Math.ceil(dueIn / 1000)));
+  const answer = await getUpdates(row.next_offset, pollS);
 
   if (!answer.ok) {
     handleFailure(answer);

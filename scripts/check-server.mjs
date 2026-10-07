@@ -343,6 +343,11 @@ await check('a Telegram setup error keeps the alert waiting, and it goes once fi
   mock.tg.push([403, 'Forbidden: bot was kicked from the group chat']);
   await runAlertSweep();
   assert.equal(getAlertById(alert.id).status, 'armed');
+  // A token pasted with its "bot" prefix: Telegram answers 404.
+  mock.tg.push([404, 'Not Found']);
+  await runAlertSweep();
+  assert.equal(getAlertById(alert.id).status, 'armed');
+  assert.equal(attemptsOf(alert.id), 0);
   await priceAt(2600);
   mock.sent.length = 0;
   await runAlertSweep();
