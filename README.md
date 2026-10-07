@@ -16,7 +16,7 @@ Opens on http://localhost:3000, bound to loopback only. Requires Node 18 or newe
 
 `./resetDatabase.sh` empties the ledger. It asks twice, refuses to run while a server has the file open, and keeps a timestamped backup under `data/backups`.
 
-`npm run check` runs the checks on the formulas in `lib/calc.js`: estimates, amount parsing and rounding, each against a figure worked out by hand.
+`npm run check` runs the checks on the formulas in `lib/calc.js` - estimates, amount parsing and rounding, each against a figure worked out by hand - and then on the server: the rules a write must pass, the alert message, how the alert sweep handles a failed send, and the bot's reports, against a throwaway database with Telegram and the price service mocked. Nothing reaches the network.
 
 ## How a trade works
 

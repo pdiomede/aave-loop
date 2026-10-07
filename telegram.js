@@ -71,7 +71,17 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
     // the row marked fired and the message never sent. It is the one failure
     // that is certain to pass on its own.
     const retryable = res.status >= 500 || res.status === 429;
-    return { ok: false, retryable, error: described };
+    // Wrong setup rather than a wrong message: a token Telegram does not know
+    // (401), a chat the bot is not in or was removed from (403), a chat id that
+    // names nothing or a group since upgraded to a supergroup (400). Fixing
+    // config.env or the group cures these, so whatever was being sent is worth
+    // sending again once it is - an alert waits for that rather than being
+    // used up, which is what `setup` tells it.
+    const setup =
+      res.status === 401 ||
+      res.status === 403 ||
+      (res.status === 400 && /chat not found|upgraded to a supergroup|not a member|bot was kicked/i.test(described));
+    return { ok: false, retryable, setup, error: described };
   } catch (err) {
     const message =
       err.name === 'TimeoutError' ? 'Telegram did not answer in time.' : redact(err.message);

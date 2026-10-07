@@ -384,6 +384,33 @@ let sweeping = false;
  * of two processes arriving together exactly one gets `changes === 1` and the
  * other walks away having done nothing.
  */
+/**
+ * Put a claimed alert back to armed after a send that did not go through, in
+ * one statement. Not back to armed on a trade sold while the send was in
+ * flight - that put an armed goal on a sold trade until the next sweep - nor
+ * when a newer goal already watches the trade (see the comment in `fire`).
+ * `counted` adds the failure to `attempts` and gives up at `@max`.
+ */
+const backToArmed = ({ counted }) =>
+  prepare(`
+    UPDATE alerts SET
+      status = CASE
+        ${counted ? "WHEN attempts + 1 >= @max THEN 'failed'" : ''}
+        WHEN NOT EXISTS (
+          SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING}
+        ) THEN 'closed'
+        WHEN EXISTS (
+          SELECT 1 FROM alerts other
+           WHERE other.trade_id = alerts.trade_id
+             AND other.status = 'armed'
+             AND other.id <> alerts.id
+        ) THEN 'fired'
+        ELSE 'armed'
+      END,
+      ${counted ? 'attempts = attempts + 1,' : ''} last_error = @error, updated_at = @now
+    WHERE id = @id
+  `);
+
 async function fire(row, price) {
   const now = new Date().toISOString();
   // `last_error` is cleared here. A retry that succeeds writes nothing after
@@ -454,31 +481,20 @@ async function fire(row, price) {
     // the other copy in between was written over, and the alert was re-armed
     // past its three tries. Every SET reads the row before the update, so
     // `attempts + 1` is the count this failure makes.
-    prepare(`
-      UPDATE alerts SET
-        status = CASE
-          WHEN attempts + 1 >= @max THEN 'failed'
-          -- Not back to armed on a trade sold while the send was in flight:
-          -- that put an armed goal on a sold trade until the next sweep.
-          WHEN NOT EXISTS (
-            SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING}
-          ) THEN 'closed'
-          WHEN EXISTS (
-            SELECT 1 FROM alerts other
-             WHERE other.trade_id = alerts.trade_id
-               AND other.status = 'armed'
-               AND other.id <> alerts.id
-          ) THEN 'fired'
-          ELSE 'armed'
-        END,
-        attempts = attempts + 1, last_error = @error, updated_at = @now
-      WHERE id = @id
-    `).run({
+    backToArmed({ counted: true }).run({
       id: row.id,
       max: MAX_ATTEMPTS,
       error: sent.error,
       now: new Date().toISOString(),
     });
+  } else if (sent.setup) {
+    // The token or the chat is wrong, not the message: Telegram will take it
+    // once config.env or the group is put right. Used up as a refusal, a goal
+    // reached while the bot was out of the group was lost for good, though
+    // the next send would have gone. So it waits, armed, with the reason on
+    // the card, and goes out on the first sweep after the fix. Not counted
+    // towards the three tries: those are for a send that may have arrived.
+    backToArmed({ counted: false }).run({ id: row.id, error: sent.error, now: new Date().toISOString() });
   } else {
     // Telegram understood us and said no. It will say the same thing next
     // time, so the alert stays fired and the card carries the reason.
@@ -526,13 +542,14 @@ export async function runAlertSweep() {
 
     let fired = 0;
     for (const row of armed) {
-      // A row with attempts on it already reached its goal and is only waiting
-      // for the message to go through, so it is sent whatever ETH costs now.
-      // Gated on the price like a fresh one, a send that timed out was retried
-      // only if ETH happened to be past the goal again a quarter of an hour
-      // later: a dip that came back never got its message, and the card went on
-      // calling the alert armed.
-      if (!(row.attempts > 0) && !reached(row, quote.price)) continue;
+      // An armed row with a firing time already reached its goal and is only
+      // waiting for the message to go through - after a send that failed, or
+      // while Telegram's setup was wrong - so it is sent whatever ETH costs
+      // now. Gated on the price like a fresh one, a send that timed out was
+      // retried only if ETH happened to be past the goal again a quarter of an
+      // hour later: a dip that came back never got its message, and the card
+      // went on calling the alert armed. A goal saved afresh has none.
+      if (row.fired_at == null && !reached(row, quote.price)) continue;
       // Each one on its own. The catch below covers the pass, so anything
       // thrown here used to abandon every alert still to be looked at - and
       // the one that threw had already been claimed, which is to say marked

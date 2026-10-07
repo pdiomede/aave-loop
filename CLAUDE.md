@@ -10,15 +10,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./run_myAave.sh --port 3011  # a specific port
 ./resetDatabase.sh           # empty the ledger; asks twice, backs up to data/backups
 npm start                    # node server.js, no port hunting
-npm run check                # the lib/calc.js checks in scripts/check-calc.mjs
+npm run check                # scripts/check-calc.mjs, then scripts/check-server.mjs
 ```
 
 **There is no test framework, no linter and no build step.** Nothing is transpiled;
-the files on disk are the files that run. `npm run check` covers the estimate math in
-`lib/calc.js` against hand-worked figures on a fixed date; add a case there when you
-change a formula, with the expected value worked out from the inputs rather than by
-calling the function again. Beyond that, verification means executing the thing you
-changed:
+the files on disk are the files that run. `npm run check` runs two scripts.
+`scripts/check-calc.mjs` covers the estimate math in `lib/calc.js` against hand-worked
+figures on a fixed date; add a case there when you change a formula, with the expected
+value worked out from the inputs rather than by calling the function again.
+`scripts/check-server.mjs` starts the real server as a child on a free port, against a
+database in a temp directory with Telegram and the price service mocked on loopback,
+and checks the API's write rules, the alert message, every way the alert sweep handles
+a failed send, and the bot's reports; add a case there when you change any of those.
+It never touches the network or `data/myaave.db`, and takes about eight seconds.
+Beyond that, verification means executing the thing you changed:
 
 ```bash
 node --check server.js                      # syntax (public/app.js needs a .mjs copy)

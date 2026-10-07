@@ -258,7 +258,7 @@ const TIPS = {
       "Set when saved, against ETH's price at that moment. A goal above it waits for a rise; below it, for a fall.",
     status:
       'ARMED: still watched. FIRED: goal reached. FAILED: not delivered after three tries. ' +
-      'CLOSED: the trade sold its ETH, so it can never fire. "not sent": reached, but Telegram refused it.',
+      'CLOSED: the trade sold its ETH, so it can never fire. "not sent": reached, but Telegram refused it; still ARMED, it goes once Telegram takes it.',
     suspended:
       'No ETH held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',

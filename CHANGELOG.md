@@ -49,6 +49,8 @@ Database:
 
 Measured at 200 and 5,000 trades, every query already uses an index and nothing on the read or write path is worth changing at a personal ledger's size.
 
+`npm run check` also runs `scripts/check-server.mjs`: 20 checks of the API's write rules, the alert message, the sweep's handling of every kind of failed send, and the bot's reports, against the real server on a throwaway database with Telegram and the price service mocked. Run against the code from before these fixes, 8 of them fail.
+
 A second round over the whole app, in three parts: the server, the interface in a browser, and Telegram, alerts and the math. The server's fuzz of 3,500 requests found no 500 and no broken invariant. `npm run check` is at 38.
 
 - **A pasted amount could still be glued into another number.** "1.5 ETH ($5175)" saved 1.55175 ETH and "3 (≈$3.20)" saved 33.20. Text with anything but spaces between two numbers is now left whole, and refused.
@@ -62,6 +64,7 @@ A second round over the whole app, in three parts: the server, the interface in 
 - **The Alerts Trade tooltip said a new goal always adds a row.** One set over a goal still armed replaces it, and the tooltip says so.
 - **`/help` and `/watch` rounded the watch interval to minutes**, so 90 seconds read "every 2 minutes" and `/watch` said "1 minutes". They name it in minutes or seconds as set.
 - **The comment on Gain (%) described a dollar figure it does not compute.** It is the return in the coin spent, both sides at today's rate. The comment says so, and a euro case is checked.
+- **A reached alert was used up when Telegram's setup was wrong.** A revoked token, a bot removed from the group or a chat id that names nothing marked it fired with an error, and fixing config.env never sent it. It now waits, armed with the reason on the card, and goes on the first check after the fix. A refusal of the message itself is still final.
 - **`DELETE /api/alerts/` with a trailing slash deleted every alert.** The delete-all route is strict now, and the slash gets the 404.
 - **An unknown `/API/...` path got the HTML 404 page** where `/api/...` gets JSON. Both get JSON.
 

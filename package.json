@@ -7,7 +7,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node scripts/check-calc.mjs",
+    "check": "node scripts/check-calc.mjs && node scripts/check-server.mjs",
     "version": "node scripts/stamp-version.mjs && git add -u"
   },
   "engines": {
