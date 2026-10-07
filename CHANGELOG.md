@@ -7,42 +7,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: the logo linked to aaveloop.com, the period (to date on the current year), then the overview, Performance, By currency and By month closed for the trades closed that year, figures as on the cards. Not offered on All or on a year with nothing closed.
-- **Export CSV has a tooltip** saying what it downloads, like the Statement button beside it.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement: a valid one-page PDF, its figures against ones worked out by hand, and the embedded logo matching the app's. The calc suite gains three, on totals adding up as printed.
+- **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
+- **Export CSV has a tooltip** saying what it downloads.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain five more.
 
 ### Fixed
 
-A bug hunt over the statement, each finding reproduced before its fix and re-run after.
+Audits of every tab, each finding reproduced before its fix and re-run after.
 
-- **Open trades were in a year's statement**: an Open positions tile, an Open column, "3 closed of 4", and the open loan in Total borrowed ($67,000.00 for $47,000.00 closed). They are left out entirely.
-- **A past year's statement was dated "As of 7 Oct 2026"** and never said which months it covered. It names the period, 1 Jan – 31 Dec 2025.
-- **A year with nothing closed offered a statement of dashes.** The button appears once a trade has closed.
-- **On a touch screen the Statement and Export CSV tooltips stayed up after the tap.** There they show to the keyboard only.
-- **The statement carried the app's version and the year tab's note about open trades**, neither of which belongs on a closing statement.
+Statement:
 
-A last pass over the Stats math, every figure checked against hand-worked ledgers and 400 random ones. One bug:
+- **Open trades were on it**, in a tile, a column and Total borrowed ($67,000.00 for $47,000.00 closed). It is closed trades only.
+- **It named no period**, a past year reading "As of 7 Oct 2026", and a year with nothing closed gave a page of dashes.
+- **The app's version and the open-trades note** are gone from it.
 
-- **Totals did not add up from the lines under them.** A total added fractions of a cent and rounded once, so a ledger's By month closed rows came to $8,156.72 under a Realized net gain of $8,156.71. Every money total now adds each trade's figure as printed, on Stats, the statement and the header's estimate.
+Figures:
 
-An audit of the History page math - the forms' previews, the stage cards and the table - against 4,000 random closed trades. One bug, the same one on the cards:
+- **Totals and cards did not add up from their lines**, missing by a cent: By month closed came to $8,156.72 under $8,156.71, and so did about one euro trade card in four, Telegram's `/holding` and two fees of 1.005. Every figure is now built from amounts as printed.
 
-- **A stage card's lines did not add up to its result.** On about one euro trade in four, Gross gain less Loan cost and fees missed the Net gain by a cent, as did Received less the cost and the two "of which" rows; and gas typed to three decimals did it on any coin, two fees of 1.005 printing $1.01 each over a Total fees paid of $2.01. Every amount, conversion and fee is now taken to the cent as printed, so each card adds up, and the table and Stats show the same figures.
+Interface:
 
-An audit of the Alerts page - the goal and its direction, when it counts as reached, the message and its preview, the table and the ticker. One bug:
-
-- **A reached goal waiting to be sent showed no firing.** When Telegram turned the message away for a setup fault, or a send was being retried, the alert went back to ARMED with the time and price it was reached at kept, but Fired at showed a dash beside "not sent". It now shows them whenever the goal was reached.
-
-An audit of the Telegram bot - `/price`, `/holding`, `/summary`, `/watch` and `/help`, the polling and the sends. Two bugs, both about `/holding`:
-
-- **`/holding`'s total did not add up from its rows.** Three positions printed +$96.71 each under an Unrealised total of +$290.14. It now adds each row as printed.
-- **`/help` called `/holding` the open positions.** It lists the trades still holding ETH; a trade sold but not yet repaid is open, and `/summary` counts it, but it holds no ETH and was not there. `/help` and the README now say what it lists.
-
-An audit of the landing page against what the app computes. Three claims were wrong, all in its copy; its links, images and inline scripts checked out:
-
-- **It said the net gain was after interest alone**, in the hero, the link previews, a card and step 4. It is after fees too: 3,000 of gross less 100 of interest and 12 of fees is 2,888, not 2,900.
-- **It said a partial exit "is never reported as a loss".** One sold below its cost is, as it should be; what is never shown as a loss is a profitable one.
-- **It said euro amounts convert at the rate for each transaction's own date.** A weekend trade takes the business day before's, as the ledger's own note says.
+- **On a touch screen the Statement and Export CSV tooltips stayed up after the tap.**
+- **Alerts showed no firing on a reached goal waiting to be sent.** Fired at now shows its time and price.
+- **`/help` called `/holding` the open positions**, though a trade sold and not repaid is not in it. It says "trades still holding ETH".
+- **The landing page said the net gain was after interest alone** (it is after fees too), that a partial sale is never a loss (a profitable one is never shown as one), and that euro rates are each day's own (a weekend takes the business day before).
 
 ## [1.5.0] - 2026-10-07
 
