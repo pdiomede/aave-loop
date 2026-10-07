@@ -268,7 +268,7 @@ const TIPS = {
     suspended:
       'No ETH held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',
-    firedAt: 'When the goal was reached, and at what price. A dash while armed, or once closed.',
+    firedAt: 'When the goal was reached, and at what price. A dash until it is.',
   },
 };
 
@@ -2608,9 +2608,14 @@ function alertLogRow(a) {
          data-tip="${esc(a.lastError)}">not sent</span></span>`
     : '';
 
-  // Only a fired or failed alert has a firing to date. A closed one never
-  // fired: its trade sold first.
-  const unfired = a.status === 'armed' || a.status === 'closed';
+  // Read from the firing itself, not the status. A reached goal Telegram
+  // would not take - a setup fault, or a send that is being retried - goes
+  // back to ARMED with its firing time and price kept (`fire` in alerts.js),
+  // and judged by the status this column showed a dash beside "not sent": the
+  // one row with something to report hid when, and at what price, its goal
+  // was reached. A goal reached and then closed by a sale before it could be
+  // sent keeps them too.
+  const unfired = !a.firedAt;
   const when = unfired ? dash : fmtDate(localDay(a.firedAt));
   const under =
     unfired

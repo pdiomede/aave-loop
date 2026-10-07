@@ -29,6 +29,10 @@ An audit of the History page math - the forms' previews, the stage cards and the
 
 - **A stage card's lines did not add up to its result.** On about one euro trade in four, Gross gain less Loan cost and fees missed the Net gain by a cent, as did Received less the cost and the two "of which" rows; and gas typed to three decimals did it on any coin, two fees of 1.005 printing $1.01 each over a Total fees paid of $2.01. Every amount, conversion and fee is now taken to the cent as printed, so each card adds up, and the table and Stats show the same figures.
 
+An audit of the Alerts page - the goal and its direction, when it counts as reached, the message and its preview, the table and the ticker. One bug:
+
+- **A reached goal waiting to be sent showed no firing.** When Telegram turned the message away for a setup fault, or a send was being retried, the alert went back to ARMED with the time and price it was reached at kept, but Fired at showed a dash beside "not sent". It now shows them whenever the goal was reached.
+
 ## [1.5.0] - 2026-10-07
 
 ### Changed
