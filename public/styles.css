@@ -1277,6 +1277,16 @@ th[aria-sort="ascending"] .th-sort__caret {
   max-width: 260px;
 }
 
+/* A touch screen keeps :hover on whatever was last tapped, so the bubble
+   stayed up over the page after the download had started. These two are
+   actions, not markers to tap for an explanation, so there they show it only
+   to the keyboard. */
+@media (hover: none) {
+  .years-bar__actions [data-tip]:hover:not(:focus-visible)::after {
+    display: none;
+  }
+}
+
 /* On a phone the buttons wrap under the tabs to the left edge, where a bubble
    growing leftwards would start off the screen, and one growing rightwards
    from Export CSV would end off it. There both hang from the left of the pair,

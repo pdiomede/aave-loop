@@ -20,7 +20,7 @@ import {
   estimateNeedsPrice,
 } from '/lib/calc.js';
 import { tradesCsv, csvFileName } from '/lib/csv.js';
-import { statementPdf, statementFileName } from '/lib/statement.js';
+import { statementPdf, statementFileName, closedTrades } from '/lib/statement.js';
 import {
   EARLIEST_DATE,
   SWAP_FEE,
@@ -2272,22 +2272,21 @@ function exportCsv(year) {
  * Hand a year tab's one-page statement to the browser as a PDF.
  *
  * Drawn from the same trades on the same `asOf` as the cards above the
- * button, for the reason `exportCsv` gives. Never offered on All, which is not
- * a year and has no bound on its months, so could not be held to one page.
+ * button, for the reason `exportCsv` gives, less the open ones: a statement is
+ * what the year closed. Never offered on All, which is not a year and has no
+ * bound on its months, so could not be held to one page.
  */
 function downloadStatement(year) {
   if (year === 'all') return;
   const asOf = state.statsAsOf ?? todayISO();
-  const trades = tradesForYear(year, asOf);
+  const trades = closedTrades(tradesForYear(year, asOf), asOf);
   if (trades.length === 0) {
-    toast(`No trades in ${year}.`);
+    toast(`No trades closed in ${year} yet.`);
     return;
   }
-  // The footer's number: stamped at release and repainted from /api/version.
-  const version = document.getElementById('version')?.textContent.trim() ?? '';
   let pdf;
   try {
-    pdf = statementPdf(trades, year, asOf, { version });
+    pdf = statementPdf(trades, year, asOf);
   } catch (err) {
     console.error(err);
     toast('Could not build the statement.');
@@ -2389,8 +2388,10 @@ function renderStatsView() {
   const whose = year === current ? "this year's" : `the ${year}`;
   const statementTip = `Download ${whose} statement`;
   const csvTip = year === 'all' ? 'Download every trade as a CSV file' : `Download ${whose} trades as a CSV file`;
+  // Not on a year with nothing closed in it: the current year's tab can hold
+  // open trades only, and its statement was a page of dashes.
   const statement =
-    year === 'all'
+    year === 'all' || r.closedCount === 0
       ? ''
       : `<button class="btn btn--sm" type="button" data-statement data-tip="${esc(statementTip)}"
           aria-description="${esc(statementTip)}">${STATEMENT_SVG} Statement</button>`;

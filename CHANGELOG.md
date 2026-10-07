@@ -7,9 +7,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **A Statement button on Stats** downloads the year tab being viewed as a one-page PDF: the overview, Performance, By currency and By month closed, with the same figures as the cards. Not offered on All.
+- **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: the logo linked to aaveloop.com, the period (to date on the current year), then the overview, Performance, By currency and By month closed for the trades closed that year, figures as on the cards. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads, like the Statement button beside it.
-- **`npm run check` runs a fourth suite**, 9 checks of the statement: a valid one-page PDF, and its figures against ones worked out by hand.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement: a valid one-page PDF, its figures against ones worked out by hand, and the embedded logo matching the app's.
+
+### Fixed
+
+A bug hunt over the statement, each finding reproduced before its fix and re-run after.
+
+- **Open trades were in a year's statement**: an Open positions tile, an Open column, "3 closed of 4", and the open loan in Total borrowed ($67,000.00 for $47,000.00 closed). They are left out entirely.
+- **A past year's statement was dated "As of 7 Oct 2026"** and never said which months it covered. It names the period, 1 Jan – 31 Dec 2025.
+- **A year with nothing closed offered a statement of dashes.** The button appears once a trade has closed.
+- **On a touch screen the Statement and Export CSV tooltips stayed up after the tap.** There they show to the keyboard only.
+- **The statement carried the app's version and the year tab's note about open trades**, neither of which belongs on a closing statement.
 
 ## [1.5.0] - 2026-10-07
 

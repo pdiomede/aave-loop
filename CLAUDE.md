@@ -24,8 +24,9 @@ value worked out from the inputs rather than by calling the function again.
 and what the forms accept - typing each figure a keystroke at a time as the page does;
 add a case there when you change an input rule.
 `scripts/check-statement.mjs` covers `lib/statement.js`, the Statement PDF: that the
-hand-written file is a valid one-page PDF, and that the figures it sets match ones
-worked out by hand; add a case there when you change what the statement prints.
+hand-written file is a valid one-page PDF, that the figures it sets match ones worked
+out by hand, and that `lib/logo.js` still matches the app's logo; add a case there
+when you change what the statement prints.
 `scripts/check-server.mjs` starts the real server as a child on a free port, against a
 database in a temp directory with Telegram and the price service mocked on loopback,
 and checks the API's write rules, the alert message, every way the alert sweep handles
@@ -139,11 +140,14 @@ labels - out of `public/app.js` so it can be checked; like `lib/csv.js` it impor
 
 `lib/statement.js` writes the Stats Statement button's PDF by hand - no library, so
 nothing is bundled and the CSP is untouched - from the same `summaryReport` the Stats
-view calls, and imports only `calc.js`. It is one A4 page by construction (a year has
-at most 12 months and `CURRENCIES` 5 coins) and throws rather than draw past the bottom
-margin, so a layout change that overflows fails `npm run check`. It is ASCII
-throughout, characters beyond it written as octal escapes, so the xref offsets are
-string lengths.
+view calls, over the year's **closed trades only** (`closedTrades`, by `isRealized`):
+it is a closing statement, so an open position is in no figure on it. It imports
+`calc.js` and `lib/logo.js`, the logo's PNG data written by `scripts/make-logo.mjs`
+(rerun it if `public/AaveLoop_logo_96.png` changes; the checks fail until you do).
+It is one A4 page by construction (a year has at most 12 months and `CURRENCIES` 5
+coins) and throws rather than draw past the bottom margin, so a layout change that
+overflows fails `npm run check`. It is ASCII throughout - text beyond it as octal
+escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
 `fx.js`, `eth.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
 `report.js` and `format.js` sit at the root **because they are server-only** — the
