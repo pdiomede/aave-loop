@@ -25,7 +25,7 @@ import {
   derivedOn,
   intervalMs,
 } from '../lib/calc.js';
-import { tradesCsv } from '../lib/csv.js';
+import { tradesCsv, csvFileName } from '../lib/csv.js';
 
 const AS_OF = '2026-10-01';
 const PRICE = 3450;
@@ -319,6 +319,55 @@ check('the blended rate weighs each trade by its loan and its days', () => {
   });
   const r = summaryReport([usdc(1, '2026-09-01', '2026-09-02', 10000, 50), usdc(2, '2026-06-01', '2026-08-30', 30000, 900)], AS_OF);
   near(r.avgPct, (950 * 36500) / 2710000, 'blended');
+});
+
+// The file as Excel will read it: rows split on CRLF, cells on the semicolon.
+const csvRows = (trades, asOf = AS_OF) => {
+  const text = tradesCsv(trades, asOf);
+  const [head, ...rows] = text.replace(/^﻿/, '').trimEnd().split('\r\n').map((l) => l.split(';'));
+  return { text, head, rows, at: (row, k) => row[head.indexOf(k)] };
+};
+
+check('the CSV is UTF-8 with a byte order mark, CRLF lines, oldest borrow first', () => {
+  const later = { ...flat(1), id: 8, borrow_date: '2026-09-01' };
+  const earlier = { ...flat(1), id: 9, borrow_date: '2026-08-01' };
+  const { text, rows, at } = csvRows([later, earlier]);
+  assert.ok(text.startsWith('﻿'));
+  assert.equal(text.split('\r\n').length, 4, 'header, two rows, and a final CRLF');
+  assert.deepEqual(rows.map((r) => at(r, 'id')), ['9', '8']);
+});
+
+check('the CSV leaves an unknown figure and an unreached stage empty, never 0', () => {
+  // Borrowed only, with a swap fee left behind on the purchase it never made.
+  const t = { id: 3, borrow_date: '2026-09-01', borrow_amount: 1000, borrow_currency: 'USDC', borrow_apr: 4, borrow_gas_usd: 0, buy_gas_usd: 5 };
+  const { rows, at } = csvRows([t]);
+  for (const k of ['net_gain_usd', 'buy_date', 'buy_swap_gas_usd', 'annualized_pct']) assert.equal(at(rows[0], k), '', k);
+  assert.equal(at(rows[0], 'borrow_gas_usd'), '0', 'a recorded 0 is a 0');
+});
+
+check('the CSV quotes a note holding a semicolon or a quote', () => {
+  const { text } = csvRows([{ ...flat(1), notes: 'a; "b"' }]);
+  assert.ok(text.includes(';"a; ""b"""\r\n'));
+});
+
+check('the CSV keeps an estimate out of net_gain_usd and rounds the rate as the page does', () => {
+  // Sold, not repaid: no result yet, only the projection.
+  const open = { ...flat(1), repay_date: null, repay_amount: null, repay_gas_usd: null };
+  const { rows, at } = csvRows([open]);
+  assert.equal(at(rows[0], 'net_gain_usd'), '');
+  assert.notEqual(at(rows[0], 'net_gain_estimate_usd'), '');
+  // Closed: -1 on 10,000 over 3 days is -1.2167% annualized, printed -1.22%.
+  const closed1 = csvRows([flat(1)]);
+  assert.equal(closed1.at(closed1.rows[0], 'annualized_pct'), '-1,22');
+});
+
+check('the CSV files a trade by the year it was repaid, and names the file by year', () => {
+  const across = { ...flat(1), borrow_date: '2025-12-30', buy_date: '2025-12-30', sell_date: '2026-01-02', repay_date: '2026-01-02' };
+  const { rows, at } = csvRows([across]);
+  assert.equal(at(rows[0], 'stats_year'), '2026');
+  assert.equal(csvFileName('2026'), 'aave-loop-trades-2026.csv');
+  assert.equal(csvFileName('all'), 'aave-loop-trades-all.csv');
+  assert.equal(csvFileName('../x'), 'aave-loop-trades-all.csv');
 });
 
 check('the CSV\'s gas columns add up to its fees_usd', () => {
