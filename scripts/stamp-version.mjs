@@ -1,9 +1,10 @@
 /**
  * Write the version in package.json into the two pages that print it.
  *
- * Run by npm's `version` lifecycle, so `npm version patch` bumps package.json,
- * bumps the lockfile, runs this, and commits all four together. Nothing here is
- * meant to be run by hand.
+ * Run by npm's `version` lifecycle: `npm version patch --no-git-tag-version`
+ * bumps package.json and the lockfile, runs this, and `git add -u` stages all
+ * four. Nothing commits them; that is done by hand (see CLAUDE.md). Nothing
+ * here is meant to be run by hand.
  *
  * Both pages are stamped because a reader sees both numbers. The landing page
  * has no runtime source at all and nginx serves it directly in production, so a

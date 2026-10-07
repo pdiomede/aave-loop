@@ -331,6 +331,19 @@ await check('three failed sends give up, and nothing more is sent', async () => 
   assert.equal(mock.sent.length, 0);
 });
 
+await check('a rate limit is retried, not taken as a refusal', async () => {
+  // 429 is the one failure certain to pass on its own (see telegram.js).
+  const alert = saveAlert(holding(), 2550, 2600);
+  await priceAt(2540);
+  mock.tg.push([429, 'Too Many Requests: retry after 5']);
+  await runAlertSweep();
+  assert.equal(getAlertById(alert.id).status, 'armed');
+  assert.equal(attemptsOf(alert.id), 1);
+  // Delivered on the next sweep, so it does not linger into the checks below.
+  await runAlertSweep();
+  assert.equal(getAlertById(alert.id).status, 'fired');
+});
+
 await check('a Telegram setup error keeps the alert waiting, and it goes once fixed', async () => {
   const alert = saveAlert(holding(), 2550, 2600);
   await priceAt(2540);

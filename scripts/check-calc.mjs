@@ -222,7 +222,12 @@ check('a closed trade has its result, not an estimate', () => {
 
 check('a closed partial sale is the gain on the ETH sold, nothing more', () => {
   const t = closed({ sell_amount: 21000, sell_eth: 6 });
-  near(derive(t, AS_OF).netGainUsd, 21000 - 18000 - 98.63 - 12, 'net gain'); // interest as printed
+  const d = derive(t, AS_OF);
+  near(d.netGainUsd, 21000 - 18000 - 98.63 - 12, 'net gain'); // interest as printed
+  // In the coin too, which is what a dollar coin's Sold card prints: 6 of the
+  // 10 ETH bought for 30,000 cost 18,000.
+  assert.equal(d.costOfSoldEth, 18000);
+  assert.equal(d.grossGain, 3000);
 });
 
 check('a loan with nothing bought holds no position to value', () => {
@@ -294,6 +299,26 @@ check('the CSV rounds 1.005 to 1.01, as the page prints it', () => {
   const [head, row] = tradesCsv([flat(1.005)]).trim().split(/\r?\n/).map((l) => l.split(';'));
   assert.equal(row[head.indexOf('fees_usd')], '1,01');
   assert.equal(row[head.indexOf('net_gain_usd')], '-1,01');
+});
+
+check('the CSV defuses a note a spreadsheet would run as a formula', () => {
+  const [head, row] = tradesCsv([{ ...flat(1), notes: '=1+1' }]).trim().split(/\r?\n/).map((l) => l.split(';'));
+  assert.equal(row[head.indexOf('notes')], "'=1+1");
+  assert.equal(row[head.indexOf('net_gain_usd')], '-1', 'a negative figure stays a number');
+});
+
+check('the blended rate weighs each trade by its loan and its days', () => {
+  // $50 on 10,000 over 1 day (182.5% annualized) and $900 on 30,000 over 90
+  // days (12.17%). Blended is all the gain over all the capital-days:
+  // 950 * 36500 / (10,000 * 1 + 30,000 * 90) = 12.7952%. Unweighted it would
+  // read 97.33%, weighted by size alone 54.75%.
+  const usdc = (id, from, to, loan, gain) => ({
+    id, borrow_currency: 'USDC', borrow_date: from, borrow_amount: loan, borrow_apr: 0, borrow_gas_usd: 0,
+    buy_date: from, buy_amount: loan, buy_eth: 4, buy_gas_usd: 0, sell_date: to, sell_amount: loan + gain,
+    sell_eth: 4, sell_gas_usd: 0, repay_date: to, repay_amount: loan, repay_gas_usd: 0,
+  });
+  const r = summaryReport([usdc(1, '2026-09-01', '2026-09-02', 10000, 50), usdc(2, '2026-06-01', '2026-08-30', 30000, 900)], AS_OF);
+  near(r.avgPct, (950 * 36500) / 2710000, 'blended');
 });
 
 check('the CSV\'s gas columns add up to its fees_usd', () => {

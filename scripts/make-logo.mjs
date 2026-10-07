@@ -12,6 +12,7 @@
  * the PNG is 8-bit RGB, not interlaced, with no alpha, which is checked.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 export function logoFromPng(png) {
   if (png.toString('latin1', 1, 4) !== 'PNG') throw new Error('not a PNG');
@@ -30,7 +31,11 @@ export function logoFromPng(png) {
   return { width, height, data: Buffer.concat(idat).toString('base64') };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run, rather than imported by the checks. Compared as URLs: a path pasted
+// after `file://` keeps its spaces where the URL has %20, so in a checkout
+// whose path had one this was never true, and the script exited 0 having
+// written nothing.
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const src = new URL('../public/AaveLoop_logo_96.png', import.meta.url);
   const { width, height, data } = logoFromPng(readFileSync(src));
   const lines = data.match(/.{1,100}/g).map((l) => `  '${l}'`).join(' +\n');

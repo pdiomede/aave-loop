@@ -9,9 +9,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain five more.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain ten more.
 - **The README is 44% shorter** and corrected: four check suites, the Statement, ten alerts to a page, 7.2% (not 7%) over three days reading 876%, and a profitable partial exit, not any, never shown as a loss.
 - **`config.env.example` called `TELEGRAM_CHAT_ID` the only chat the bot answers**, and a private chat the only way to the Menu button; `TELEGRAM_OWNER_ID` gives both. It says so, and that the chat name is in the test message too.
+- **`make-logo.mjs` did nothing, silently, from a path with a space in it.** It now runs from any checkout.
+- **Four behaviours had no check**, so breaking them passed `npm run check`: the blended rate's weighting, a partial sale's cost in the coin, the CSV's formula defusing and a Telegram 429 being retried. Each has one now.
 
 ### Fixed
 
