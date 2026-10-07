@@ -3296,8 +3296,14 @@ function setView(view, { updateHash = true } = {}) {
   for (const name of VIEWS) {
     document.getElementById(`view-${name}`).hidden = name !== state.view;
   }
+  // The underline says which view is showing; aria-current says it to a screen
+  // reader, which the class alone never did - the pager has always marked its
+  // current page this way.
   for (const link of document.querySelectorAll('.nav__link')) {
-    link.classList.toggle('is-active', link.dataset.view === state.view);
+    const current = link.dataset.view === state.view;
+    link.classList.toggle('is-active', current);
+    if (current) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
   }
 
   // An old name is rewritten even when the hash is otherwise left alone, so the

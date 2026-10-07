@@ -34,6 +34,7 @@ Interface:
 - **The landing and 404 pages ignored a dark system until their last script ran**, or for good without JavaScript: `<html>` was hard-coded to light. They follow the system from the first paint.
 - **White on the landing page's violet buttons was 2.58:1**, under the 4.5:1 it needs. A darker violet gives 5.71:1.
 - **The ledger set real information in its faintest grey**, 2.4 to 2.6:1 in the light theme: the rate under a converted figure, the "of which" labels, a field's unit, the `?` hint and "Not yet.". They use the muted grey, 4.2:1 and up; the faint one is for decoration.
+- **The nav told a screen reader nothing about which view was showing**: only the underline marked it. The current tab carries `aria-current="page"`, as the pager's current page already did.
 
 Tooling:
 
