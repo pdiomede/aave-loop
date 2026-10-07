@@ -71,7 +71,7 @@ A second round over the whole app, in three parts: the server, the interface in 
 A third, narrower pass over the code added after it - the currency picker, the form locks, the alert setup errors, `lib/input.js` and the checks - found six more:
 
 - **On a Mac in Safari or Firefox, Escape meant for the currency list threw away the stage editor.** Those browsers do not focus a clicked button, so the key reached the page. Opening the list now focuses its button.
-- **A bot token pasted with its "bot" prefix still used an alert up.** Telegram answers that 404, which was not counted as a setup error. It is now, and the alert waits.
+- **A bot token pasted with its "bot" prefix still used an alert up**, and so did a bot the group's admins had not let post. Telegram answers those 404 and 400 "not enough rights", which were not counted as setup errors. They are now, and the alert waits.
 - **In a short window the currency list ran off the bottom of the screen**, and scrolling to the last coins closed it. It fits the room on the side it opens and scrolls within itself.
 - **With the currency list open, Cmd and Ctrl shortcuts were swallowed** - Cmd+R jumped to a coin. A letter with a modifier is left to the browser.
 - **The one-minute `/watch` floor still came round every 100 seconds**, after each 50-second poll. The poll is cut short when a report is due.

@@ -347,6 +347,10 @@ await check('a Telegram setup error keeps the alert waiting, and it goes once fi
   mock.tg.push([404, 'Not Found']);
   await runAlertSweep();
   assert.equal(getAlertById(alert.id).status, 'armed');
+  // In the group, but its admins have not let it post.
+  mock.tg.push([400, 'Bad Request: not enough rights to send text messages to the chat']);
+  await runAlertSweep();
+  assert.equal(getAlertById(alert.id).status, 'armed');
   assert.equal(attemptsOf(alert.id), 0);
   await priceAt(2600);
   mock.sent.length = 0;

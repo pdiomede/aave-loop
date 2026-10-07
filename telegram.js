@@ -73,7 +73,8 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
     const retryable = res.status >= 500 || res.status === 429;
     // Wrong setup rather than a wrong message: a token Telegram does not know
     // (401), a chat the bot is not in or was removed from (403), a chat id that
-    // names nothing or a group since upgraded to a supergroup (400). Fixing
+    // names nothing, a group since upgraded to a supergroup, or a group whose
+    // admins have not let the bot post (400, "not enough rights"). Fixing
     // config.env or the group cures these, so whatever was being sent is worth
     // sending again once it is - an alert waits for that rather than being
     // used up, which is what `setup` tells it.
@@ -83,7 +84,8 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
       res.status === 401 ||
       res.status === 403 ||
       res.status === 404 ||
-      (res.status === 400 && /chat not found|upgraded to a supergroup|not a member|bot was kicked/i.test(described));
+      (res.status === 400 &&
+        /chat not found|upgraded to a supergroup|not a member|bot was kicked|not enough rights/i.test(described));
     return { ok: false, retryable, setup, error: described };
   } catch (err) {
     const message =
