@@ -257,7 +257,8 @@ function normalise(body, { requireBorrow }) {
   // A promotional or incentivised borrow really can sit at 0%.
   numericField('borrow_apr', 'Borrow APR', { allowZero: true });
   // Gas can genuinely be nothing - a sponsored or batched transaction - so 0
-  // is a figure. Blank is not; `checkGas` refuses it on a stage being written.
+  // is a figure. Blank is stored as NULL, not recorded, on the borrow and the
+  // repayment; `checkSwapFee` refuses it on a swap being written.
   numericField('borrow_gas_usd', 'Borrow gas fee', { allowZero: true });
   if (has('borrow_currency')) {
     const c = typeof body.borrow_currency === 'string' ? body.borrow_currency.toUpperCase() : '';
@@ -268,14 +269,14 @@ function normalise(body, { requireBorrow }) {
   dateField('buy_date', 'Purchase date');
   numericField('buy_amount', 'Purchase amount');
   numericField('buy_eth', 'ETH purchased');
-  numericField('buy_gas_usd', 'Swap gas fee', { allowZero: true });
+  numericField('buy_gas_usd', SWAP_FEE, { allowZero: true });
   // Optional: not every loop supplies the ETH on Aave, so blank is accepted.
   numericField('buy_lend_gas_usd', 'Lending gas fee', { allowZero: true });
 
   dateField('sell_date', 'Sale date');
   numericField('sell_amount', 'Sale amount');
   numericField('sell_eth', 'ETH sold');
-  numericField('sell_gas_usd', 'Swap gas fee', { allowZero: true });
+  numericField('sell_gas_usd', SWAP_FEE, { allowZero: true });
   numericField('sell_unstake_gas_usd', 'Unstaking gas fee', { allowZero: true });
 
   dateField('repay_date', 'Repayment date');
@@ -385,36 +386,29 @@ function checkChronology(row) {
 }
 
 /**
- * Every stage costs gas, and a stage being written has to say how much.
+ * A swap costs something - gas, and the DEX or aggregator's own fee - so a
+ * purchase or a sale being written has to say how much. The borrow and the
+ * repayment may leave their gas blank, as not recorded.
  *
  * Scoped to the stages this request touches. Trades recorded before fees were
- * asked for have none on any stage, and requiring all four on every write
- * would refuse a sale on such a trade until its purchase, long since done, was
- * edited too. A stage this request writes and that ends up reached must leave
- * with a fee; clearing a stage altogether needs none, since it is no longer
- * reached. Only `gasKey(stage)` is asked for here: the Aave lending and
- * unstaking fees (`OPTIONAL_GAS`) are legs a loop may not take.
+ * asked for have none, and requiring both on every write would refuse a sale
+ * on such a trade until its purchase, long since done, was edited too. A swap
+ * this request writes and that ends up reached must leave with a cost;
+ * clearing a stage altogether needs none, since it is no longer reached.
  */
-const STAGE_KEYS = {
-  borrow: ['borrow_date', 'borrow_amount', 'borrow_currency', 'borrow_apr'],
+const SWAP_FEE = 'Costs & Fees (swap)';
+const SWAP_KEYS = {
   buy: ['buy_date', 'buy_amount', 'buy_eth'],
   sell: ['sell_date', 'sell_amount', 'sell_eth'],
-  repay: ['repay_date', 'repay_amount'],
-};
-const GAS_LABELS = {
-  borrow: 'Borrow gas fee',
-  buy: 'Swap gas fee',
-  sell: 'Swap gas fee',
-  repay: 'Repayment gas fee',
 };
 
-function checkGas(patch, row) {
+function checkSwapFee(patch, row) {
   const reached = new Set(reachedStages(stages(row)));
-  for (const stage of FX_STAGES) {
+  for (const [stage, keys] of Object.entries(SWAP_KEYS)) {
     const key = gasKey(stage);
-    const touched = [...STAGE_KEYS[stage], key].some((k) => k in patch);
+    const touched = [...keys, key].some((k) => k in patch);
     if (touched && reached.has(stage) && row[key] == null) {
-      throw new BadRequest(`${GAS_LABELS[stage]} is required.`, key);
+      throw new BadRequest(`${SWAP_FEE} is required.`, key);
     }
   }
 }
@@ -468,7 +462,7 @@ app.post('/api/trades', async (req, res, next) => {
     // refuses the statement for a parameter it was never handed.
     const row = Object.fromEntries([...FIELDS, ...FX_COLUMNS].map((f) => [f, patch[f] ?? null]));
     checkChronology(row);
-    checkGas(patch, row);
+    checkSwapFee(patch, row);
     Object.assign(row, await fillFxColumns(row));
 
     const now = new Date().toISOString();
@@ -498,7 +492,7 @@ app.patch('/api/trades/:id', async (req, res, next) => {
 
       const merged = { ...current, ...patch };
       checkChronology(merged);
-      checkGas(patch, merged);
+      checkSwapFee(patch, merged);
 
       // An edit can invalidate a rate that was right when it was stored. Clear
       // those first, then look up replacements, so the write carries the change

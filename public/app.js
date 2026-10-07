@@ -977,6 +977,10 @@ function sanitizeNumeric(text, { pasted = false } = {}) {
  */
 const WHOLE_VALUE_INPUT = new Set(['insertFromPaste', 'insertFromDrop', 'insertReplacementText']);
 
+// A swap's cost is more than its gas: the DEX or aggregator takes a fee too,
+// and both are typed as one dollar figure.
+const SWAP_FEE = 'Costs & Fees (swap)';
+
 const FIELD_LABELS = {
   goal_price: 'ETH goal price',
   borrow_date: 'Borrow date',
@@ -991,16 +995,19 @@ const FIELD_LABELS = {
   repay_date: 'Repayment date',
   repay_amount: 'Amount repaid',
   borrow_gas_usd: 'Gas fee',
-  buy_gas_usd: 'Gas fee to swap',
-  sell_gas_usd: 'Gas fee to swap',
+  buy_gas_usd: SWAP_FEE,
+  sell_gas_usd: SWAP_FEE,
   repay_gas_usd: 'Gas fee',
   buy_lend_gas_usd: 'Gas fee to lend',
   sell_unstake_gas_usd: 'Gas fee to unstake',
 };
 
-// The Aave legs of a loop, which not every trade takes. Blank on these is
-// "none paid", so they are the only stage fields that may be left empty.
-const OPTIONAL_FIELDS = new Set(Object.values(OPTIONAL_GAS).flat());
+// Gas on the borrow and the repayment, and the Aave legs of a loop, are the
+// only stage fields that may be left empty. Blank on the first two is "not
+// recorded", which the card says rather than printing $0.00; blank on an Aave
+// leg, which not every trade takes, is "none paid". The swaps' costs are
+// required: a swap always costs something, and it is most of what a loop pays.
+const OPTIONAL_FIELDS = new Set([gasKey('borrow'), gasKey('repay'), ...Object.values(OPTIONAL_GAS).flat()]);
 
 /**
  * Check one field in the context of the trade it belongs to.
@@ -1051,8 +1058,8 @@ function validateField(name, raw, trade = {}) {
   }
 
   // Gas can be nothing at all - a sponsored transaction - so 0 is a figure
-  // here, the way 0% is for an APR. Blank is still refused above: an
-  // unrecorded fee is not a free one.
+  // here, the way 0% is for an APR. Blank is let through above, and stored as
+  // NULL: an unrecorded fee, not a free one.
   if (name.endsWith('_gas_usd')) {
     return value < 0 ? 'A gas fee cannot be negative.' : null;
   }
@@ -1177,16 +1184,16 @@ const unitOf = (t) => t.borrow_currency || 'USDC';
 // The one figure on a stage that is not in the borrowed coin: gas is what the
 // transaction cost, typed in dollars whatever was borrowed, so it carries a
 // dollar sign where its neighbours carry a ticker.
-const gasField = (t, name, label, tip, required = true) =>
+const gasField = (t, name, label, tip, required = false) =>
   field({ name, label, tip, required, type: 'number', value: t[name] ?? '', prefix: '$', placeholder: '3.20' });
 
 function borrowFields(t = {}) {
   return `<div class="grid">
     ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened on Aave.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
-    ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed from Aave.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
     ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The stablecoin you borrowed.', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
+    ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed from Aave.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
     ${field({ name: 'borrow_apr', label: 'Borrow APR', tip: 'Borrow rate on the day, as a percent.', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
-    ${gasField(t, 'borrow_gas_usd', 'Gas fee', 'Gas paid to borrow, in USD.')}
+    ${gasField(t, 'borrow_gas_usd', 'Gas fee', 'Gas paid to borrow, in USD. Optional.')}
   </div>`;
 }
 
@@ -1195,8 +1202,8 @@ function buyFields(t) {
     ${field({ name: 'buy_date', label: 'Purchase date', tip: 'Day you swapped the loan into ETH.', type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
     ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Stablecoins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
     ${field({ name: 'buy_eth', label: 'ETH purchased', tip: 'ETH received from the swap.', type: 'number', value: t.buy_eth ?? '', suffix: 'ETH', placeholder: '8.0773' })}
-    ${gasField(t, 'buy_gas_usd', 'Gas fee to swap', 'Gas paid for the swap into ETH, in USD.')}
-    ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', 'Gas paid to supply the ETH on Aave, in USD. Optional.', false)}
+    ${gasField(t, 'buy_gas_usd', SWAP_FEE, 'What the swap into ETH cost, in USD: gas plus any swap or aggregator fee.', true)}
+    ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', 'Gas paid to supply the ETH on Aave, in USD. Optional.')}
   </div>`;
 }
 
@@ -1205,8 +1212,8 @@ function sellFields(t) {
     ${field({ name: 'sell_date', label: 'Sale date', tip: 'Day you swapped the ETH back.', type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
     ${field({ name: 'sell_amount', label: 'Amount received', tip: 'Stablecoins received from the sale.', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
     ${field({ name: 'sell_eth', label: 'ETH sold', tip: 'ETH swapped back to stablecoins.', type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: 'ETH' })}
-    ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', 'Gas paid to withdraw the ETH from Aave, in USD. Optional.', false)}
-    ${gasField(t, 'sell_gas_usd', 'Gas fee to swap', 'Gas paid for the swap out of ETH, in USD.')}
+    ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', 'Gas paid to withdraw the ETH from Aave, in USD. Optional.')}
+    ${gasField(t, 'sell_gas_usd', SWAP_FEE, 'What the swap out of ETH cost, in USD: gas plus any swap or aggregator fee.', true)}
   </div>`;
 }
 
@@ -1231,7 +1238,7 @@ function repayFields(t) {
       // Stays in step with the date until the user types their own figure.
       auto: t.repay_amount == null,
     })}
-    ${gasField(t, 'repay_gas_usd', 'Gas fee', 'Gas paid to repay, in USD.')}
+    ${gasField(t, 'repay_gas_usd', 'Gas fee', 'Gas paid to repay, in USD. Optional.')}
   </div>`;
 }
 
@@ -1536,7 +1543,7 @@ function stageSummary(stage, t, d) {
         // Only when there is one. A card that says "Alert: none" on every
         // trade nobody set one on is four words of noise per row.
         alertRow(row, t, d) +
-        gasRow('buy', 'Gas fee to swap') +
+        gasRow('buy', esc(SWAP_FEE)) +
         optionalGasRow('buy_lend_gas_usd', 'Gas fee to lend')
       );
     case 'sell':
@@ -1554,7 +1561,7 @@ function stageSummary(stage, t, d) {
         // rate, already pass null for the same reason.
         resultRow(row, row2, d, 'Gross gain', d.grossGain, d.grossGainUsd, c) +
         optionalGasRow('sell_unstake_gas_usd', 'Gas fee to unstake') +
-        gasRow('sell', 'Gas fee to swap')
+        gasRow('sell', esc(SWAP_FEE))
       );
     case 'repay':
       // The interest the loan actually cost, which is what the net gain is

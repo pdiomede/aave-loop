@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.4.3] - 2026-10-07
+
+### Changed
+
+- **Currency comes before Amount borrowed** on the borrow form, so the amount's unit is set before it is typed.
+- **Gas on the borrow and the repayment is optional.** A fee left blank is saved as not recorded and its card says so; 0 still means none was paid.
+- **The swap fee is now Costs & Fees (swap)**, on the purchase and the sale: gas plus the DEX or aggregator fee, as one dollar figure. Still required.
+
 ## [1.4.2] - 2026-10-03
 
 ### Fixed

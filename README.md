@@ -24,12 +24,12 @@ A trade is created with the borrow alone, then each stage is added as it happens
 
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
-| Borrow | date, amount, currency, APR, gas fee | `OPEN` |
-| Buy ETH | date, amount spent, ETH received, gas fee to swap, gas fee to lend (optional) | `HOLDING` |
-| Sell ETH | date, ETH sold, amount received, gas fee to unstake (optional), gas fee to swap | `SOLD` |
-| Repay | date, amount repaid, gas fee | `CLOSED` |
+| Borrow | date, currency, amount, APR, gas fee (optional) | `OPEN` |
+| Buy ETH | date, amount spent, ETH received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
+| Sell ETH | date, ETH sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
+| Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
 
-Every stage asks what its transaction cost in gas, in dollars whatever was borrowed; 0 is accepted, blank is not. Trades recorded before fees were asked for show the fee as *not recorded* rather than $0.00. The Aave lend and unstake fees are optional: blank means none was paid.
+Every stage asks what its transaction cost, in dollars whatever was borrowed, and 0 is accepted. The two swaps require it, as **Costs & Fees (swap)**: gas plus the DEX or aggregator fee. On the borrow and the repayment the gas fee may be left blank, and shows as *not recorded* rather than $0.00, as on trades recorded before fees were asked for. The Aave lend and unstake fees are optional: blank means none was paid.
 
 **Trades** is the history table; expand a row to see its four stages and edit them. **Stats** reports performance by currency, net gain by month closed, the biggest and smallest trade ranked two ways - in dollars and by annualized rate, which rarely name the same trade - plus interest paid, total borrowed, average hold and total fees paid. Only closed trades count towards realized figures, and only ones whose exchange rate is known count towards the money. Stats is split into a tab per year, plus **All** for the whole ledger: a trade counts in the year it was repaid, and one still open counts in the current year. The four figures above the tabs stay all-time. **Export CSV**, beside the tabs, downloads the trades on the tab you are looking at (`aave-loop-trades-2026.csv`, or `-all`), one row per trade with its stage inputs and every figure `derive` works out; a figure nobody measured is an empty cell, not 0. The file is semicolon-separated with decimal commas, so Excel in a European locale opens it straight into columns.
 

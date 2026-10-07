@@ -32,7 +32,8 @@ correctness in this repo are expected to come with the command that produced the
 
 Every non-GET `/api` request must send `Content-Type: application/json`, or it gets a
 415. That is the cross-site guard, so a bare `curl -X POST` fails by design: add
-`-H 'Content-Type: application/json'`. Trades also need a gas fee on each stage written.
+`-H 'Content-Type: application/json'`. A purchase or sale also needs its swap cost
+(`buy_gas_usd` / `sell_gas_usd`).
 
 ### Switches that make the app testable offline
 
@@ -167,9 +168,11 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   arithmetically correct under a label describing something else is a bug here.
 - **Exchange rates are resolved server-side and never accepted from a request.** A
   caller that could post its own rate could move every dollar figure in the ledger.
-- **Gas fees are dollars, one per stage, required on any stage being written** (0 is
-  allowed, blank is not; `checkGas` in `server.js`). Trades from before fees existed
-  have NULL, which is "not recorded", never 0: `feesUsd` is null and `feesMissing`
+- **Gas fees are dollars, one per stage.** The swaps' ("Costs & Fees (swap)", gas
+  plus the DEX fee) are required on a purchase or sale being written
+  (`checkSwapFee` in `server.js`); the borrow's and repayment's are optional. 0 is
+  a figure; NULL is "not recorded", never 0, whether left blank or on a trade from
+  before fees existed: `feesUsd` is null and `feesMissing`
   names the stages. `derive` takes fees off `netGainUsd`, the projected gain and
   `unrealisedUsd`. The native `netGain` converts each fee at its own stage's rate, the
   one place a rate is divided, and is null until those rates exist, which is why
