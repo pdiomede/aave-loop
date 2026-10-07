@@ -231,7 +231,9 @@ check('a loan with nothing bought holds no position to value', () => {
 check('openGainsUsd sums the open positions and skips the rest', () => {
   const g = openGainsUsd([closed({ id: 3 }), sold({ id: 2 }), held({ id: 1 })], PRICE, {}, AS_OF);
   assert.deepEqual(g.rows.map((r) => r.id), [1, 2]);
-  near(g.total, 10 * PRICE - 30000 - INTEREST - 8 + (33000 - 30000 - INTEREST - 12), 'total');
+  // The lines as printed: 34,500 - 30,000 - 98.6301 - 8 = 4,393.37 held, and
+  // 33,000 - 30,000 - 98.6301 - 12 = 2,889.37 sold. The total is their sum.
+  near(g.total, 4393.37 + 2889.37, 'total');
   assert.equal(g.missing, 0);
 });
 
@@ -243,12 +245,12 @@ check('openGainsUsd: no ETH price, no total, rather than the sold ones alone', (
 
 check('openGainsUsd: no ETH price is fine when nothing depends on it', () => {
   const g = openGainsUsd([sold({ id: 2 })], null, {}, AS_OF);
-  near(g.total, 33000 - 30000 - INTEREST - 12, 'total');
+  near(g.total, 2889.37, 'total'); // 33,000 - 30,000 - 98.6301 - 12, to the cent
 });
 
 check('openGainsUsd: an unknown position is missing, never a zero', () => {
   const g = openGainsUsd([held({ id: 1 }), held({ id: 2, ...eur(null) })], PRICE, {}, AS_OF);
-  near(g.total, 10 * PRICE - 30000 - INTEREST - 8, 'total');
+  near(g.total, 4393.37, 'total'); // 34,500 - 30,000 - 98.6301 - 8, to the cent
   assert.equal(g.missing, 1);
 });
 
@@ -297,6 +299,42 @@ check('a timer interval from the environment stays where a timer can use it', ()
   assert.equal(intervalMs('2000', 3600000), 2000);
   // Above 2^31 - 1 Node fires every millisecond instead.
   assert.equal(intervalMs('99999999999', 3600000), 2147483647);
+});
+
+/* ------------------------------------------------- totals add up as printed */
+
+// A dollar trade that nets 99.004: 1,100 for the ETH that cost 1,000, less a
+// swap fee of 0.996 (fees take three decimals). It prints $99.00.
+const cent = (id, month, over = {}) => ({
+  id, borrow_currency: 'USDT', borrow_date: `2026-${month}-01`, borrow_amount: 1000, borrow_apr: 0, borrow_gas_usd: 0,
+  buy_date: `2026-${month}-01`, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0.996,
+  sell_date: `2026-${month}-02`, sell_amount: 1100, sell_eth: 1, sell_gas_usd: 0,
+  repay_date: `2026-${month}-02`, repay_amount: 1000, repay_gas_usd: 0, ...over,
+});
+
+check('every money total is the sum of its lines as printed', () => {
+  // Three trades of $99.00 each, in three months. The total of the raw
+  // figures, 297.012, printed $297.01 over three lines of $99.00.
+  const r = summaryReport([cent(1, '03'), cent(2, '04'), cent(3, '05')], AS_OF);
+  assert.deepEqual(r.byMonth.map((m) => m.netGain), [99, 99, 99]);
+  assert.equal(r.byCurrency[0].netGain, 297);
+  assert.equal(r.netGain, 297);
+  assert.equal(r.feesPaid, 3, 'three fees of 0.996, each printed $1.00');
+});
+
+check('a half cent is a cent in a total, as the page prints it', () => {
+  // A fee of 1.005 prints $1.01; multiplying by 100 first rounded it to 1.00.
+  const r = summaryReport([cent(1, '03', { buy_gas_usd: 1.005 }), cent(2, '04', { buy_gas_usd: 1.005 })], AS_OF);
+  assert.equal(r.feesPaid, 2.02);
+  // 1,100 - 1,000 - 1.005 = 98.995, which the page prints $99.00.
+  assert.equal(r.netGain, 198);
+});
+
+check('the header\'s estimate is the sum of the positions under it', () => {
+  // Held 1 ETH bought for 1,000 at 0%, fee 0.996, ETH at 1,100: 99.004 each.
+  const held1 = (id) => ({ ...cent(id, '09'), sell_date: null, sell_amount: null, sell_eth: null, repay_date: null, repay_amount: null });
+  const g = openGainsUsd([held1(1), held1(2)], 1100, {}, AS_OF);
+  assert.equal(g.total, 198);
 });
 
 check('a loss that prints as -$0.01 is counted as a loss', () => {

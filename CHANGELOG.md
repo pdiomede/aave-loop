@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: the logo linked to aaveloop.com, the period (to date on the current year), then the overview, Performance, By currency and By month closed for the trades closed that year, figures as on the cards. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads, like the Statement button beside it.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement: a valid one-page PDF, its figures against ones worked out by hand, and the embedded logo matching the app's.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement: a valid one-page PDF, its figures against ones worked out by hand, and the embedded logo matching the app's. The calc suite gains three, on totals adding up as printed.
 
 ### Fixed
 
@@ -20,6 +20,10 @@ A bug hunt over the statement, each finding reproduced before its fix and re-run
 - **A year with nothing closed offered a statement of dashes.** The button appears once a trade has closed.
 - **On a touch screen the Statement and Export CSV tooltips stayed up after the tap.** There they show to the keyboard only.
 - **The statement carried the app's version and the year tab's note about open trades**, neither of which belongs on a closing statement.
+
+A last pass over the Stats math, every figure checked against hand-worked ledgers and 400 random ones. One bug:
+
+- **Totals did not add up from the lines under them.** A total added fractions of a cent and rounded once, so a ledger's By month closed rows came to $8,156.72 under a Realized net gain of $8,156.71. Every money total now adds each trade's figure as printed, on Stats, the statement and the header's estimate.
 
 ## [1.5.0] - 2026-10-07
 
