@@ -38,6 +38,12 @@ An audit of the Telegram bot - `/price`, `/holding`, `/summary`, `/watch` and `/
 - **`/holding`'s total did not add up from its rows.** Three positions printed +$96.71 each under an Unrealised total of +$290.14. It now adds each row as printed.
 - **`/help` called `/holding` the open positions.** It lists the trades still holding ETH; a trade sold but not yet repaid is open, and `/summary` counts it, but it holds no ETH and was not there. `/help` and the README now say what it lists.
 
+An audit of the landing page against what the app computes. Three claims were wrong, all in its copy; its links, images and inline scripts checked out:
+
+- **It said the net gain was after interest alone**, in the hero, the link previews, a card and step 4. It is after fees too: 3,000 of gross less 100 of interest and 12 of fees is 2,888, not 2,900.
+- **It said a partial exit "is never reported as a loss".** One sold below its cost is, as it should be; what is never shown as a loss is a profitable one.
+- **It said euro amounts convert at the rate for each transaction's own date.** A weekend trade takes the business day before's, as the ledger's own note says.
+
 ## [1.5.0] - 2026-10-07
 
 ### Changed
