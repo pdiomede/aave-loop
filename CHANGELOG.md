@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.5.1] - 2026-10-07
+
+### Added
+
+- **A Statement button on Stats** downloads the year tab being viewed as a one-page PDF: the overview, Performance, By currency and By month closed, with the same figures as the cards. Not offered on All.
+- **Export CSV has a tooltip** saying what it downloads, like the Statement button beside it.
+- **`npm run check` runs a fourth suite**, 9 checks of the statement: a valid one-page PDF, and its figures against ones worked out by hand.
+
 ## [1.5.0] - 2026-10-07
 
 ### Changed

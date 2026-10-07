@@ -1,13 +1,13 @@
 {
   "name": "myaave",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Aave Loop: track stablecoin and EURC borrow, ETH buy and sell, and repay cycles.",
   "type": "module",
   "private": true,
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node scripts/check-calc.mjs && node scripts/check-input.mjs && node scripts/check-server.mjs",
+    "check": "node scripts/check-calc.mjs && node scripts/check-input.mjs && node scripts/check-statement.mjs && node scripts/check-server.mjs",
     "version": "node scripts/stamp-version.mjs && git add -u"
   },
   "engines": {

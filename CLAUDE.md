@@ -11,18 +11,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./resetDatabase.sh           # empty the ledger; asks twice, backs up to data/backups
 ./backupDatabase.sh          # online SQLite backup, safe while the server runs; --help has the cron line
 npm start                    # node server.js, no port hunting
-npm run check                # scripts/check-calc.mjs, check-input.mjs, then check-server.mjs
+npm run check                # scripts/check-calc.mjs, check-input.mjs, check-statement.mjs, then check-server.mjs
 node scripts/check-server.mjs  # one suite on its own; there is no per-check filter
 ```
 
 **There is no test framework, no linter and no build step.** Nothing is transpiled;
-the files on disk are the files that run. `npm run check` runs three scripts.
+the files on disk are the files that run. `npm run check` runs four scripts.
 `scripts/check-calc.mjs` covers the estimate math in `lib/calc.js` against hand-worked
 figures on a fixed date; add a case there when you change a formula, with the expected
 value worked out from the inputs rather than by calling the function again.
 `scripts/check-input.mjs` covers `lib/input.js` - how a typed or pasted figure is read
 and what the forms accept - typing each figure a keystroke at a time as the page does;
 add a case there when you change an input rule.
+`scripts/check-statement.mjs` covers `lib/statement.js`, the Statement PDF: that the
+hand-written file is a valid one-page PDF, and that the figures it sets match ones
+worked out by hand; add a case there when you change what the statement prints.
 `scripts/check-server.mjs` starts the real server as a child on a free port, against a
 database in a temp directory with Telegram and the price service mocked on loopback,
 and checks the API's write rules, the alert message, every way the alert sweep handles
@@ -133,6 +136,14 @@ position is marked to today's exchange rate; `derive`'s own figures never are.
 `lib/input.js` is the forms' input half - `sanitizeNumeric`, `validateField`, the field
 labels - out of `public/app.js` so it can be checked; like `lib/csv.js` it imports
 `calc.js` and nothing else, and keeps no DOM.
+
+`lib/statement.js` writes the Stats Statement button's PDF by hand - no library, so
+nothing is bundled and the CSP is untouched - from the same `summaryReport` the Stats
+view calls, and imports only `calc.js`. It is one A4 page by construction (a year has
+at most 12 months and `CURRENCIES` 5 coins) and throws rather than draw past the bottom
+margin, so a layout change that overflows fails `npm run check`. It is ASCII
+throughout, characters beyond it written as octal escapes, so the xref offsets are
+string lengths.
 
 `fx.js`, `eth.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
 `report.js` and `format.js` sit at the root **because they are server-only** — the

@@ -1258,6 +1258,45 @@ th[aria-sort="ascending"] .th-sort__caret {
   gap: 12px;
 }
 
+/* Statement and Export CSV, side by side at the right of the bar. */
+.years-bar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Each button's tooltip hangs from its right edge and grows to the left: the
+   buttons sit at the right of the page, and a bubble anchored on the left ran
+   past the edge. Capped at a sentence's width rather than the button's, which
+   would have folded it into a column of single words. */
+.years-bar__actions [data-tip] {
+  position: relative;
+}
+
+.years-bar__actions [data-tip]::after {
+  right: 0;
+  max-width: 260px;
+}
+
+/* On a phone the buttons wrap under the tabs to the left edge, where a bubble
+   growing leftwards would start off the screen, and one growing rightwards
+   from Export CSV would end off it. There both hang from the left of the pair,
+   which leaves room for the widest of them on a 320px screen. */
+@media (max-width: 560px) {
+  .years-bar__actions {
+    position: relative;
+  }
+
+  .years-bar__actions [data-tip] {
+    position: static;
+  }
+
+  .years-bar__actions [data-tip]::after {
+    right: auto;
+    left: 0;
+    max-width: min(260px, calc(100vw - 32px));
+  }
+}
+
 /* The fx banner is a card, and `.card + .card` is what spaces the others. */
 .card + .years-bar {
   margin-top: 16px;

@@ -20,6 +20,7 @@ import {
   estimateNeedsPrice,
 } from '/lib/calc.js';
 import { tradesCsv, csvFileName } from '/lib/csv.js';
+import { statementPdf, statementFileName } from '/lib/statement.js';
 import {
   EARLIEST_DATE,
   SWAP_FEE,
@@ -2231,6 +2232,14 @@ const DOWNLOAD_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none
     <path d="M12 4v11" /><path d="m7 10 5 5 5-5" /><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
   </svg>`;
 
+// A page with its corner folded and an arrow down its middle: a document that
+// comes down to you, beside the tray the CSV drops into.
+const STATEMENT_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" />
+    <path d="M12 11v6" /><path d="m9.5 14.5 2.5 2.5 2.5-2.5" />
+  </svg>`;
+
 /**
  * The trades on the year tab being looked at, as the Stats cards count them:
  * the same `statsYear` filter over the same `asOf`, so the file and the cards
@@ -2255,11 +2264,44 @@ function exportCsv(year) {
     toast('No trades to export.');
     return;
   }
-  const blob = new Blob([tradesCsv(trades, asOf)], { type: 'text/csv;charset=utf-8' });
+  downloadBlob(new Blob([tradesCsv(trades, asOf)], { type: 'text/csv;charset=utf-8' }), csvFileName(year));
+  toast(`Exported ${trades.length} trade${trades.length === 1 ? '' : 's'}.`);
+}
+
+/**
+ * Hand a year tab's one-page statement to the browser as a PDF.
+ *
+ * Drawn from the same trades on the same `asOf` as the cards above the
+ * button, for the reason `exportCsv` gives. Never offered on All, which is not
+ * a year and has no bound on its months, so could not be held to one page.
+ */
+function downloadStatement(year) {
+  if (year === 'all') return;
+  const asOf = state.statsAsOf ?? todayISO();
+  const trades = tradesForYear(year, asOf);
+  if (trades.length === 0) {
+    toast(`No trades in ${year}.`);
+    return;
+  }
+  // The footer's number: stamped at release and repainted from /api/version.
+  const version = document.getElementById('version')?.textContent.trim() ?? '';
+  let pdf;
+  try {
+    pdf = statementPdf(trades, year, asOf, { version });
+  } catch (err) {
+    console.error(err);
+    toast('Could not build the statement.');
+    return;
+  }
+  downloadBlob(new Blob([pdf], { type: 'application/pdf' }), statementFileName(year));
+  toast(`Downloaded the ${year} statement.`);
+}
+
+function downloadBlob(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = csvFileName(year);
+  a.download = name;
   document.body.append(a);
   a.click();
   a.remove();
@@ -2267,7 +2309,6 @@ function exportCsv(year) {
   // download asynchronously, and a URL revoked before it is read gives a
   // failed download in some browsers.
   setTimeout(() => URL.revokeObjectURL(url), 0);
-  toast(`Exported ${trades.length} trade${trades.length === 1 ? '' : 's'}.`);
 }
 
 /**
@@ -2342,11 +2383,27 @@ function renderStatsView() {
           `<div class="stats stats--year">${statTiles(r, { open: year === current })}</div>`,
         );
 
+  // "This year" only on the current year's tab: on 2025 it would read as the
+  // year on the calendar, not the one being looked at. A description rather
+  // than a label, so a screen reader still names each button by what it says.
+  const whose = year === current ? "this year's" : `the ${year}`;
+  const statementTip = `Download ${whose} statement`;
+  const csvTip = year === 'all' ? 'Download every trade as a CSV file' : `Download ${whose} trades as a CSV file`;
+  const statement =
+    year === 'all'
+      ? ''
+      : `<button class="btn btn--sm" type="button" data-statement data-tip="${esc(statementTip)}"
+          aria-description="${esc(statementTip)}">${STATEMENT_SVG} Statement</button>`;
+
   mount.innerHTML = `
     ${fxBanner(whole.missingFx, year === 'all' ? null : { year, count: r.missingFx })}
     <div class="years-bar">
       ${yearTabs(years, year)}
-      <button class="btn btn--sm" type="button" data-export-csv>${DOWNLOAD_SVG} Export CSV</button>
+      <div class="years-bar__actions">
+        ${statement}
+        <button class="btn btn--sm" type="button" data-export-csv data-tip="${esc(csvTip)}"
+          aria-description="${esc(csvTip)}">${DOWNLOAD_SVG} Export CSV</button>
+      </div>
     </div>
     ${scope}
     ${overview}
@@ -3396,6 +3453,11 @@ function wire() {
 
     if (e.target.closest('[data-export-csv]')) {
       exportCsv(state.statsYear);
+      return;
+    }
+
+    if (e.target.closest('[data-statement]')) {
+      downloadStatement(state.statsYear);
       return;
     }
 
