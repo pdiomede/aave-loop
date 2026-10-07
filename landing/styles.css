@@ -68,9 +68,12 @@
   color-scheme: dark;
 }
 
-/* A first time visitor has no stored preference, so follow the system. The app
-   itself does not do this; here it matters more, because this is the page
-   somebody lands on at night without ever having opened the ledger. */
+/* A first time visitor has no stored preference, so follow the system, from the
+   first paint and without waiting for a script. The pages' <html> carries no
+   data-theme for that reason: hard-coded to light, as it was, this rule never
+   applied, and a dark system got a white page until the script at the foot of
+   the page ran, or for good without JavaScript. The ledger follows the system
+   the same way. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --violet-strong: #b9b8ff;
@@ -416,8 +419,9 @@ p {
   font-size: 14.5px;
 }
 
-/* The coin marks are the app's own files, served straight from disk by nginx
-   rather than copied here, so there is only ever one of each in the repo. */
+/* The coin marks are copies of the app's, kept in landing/ because that is the
+   one path nginx serves without a password: the app's own would bring up a
+   login prompt on this public page. */
 .coins {
   display: flex;
   align-items: center;
