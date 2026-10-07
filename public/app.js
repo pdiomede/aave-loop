@@ -11,6 +11,7 @@ import {
   priceInRange,
   SELL_OVER_BUY,
   CURRENCIES,
+  CURRENCY_META,
   FX_STAGES,
   isUsdPegged,
   gasKey,
@@ -1111,6 +1112,164 @@ function validateField(name, raw, trade = {}) {
  * One rounded field. Everything the user types into goes through here so the
  * styling and the hint slot stay identical across the four stage forms.
  */
+/* ------------------------------------------------------------ coin picker */
+
+/*
+ * The currency field, drawn as a list of coins with their artwork, which a
+ * native <select> cannot show. A select-only combobox in the ARIA pattern: a
+ * button holding the choice, a listbox that opens under it, and the active
+ * option tracked with `aria-activedescendant` so focus never leaves the button.
+ *
+ * The value lives in a hidden input of the field's own name, so FormData, the
+ * draft kept across re-renders and the validation all read it as they read a
+ * select. A pick fires `input` on it, and the page's input handler does the
+ * rest - the Amount field's ticker, the error line and the hints.
+ */
+const coinIcon = (c) =>
+  COIN_ART[c]
+    ? `<img class="coin coin--art coin--sm" src="${COIN_ART[c]}" alt="" width="20" height="20" />`
+    : `<span class="coin coin--sm" aria-hidden="true">${esc(String(c).slice(0, 1))}</span>`;
+
+// The full name beside the ticker, unless it is the ticker again (GHO).
+const coinFace = (c) => {
+  const label = CURRENCY_META[c]?.label ?? '';
+  return (
+    `${coinIcon(c)}<span class="coin-select__ticker">${esc(c)}</span>` +
+    (label && label !== c ? `<span class="coin-select__name">${esc(label)}</span>` : '')
+  );
+};
+
+const CHECK_SVG = `<svg class="coin-select__check" width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M5 12.5l4.5 4.5L19 7.5" /></svg>`;
+
+function coinSelect({ id, name, value, options, req }) {
+  const items = options
+    .map(
+      (c, i) => `<li class="coin-select__option" role="option" id="${id}-opt-${i}" data-value="${esc(c)}"
+        aria-selected="${c === value}">${coinFace(c)}${CHECK_SVG}</li>`,
+    )
+    .join('');
+  return `<div class="control control--select coin-select" data-coin-select>
+    <input type="hidden" name="${name}" value="${esc(value)}" />
+    <button class="coin-select__trigger" type="button" id="${id}" role="combobox" aria-haspopup="listbox"
+      aria-expanded="false" aria-controls="${id}-list"${req}>${coinFace(value)}</button>
+    <ul class="coin-select__list" id="${id}-list" role="listbox" hidden>${items}</ul>
+  </div>`;
+}
+
+/** The picker whose list is open, if any. One at a time, like a native select. */
+let coinOpen = null;
+
+const coinParts = (box) => ({
+  input: box.querySelector('input[type="hidden"]'),
+  trigger: box.querySelector('.coin-select__trigger'),
+  list: box.querySelector('.coin-select__list'),
+  options: [...box.querySelectorAll('.coin-select__option')],
+});
+
+/**
+ * Fixed to the viewport, from the button's position, and flipped above it when
+ * there is no room below. The Borrowed editor sits inside the trades table,
+ * whose scrolling wrapper clips anything positioned inside it.
+ */
+function placeCoinList(box) {
+  const { trigger, list } = coinParts(box);
+  const r = trigger.getBoundingClientRect();
+  // At least as wide as the button, wider when the names need it, and kept
+  // inside the window on the right.
+  list.style.minWidth = `${r.width}px`;
+  list.style.left = `${Math.max(Math.min(r.left, window.innerWidth - list.offsetWidth - 8), 8)}px`;
+  const below = window.innerHeight - r.bottom;
+  const room = list.offsetHeight + 8;
+  list.style.top = below < room && r.top > below ? `${Math.max(r.top - room + 2, 8)}px` : `${r.bottom + 6}px`;
+}
+
+function setCoinActive(box, option) {
+  const { trigger, options } = coinParts(box);
+  for (const o of options) o.classList.toggle('is-active', o === option);
+  if (option) {
+    trigger.setAttribute('aria-activedescendant', option.id);
+    option.scrollIntoView({ block: 'nearest' });
+  } else {
+    trigger.removeAttribute('aria-activedescendant');
+  }
+}
+
+function openCoinSelect(box) {
+  if (coinOpen && coinOpen !== box) closeCoinSelect(coinOpen);
+  const { input, trigger, list, options } = coinParts(box);
+  list.hidden = false;
+  trigger.setAttribute('aria-expanded', 'true');
+  placeCoinList(box);
+  setCoinActive(box, options.find((o) => o.dataset.value === input.value) ?? options[0]);
+  coinOpen = box;
+}
+
+function closeCoinSelect(box) {
+  const { trigger, list } = coinParts(box);
+  list.hidden = true;
+  trigger.setAttribute('aria-expanded', 'false');
+  setCoinActive(box, null);
+  if (coinOpen === box) coinOpen = null;
+}
+
+/** Draw the button and the ticks from the hidden input's value. */
+function syncCoinSelect(box) {
+  const { input, trigger, options } = coinParts(box);
+  trigger.innerHTML = coinFace(input.value);
+  for (const o of options) o.setAttribute('aria-selected', String(o.dataset.value === input.value));
+}
+
+function pickCoin(box, value) {
+  const { input, trigger } = coinParts(box);
+  closeCoinSelect(box);
+  trigger.focus();
+  if (input.value === value) return;
+  input.value = value;
+  syncCoinSelect(box);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** Keys on the button: open, move, type a ticker's first letter, pick, close. */
+function coinKeydown(e, box) {
+  const open = !box.querySelector('.coin-select__list').hidden;
+  const { options } = coinParts(box);
+  const active = options.findIndex((o) => o.classList.contains('is-active'));
+  const move = (i) => setCoinActive(box, options[(i + options.length) % options.length]);
+
+  if (!open) {
+    if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
+      e.preventDefault();
+      openCoinSelect(box);
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown') move(active + 1);
+  else if (e.key === 'ArrowUp') move(active - 1);
+  else if (e.key === 'Home') move(0);
+  else if (e.key === 'End') move(options.length - 1);
+  else if (e.key === 'Enter' || e.key === ' ') {
+    if (options[active]) pickCoin(box, options[active].dataset.value);
+  } else if (e.key === 'Escape') {
+    // The list only. Reaching the page, Escape closes the stage editor and
+    // throws away what was typed into it.
+    e.stopPropagation();
+    closeCoinSelect(box);
+  } else if (e.key === 'Tab') {
+    closeCoinSelect(box);
+    return;
+  } else if (/^[a-z]$/i.test(e.key)) {
+    const letter = e.key.toUpperCase();
+    const order = [...options.slice(active + 1), ...options.slice(0, active + 1)];
+    const hit = order.find((o) => o.dataset.value.startsWith(letter));
+    if (hit) setCoinActive(box, hit);
+  } else {
+    return;
+  }
+  e.preventDefault();
+}
+
 function field({
   name,
   label,
@@ -1131,7 +1290,9 @@ function field({
   const req = required ? ' aria-required="true"' : '';
   let control;
 
-  if (options) {
+  if (options && name === 'borrow_currency') {
+    control = coinSelect({ id, name, value, options, req });
+  } else if (options) {
     const opts = options
       .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`)
       .join('');
@@ -1901,6 +2062,8 @@ function restoreDraft(draft) {
   // already in the new one.
   const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');
   if (unit && draft.values.borrow_currency) unit.textContent = draft.values.borrow_currency;
+  // And the currency picker, whose button is drawn from the saved trade too.
+  for (const box of form.querySelectorAll('[data-coin-select]')) syncCoinSelect(box);
   const repay = form.querySelector('input[name="repay_amount"]');
   if (repay && !draft.auto) delete repay.dataset.auto;
   return true;
@@ -3301,6 +3464,44 @@ function wire() {
     e.preventDefault();
     submitBorrow(borrowForm);
   });
+
+  // The currency picker. Clicks: the button toggles its list, an option picks,
+  // anywhere else closes. A re-render can take an open list away with it, so
+  // a picker no longer in the page is simply forgotten.
+  document.addEventListener('click', (e) => {
+    if (coinOpen && !coinOpen.isConnected) coinOpen = null;
+    const box = e.target.closest('[data-coin-select]');
+    if (coinOpen && coinOpen !== box) closeCoinSelect(coinOpen);
+    if (!box) return;
+    const option = e.target.closest('.coin-select__option');
+    if (option) pickCoin(box, option.dataset.value);
+    else if (e.target.closest('.coin-select__trigger')) {
+      if (coinOpen === box) closeCoinSelect(box);
+      else openCoinSelect(box);
+    }
+  });
+  // Pressing an option must not take focus off the button first.
+  document.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.coin-select__list')) e.preventDefault();
+  });
+  // Captured, so an Escape that closes the list never reaches the page's own.
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      const trigger = e.target.closest?.('.coin-select__trigger');
+      if (trigger) coinKeydown(e, trigger.closest('[data-coin-select]'));
+    },
+    true,
+  );
+  // A list fixed to the viewport would be left behind by a scroll.
+  const dropCoinList = (e) => {
+    if (!coinOpen) return;
+    if (e?.target?.closest?.('.coin-select__list')) return;
+    if (coinOpen.isConnected) closeCoinSelect(coinOpen);
+    else coinOpen = null;
+  };
+  document.addEventListener('scroll', dropCoinList, true);
+  window.addEventListener('resize', dropCoinList);
 
   document.body.addEventListener('click', (e) => {
     if (e.target.closest('[data-close-new]')) {

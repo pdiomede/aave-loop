@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ### Changed
 
 - **Currency comes before Amount borrowed** on the borrow form, so the amount's unit is set before it is typed.
+- **Currency is a picker with each coin's icon and name**, listed alphabetically: DAI, EURC, GHO, USDC, USDT. It works by mouse, touch and keyboard (arrows, a ticker's first letter, Enter, Escape), and new trades still start on USDC.
 - **Gas on the borrow and the repayment is optional.** A fee left blank is saved as not recorded and its card says so; 0 still means none was paid.
 - **The swap fee is now Costs & Fees (swap)**, on the purchase and the sale: gas plus the DEX or aggregator fee, as one dollar figure. Still required.
 - **The Telegram alert reads more clearly.** "ETH reached your goal" whichever way it moved, the value lines set apart by a blank line, and a new **Gain (%)** over what the ETH cost beside **Gain ($)**. The alert and `/holding` say "fees", not "gas", since the figure carries the swaps' DEX fees too.

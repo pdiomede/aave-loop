@@ -713,6 +713,101 @@ a.brand {
   cursor: pointer;
 }
 
+/* The currency picker (`coinSelect` in app.js): a button drawn like the other
+   fields, and a list of coins with their artwork. The list is fixed to the
+   viewport so the trades table's scrolling wrapper cannot clip it. */
+.coin-select__trigger {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 36px 11px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-field);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.coin-select__trigger:hover {
+  border-color: var(--hairline-strong);
+}
+
+.coin-select__trigger:focus,
+.coin-select__trigger[aria-expanded="true"] {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.coin-select:has([aria-expanded="true"])::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+/* Two classes, to win over `.coin`, which comes later in this file. */
+.coin.coin--sm {
+  width: 20px;
+  height: 20px;
+  font-size: 8px;
+}
+
+.coin-select__ticker {
+  font-weight: 600;
+}
+
+.coin-select__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.coin-select__list {
+  position: fixed;
+  z-index: 60;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--radius-field);
+  box-shadow: var(--ring-raised);
+}
+
+.coin-select__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-btn);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.coin-select__option:hover,
+.coin-select__option.is-active {
+  background: var(--accent-soft);
+}
+
+.coin-select__check {
+  flex: none;
+  margin-left: auto;
+  color: var(--accent);
+  visibility: hidden;
+}
+
+.coin-select__option[aria-selected="true"] .coin-select__check {
+  visibility: visible;
+}
+
 .field__hint {
   font-size: 12.5px;
   color: var(--text-muted);
