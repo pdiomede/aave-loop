@@ -425,7 +425,6 @@ async function fire(row, price) {
   // can never be delivered should say so rather than retry forever.
   if (!db.open) return;
   if (sent.retryable) {
-    const attempts = (row.attempts ?? 0) + 1;
     // `fired_at` and `fired_price` are left as the claim wrote them. They record
     // when the goal was reached, which is true however the send went, and an
     // alert that gives up after three tries needs them to say what it was
@@ -449,28 +448,34 @@ async function fire(row, price) {
     // app poll the same file and anything in between is a race. Superseded, the
     // row stays as the claim left it and carries the reason, which is what the
     // "not sent" note on the card is derived from.
+    //
+    // Counted in SQL, from the row as it stands. Counted here from `row`, read
+    // when the sweep began and many seconds old by now, a failure recorded by
+    // the other copy in between was written over, and the alert was re-armed
+    // past its three tries. Every SET reads the row before the update, so
+    // `attempts + 1` is the count this failure makes.
     prepare(`
       UPDATE alerts SET
         status = CASE
+          WHEN attempts + 1 >= @max THEN 'failed'
           -- Not back to armed on a trade sold while the send was in flight:
           -- that put an armed goal on a sold trade until the next sweep.
-          WHEN @status = 'armed' AND NOT EXISTS (
+          WHEN NOT EXISTS (
             SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING}
           ) THEN 'closed'
-          WHEN @status = 'armed' AND EXISTS (
+          WHEN EXISTS (
             SELECT 1 FROM alerts other
              WHERE other.trade_id = alerts.trade_id
                AND other.status = 'armed'
                AND other.id <> alerts.id
           ) THEN 'fired'
-          ELSE @status
+          ELSE 'armed'
         END,
-        attempts = @attempts, last_error = @error, updated_at = @now
+        attempts = attempts + 1, last_error = @error, updated_at = @now
       WHERE id = @id
     `).run({
       id: row.id,
-      status: attempts >= MAX_ATTEMPTS ? 'failed' : 'armed',
-      attempts,
+      max: MAX_ATTEMPTS,
       error: sent.error,
       now: new Date().toISOString(),
     });

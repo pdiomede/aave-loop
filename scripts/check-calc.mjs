@@ -96,6 +96,16 @@ check('held dollar loan agrees with unrealisedUsd, which Telegram alerts use', (
   near(est(t), unrealisedUsd(derive(t, AS_OF), PRICE), 'estimate');
 });
 
+check('a sale within 0.01% of the purchase is a full exit, its whole cost taken off', () => {
+  // 9.9995 of 10 ETH sold for 33,000 and 30,000 repaid, fees 0: the card shows
+  // a full exit, so 33,000 - 30,000 = 3,000, not 33,000 - 29,998.50.
+  const t = { ...held({ borrow_apr: 0, borrow_gas_usd: 0, buy_gas_usd: 0 }), sell_date: '2026-09-20',
+    sell_amount: 33000, sell_eth: 9.9995, sell_gas_usd: 0, repay_date: '2026-09-20', repay_amount: 30000, repay_gas_usd: 0 };
+  const d = derive(t, AS_OF);
+  assert.equal(d.isPartialSale, false);
+  near(d.netGainUsd, 3000, 'net gain');
+});
+
 check('held dollar loan: gain % is over the 30,000 spent on the ETH', () => {
   const t = held();
   near(estimatedGainPct(t, derive(t, AS_OF), PRICE), ((34500 - 30000 - INTEREST - 8) / 30000) * 100, 'pct');

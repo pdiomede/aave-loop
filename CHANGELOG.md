@@ -16,6 +16,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **A huge or negative bot timing setting made the bot poll in a 1 ms loop.** `MYAAVE_BOT_POLL_S`, `MYAAVE_BOT_LEASE_MS`, `MYAAVE_BOT_LEASE_RETRY_MS` and `MYAAVE_WATCH_MS` are now bounded like the other intervals.
 - **The Total fees paid tooltip said gas only**, but since 1.4.3 the total also carries the swaps' DEX and aggregator fees. It now names them.
 
+Three audits, of input checks, of the math and of the database, each finding reproduced before its fix and re-run after. `npm run check` is at 37.
+
+Input checks:
+
+- **A typed decimal comma was dropped.** "3,20" saved a $320 fee and "32.000,00" a loan of 32, and on a phone whose decimal keypad offers only "," every decimal was multiplied. The form keeps the separators and the server's parser reads the finished figure.
+- **A paste the parser refuses was cut down to a number it accepts.** "1.5 ETH ($5,175.00)" saved 1.55175 ETH. It now says the field is not a number, as the server does.
+- **Nothing checked the ETH price a purchase or sale implies.** 25,000 for 80,773 ETH stored ETH at $0.31. Both sides now refuse a price outside $1 to $1,000,000.
+- **Selling ETH withdrawn from Aave with its interest was refused.** Only 0.01% over the purchase was allowed, two days of supply interest. A sale may run 10% over.
+- **The form accepted an alert goal under $1** that the save refused. Both use one range.
+
+Math:
+
+- **A sale within 0.01% of the purchase showed as a full exit with a partial cost.** 9.9995 of 10 ETH read +$3,001.50 under a card adding to +$3,000.00. It takes off the whole purchase now.
+- **The repayment preview counted to today with the amount blank.** It said 36 days and suggested 30,118.36 beside a date giving 19 days and 30,062.47. It uses the date in the form.
+- **`/holding` gave the euro's move for some trades under the total of all.** With a purchase rate missing, it now leaves the move out.
+
+Database:
+
+- **Fetch rates failed at once while the other copy of the app was writing**, rather than waiting its turn, and the hourly refresh left rates missing another hour. Its write now takes the lock first.
+- **An edit could be saved over a row the other copy had just changed** while a rate lookup was away, pinning a rate to the wrong date or moving a purchase past a sale. It is now written only to the row it was worked out from, and worked out again otherwise.
+- **A failed alert send could be counted over a failure the other copy recorded**, so the alert retried past its three tries. The count is kept in SQL.
+
+Measured at 200 and 5,000 trades, every query already uses an index and nothing on the read or write path is worth changing at a personal ledger's size.
+
 ## [1.4.3] - 2026-10-07
 
 ### Changed

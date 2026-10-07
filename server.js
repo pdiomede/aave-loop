@@ -8,6 +8,8 @@ import {
   summaryReport,
   parseDate,
   parseAmount,
+  priceInRange,
+  SELL_OVER_BUY,
   stages,
   reachedStages,
   gasKey,
@@ -360,8 +362,8 @@ function checkChronology(row) {
     throw new BadRequest('Record the ETH sale before the repayment.', 'sell_amount');
   }
 
-  if (row.sell_eth != null && row.buy_eth != null && row.sell_eth > row.buy_eth * 1.0001) {
-    throw new BadRequest('You cannot sell more ETH than you bought.', 'sell_eth');
+  if (row.sell_eth != null && row.buy_eth != null && row.sell_eth > row.buy_eth * SELL_OVER_BUY) {
+    throw new BadRequest('That is more than 10% above the ETH you bought.', 'sell_eth');
   }
 
   if (row.repay_amount != null && row.borrow_amount != null) {
@@ -409,6 +411,28 @@ function checkSwapFee(patch, row) {
     const touched = [...keys, key].some((k) => k in patch);
     if (touched && reached.has(stage) && row[key] == null) {
       throw new BadRequest(`${SWAP_FEE} is required.`, key);
+    }
+  }
+}
+
+/**
+ * The ETH price a purchase or sale implies has to be one ETH could trade at
+ * (`priceInRange`). Scoped to the stages this request writes, like
+ * `checkSwapFee`, so a row saved before the check existed is not refused an
+ * unrelated edit.
+ */
+function checkEthPrice(patch, row) {
+  for (const stage of ['buy', 'sell']) {
+    const [amountKey, ethKey] = [`${stage}_amount`, `${stage}_eth`];
+    if (!(amountKey in patch || ethKey in patch)) continue;
+    if (row[amountKey] == null || row[ethKey] == null) continue;
+    const price = row[amountKey] / row[ethKey];
+    if (!priceInRange(price)) {
+      const shown = price.toLocaleString('en-US', { maximumSignificantDigits: 4 });
+      throw new BadRequest(
+        `That is ${shown} ${row.borrow_currency} per ETH. Check the amount and the ETH.`,
+        ethKey,
+      );
     }
   }
 }
@@ -463,6 +487,7 @@ app.post('/api/trades', async (req, res, next) => {
     const row = Object.fromEntries([...FIELDS, ...FX_COLUMNS].map((f) => [f, patch[f] ?? null]));
     checkChronology(row);
     checkSwapFee(patch, row);
+    checkEthPrice(patch, row);
     Object.assign(row, await fillFxColumns(row));
 
     const now = new Date().toISOString();
@@ -485,33 +510,52 @@ app.patch('/api/trades/:id', async (req, res, next) => {
     const patch = normalise(req.body || {}, { requireBorrow: false });
 
     const row = await withTradeLock(id, async () => {
-      // Read inside the lock: anything queued ahead of us has finished writing.
-      const current = selectOne.get(id);
-      if (!current) return null;
-      if (Object.keys(patch).length === 0) return current;
+      // The lock only orders writers in this process. The other copy of the
+      // app can change the row while the rate lookup below is away - seconds,
+      // for a euro trade - and writing regardless pinned a rate looked up for
+      // the old date to the new one (`buy_fx` for 2 September on a purchase
+      // moved to the 10th, never asked about again) and let a purchase be
+      // moved past a sale recorded meanwhile, checked against a row that was
+      // no longer the row. So the write only lands on the row it was worked
+      // out from, and is worked out again from a fresh read when it was not:
+      // the rates are cached by then, so the second pass is quick.
+      for (let pass = 0; pass < 3; pass += 1) {
+        // Read inside the lock: anything queued ahead of us has finished writing.
+        const current = selectOne.get(id);
+        if (!current) return null;
+        if (Object.keys(patch).length === 0) return current;
 
-      const merged = { ...current, ...patch };
-      checkChronology(merged);
-      checkSwapFee(patch, merged);
+        const merged = { ...current, ...patch };
+        checkChronology(merged);
+        checkSwapFee(patch, merged);
+        checkEthPrice(patch, merged);
 
-      // An edit can invalidate a rate that was right when it was stored. Clear
-      // those first, then look up replacements, so the write carries the change
-      // and its consequences in one statement rather than two.
-      const stale = staleFxColumns(current, patch);
-      Object.assign(merged, stale);
-      const fresh = await fillFxColumns(merged);
+        // An edit can invalidate a rate that was right when it was stored. Clear
+        // those first, then look up replacements, so the write carries the change
+        // and its consequences in one statement rather than two.
+        const stale = staleFxColumns(current, patch);
+        Object.assign(merged, stale);
+        const fresh = await fillFxColumns(merged);
 
-      const write = { ...patch, ...stale, ...fresh };
-      const keys = Object.keys(write);
+        const write = { ...patch, ...stale, ...fresh };
+        const keys = Object.keys(write);
 
-      prepare(
-        `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at WHERE id = @id`,
-      ).run({ ...write, updated_at: new Date().toISOString(), id: current.id });
-      // A sale just recorded ends the trade's alert, now rather than at the
-      // next sweep, so the Alerts list says so as soon as it is opened.
-      closeUnwatched();
+        const written = prepare(
+          `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at ` +
+            'WHERE id = @id AND updated_at IS @seen',
+        ).run({ ...write, updated_at: new Date().toISOString(), id: current.id, seen: current.updated_at });
+        if (written.changes !== 1) continue;
 
-      return selectOne.get(current.id);
+        // A sale just recorded ends the trade's alert, now rather than at the
+        // next sweep, so the Alerts list says so as soon as it is opened.
+        closeUnwatched();
+        return selectOne.get(current.id);
+      }
+      // Overtaken three times running: the other copy is busy with this very
+      // trade. Answered as the busy ledger it is, so the form says try again.
+      throw Object.assign(new Error('The trade kept changing while it was being saved.'), {
+        code: 'SQLITE_BUSY_RETRY',
+      });
     });
 
     if (!row) return res.status(404).json({ error: 'Trade not found.' });
@@ -728,7 +772,7 @@ app.get('/api/alerts/log', (_req, res) => res.json({ alerts: alertLog() }));
  * saved and armed - "fell to your $0.00 goal", a goal that never fires - and
  * the preview rendered goals above the ceiling that the save then refused.
  */
-const goalInRange = (goal) => Number.isFinite(goal) && goal >= 1 && goal <= 1_000_000;
+const goalInRange = priceInRange;
 
 app.put('/api/trades/:id/alert', async (req, res, next) => {
   try {

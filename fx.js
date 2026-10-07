@@ -553,7 +553,12 @@ export async function backfillRates({ refresh = false } = {}) {
       writeFx(columns).run({ ...patch, updated_at: now, id: row.id });
     }
   });
-  apply();
+  // Immediate, so the write lock is taken before the first read. A deferred
+  // transaction that has read cannot wait to upgrade - SQLite skips the busy
+  // handler there - so with the other copy of the app mid-write it threw
+  // SQLITE_BUSY at once: Fetch rates answered 503 within a millisecond and the
+  // hourly refresher left the rates missing for another hour.
+  apply.immediate();
 
   return { scanned, filled, stillMissing, timedOut, ...fxStatus() };
 }

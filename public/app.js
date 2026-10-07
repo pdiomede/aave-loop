@@ -8,7 +8,8 @@ import {
   daysBetween,
   todayISO,
   parseAmount,
-  normaliseAmountText,
+  priceInRange,
+  SELL_OVER_BUY,
   CURRENCIES,
   FX_STAGES,
   isUsdPegged,
@@ -945,37 +946,22 @@ const ethQuoteDue = () => Date.now() - ethQuoteAt >= ethPollMs;
 const EARLIEST_DATE = '2015-07-30';
 
 /**
- * Strip what can never belong in a number, as the user types.
+ * Strip what can never belong in a number, as the user types: anything but
+ * digits, the two separators and a sign. The separators stay as typed, and
+ * `parseAmount` - the server's own parser - reads the finished text, at blur,
+ * at submit and on the save.
  *
- * A pasted amount arrives complete, so a European decimal comma can be read
- * for what it is: gutting "32.000,00" down to "32.00000" recorded a 32,000
- * loan as 32. A comma typed one keystroke at a time cannot be read that way,
- * because "1,5" on its way to "1,500" would become 1.5, so typing keeps the
- * old behaviour of dropping the separator.
+ * Reading them here, a keystroke at a time, was the bug. "1,5" on its way to
+ * "1,500" cannot be told from a decimal comma mid-typing, so commas were
+ * dropped: typing "3,20" saved a $320 fee, "32.000,00" a loan of 32, and on a
+ * phone whose decimal keypad offers only "," every decimal was multiplied. And
+ * a paste the parser refuses was cut down to a different number that it then
+ * accepted: "1.5 ETH ($5,175.00)" saved 1.55175 ETH, where the server, handed
+ * the same text, says it is not a number.
  */
-function sanitizeNumeric(text, { pasted = false } = {}) {
-  // The one comma that can be read mid-typing: straight after a whole part of
-  // zeros, where no thousands group can start. Dropped like the others, typing
-  // a gas fee of "0,125" left "0125" and saved $125.
-  const start = pasted
-    ? normaliseAmountText(String(text ?? ''))
-    : String(text ?? '').replace(/^(\s*[+-]?0+),/, '$1.');
-  let out = start.replace(/[^0-9.]/g, '');
-  const firstDot = out.indexOf('.');
-  if (firstDot !== -1) {
-    out = out.slice(0, firstDot + 1) + out.slice(firstDot + 1).replace(/\./g, '');
-  }
-  return out;
+function sanitizeNumeric(text) {
+  return String(text ?? '').replace(/[^0-9.,+-]/g, '');
 }
-
-/**
- * Input types that deliver a complete value rather than one more keystroke.
- * A drop and an autofill are as whole as a paste, and only a value arriving a
- * character at a time has to keep the old behaviour, because "1,5" on its way
- * to "1,500" cannot be read as a decimal comma. Dropping "32.000,00" into an
- * amount used to record a 32,000 loan as 32.
- */
-const WHOLE_VALUE_INPUT = new Set(['insertFromPaste', 'insertFromDrop', 'insertReplacementText']);
 
 // A swap's cost is more than its gas: the DEX or aggregator takes a fee too,
 // and both are typed as one dollar figure.
@@ -1066,18 +1052,26 @@ function validateField(name, raw, trade = {}) {
 
   if (value <= 0) return `${label} must be greater than zero.`;
 
-  // Matched to the server's own ceiling, so a slipped digit is caught here
-  // rather than after a round trip.
+  // The server's own bounds, both ends, so a slipped digit is caught here
+  // rather than after a round trip. Only the ceiling was matched, so a goal of
+  // $0.50 passed, its preview vanished, and Save was refused.
   if (name === 'goal_price') {
-    return value > 1_000_000 ? 'That looks like a slipped digit. The price is in dollars.' : null;
+    return priceInRange(value) ? null : 'That looks like a slipped digit. The price is in dollars.';
   }
 
-  if (name === 'sell_eth' && isNum(trade.buy_eth) && value > trade.buy_eth * 1.0001) {
-    return `You only bought ${ethQty(trade.buy_eth)} ETH.`;
+  // The price the purchase or sale implies, as the server checks it.
+  const spent = name === 'buy_eth' ? trade.buy_amount : name === 'sell_eth' ? trade.sell_amount : null;
+  if (isNum(spent) && !priceInRange(spent / value)) {
+    const shown = (spent / value).toLocaleString('en-US', { maximumSignificantDigits: 4 });
+    return `That is ${shown} ${trade.borrow_currency || 'USDC'} per ETH. Check the amount and the ETH.`;
+  }
+
+  if (name === 'sell_eth' && isNum(trade.buy_eth) && value > trade.buy_eth * SELL_OVER_BUY) {
+    return `That is more than 10% above the ${ethQty(trade.buy_eth)} ETH you bought.`;
   }
   // The same pair from the other side: cutting the purchase below what has
   // already been sold, or the loan below what has already been repaid.
-  if (name === 'buy_eth' && isNum(trade.sell_eth) && value * 1.0001 < trade.sell_eth) {
+  if (name === 'buy_eth' && isNum(trade.sell_eth) && value * SELL_OVER_BUY < trade.sell_eth) {
     return `You already sold ${ethQty(trade.sell_eth)} ETH.`;
   }
   if (name === 'borrow_amount' && isNum(trade.repay_amount)) {
@@ -1357,7 +1351,14 @@ function refreshHints(form, trade, stage) {
     // `sell_amount - repay_amount` disagreed with what the server stored: on a
     // partial sale the preview read -4,028.77 where the saved result was
     // +971.23.
-    const after = derive({ ...merged, repay_date: merged.repay_date, repay_amount: merged.repay_amount });
+    // Derived on the repayment date in the form. With the amount still blank
+    // the loan is not repaid yet and runs to `asOf`, so on today's date the
+    // hints said "36 days of loan" and suggested 30,118.36 beside a date
+    // giving 19 days and the 30,062.47 the box had just been filled with.
+    const after = derive(
+      { ...merged, repay_date: merged.repay_date, repay_amount: merged.repay_amount },
+      merged.repay_date || todayISO(),
+    );
     const days = after.days;
 
     set('repay_date', isNum(days)
@@ -1387,8 +1388,8 @@ function refreshHints(form, trade, stage) {
           ? `Net gain <strong class="${gainClass(after.netGain)}">${signedMoney(after.netGain, c)}</strong>${asSaved}`
           : realized
             ? 'Net gain <span class="muted">worked out in dollars on save</span>'
-          : isNum(d.suggestedRepay)
-            ? `Suggested ${money(d.suggestedRepay, c)} from the APR`
+          : isNum(after.suggestedRepay)
+            ? `Suggested ${money(after.suggestedRepay, c)} from the APR`
             : '');
   }
 }
@@ -3474,10 +3475,10 @@ function wire() {
     const input = e.target;
     if (!input.matches('input, select')) return;
 
-    // Keep a typed amount to digits and a single decimal point, preserving the
-    // caret. Pasting "12,000" now leaves "12000" rather than an empty field.
+    // Keep a typed amount to digits, separators and a sign, preserving the
+    // caret. Pasting "$12,000" leaves "12,000", which reads as 12000.
     if (input.dataset.numeric === '1') {
-      const cleaned = sanitizeNumeric(input.value, { pasted: WHOLE_VALUE_INPUT.has(e.inputType) });
+      const cleaned = sanitizeNumeric(input.value);
       if (cleaned !== input.value) {
         const caret = input.selectionStart - (input.value.length - cleaned.length);
         input.value = cleaned;

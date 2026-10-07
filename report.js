@@ -105,6 +105,11 @@ export function holdingText(rows, price, fxNow = {}) {
   // reason the alert line names it: "paid" is at the purchase's rate.
   let moved = 0;
   let movedKnown = false;
+  // A marked trade whose purchase rate is not known has a move nobody can
+  // state. Then the move is not given at all: "(-$1,200.00 of it from the
+  // move)" under a total of two euro trades named one trade's move as the
+  // whole of it.
+  let moveGap = false;
 
   const cells = rows.map((t) => {
     const d = derive(t, derivedOn(t));
@@ -123,7 +128,7 @@ export function holdingText(rows, price, fxNow = {}) {
         if (Number.isFinite(t.buy_fx)) {
           moved += -t.buy_amount * (today - t.buy_fx);
           movedKnown = true;
-        }
+        } else moveGap = true;
       }
     }
 
@@ -182,7 +187,7 @@ export function holdingText(rows, price, fxNow = {}) {
     // A euro loan is marked at today's rate rather than the one it was bought
     // at, and a figure has to say how it was arrived at.
     const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');
-    const move = movedKnown ? ` (${signedUsd(moved)} of it from the move since purchase)` : '';
+    const move = movedKnown && !moveGap ? ` (${signedUsd(moved)} of it from the move since purchase)` : '';
     head.push(
       `Unrealised ${escHtml(signedUsd(gain))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
     );
