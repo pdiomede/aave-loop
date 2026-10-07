@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain nine more.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the other suites gain eleven more.
 
 ### Fixed
 
@@ -41,6 +41,7 @@ Tooling:
 - **`run_myAave.sh` reinstalled everything after each release**, because a version bump made the lockfile look changed; offline that could leave nothing to start. It compares the installed packages with the lockfile instead.
 - **`make-logo.mjs` did nothing, silently, from a path with a space in it.**
 - **Four behaviours had no check**, so breaking them passed `npm run check`: the blended rate's weighting, a partial sale's cost in the coin, the CSV's formula defusing and a Telegram 429 being retried.
+- **Four form rules had no check either**: an amount of 0, and editing an earlier stage past a later one (the borrow date after the purchase, the ETH below what was sold, the loan below what was repaid).
 
 Documents:
 

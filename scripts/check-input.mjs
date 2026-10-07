@@ -138,6 +138,26 @@ check('a repayment is at least the loan and not double it', () => {
   assert.equal(validateField('repay_amount', '30098.63', { borrow_amount: 30000 }), null);
 });
 
+check('an amount must be more than zero', () => {
+  assert.equal(validateField('borrow_amount', '0'), 'Amount borrowed must be greater than zero.');
+  assert.equal(validateField('buy_eth', '0'), 'ETH purchased must be greater than zero.');
+  assert.equal(validateField('borrow_amount', '0,01'), null);
+});
+
+// The mirrors: editing an earlier stage into a conflict with a later one, which
+// only the server used to catch, naming a field that was not on screen.
+check('an earlier stage cannot be moved or cut past a later one', () => {
+  assert.equal(validateField('borrow_date', '2026-03-10', { buy_date: '2026-03-05' }), 'Borrow date cannot be after the purchase.');
+  assert.equal(validateField('borrow_date', '2026-03-05', { buy_date: '2026-03-05' }), null, 'the same day is fine');
+  // 6 ETH sold: 5 bought is too few even with Aave's 10%, 5.5 is not (6.05).
+  assert.equal(validateField('buy_eth', '5', { sell_eth: 6 }), 'You already sold 6.0000 ETH.');
+  assert.equal(validateField('buy_eth', '5.5', { sell_eth: 6 }), null);
+  // 30,100 repaid: a loan of 31,000 is more than was paid back, 10,000 under half.
+  assert.equal(validateField('borrow_amount', '31000', { repay_amount: 30100 }), 'You repaid 30,100.00, which is less than this.');
+  assert.equal(validateField('borrow_amount', '10000', { repay_amount: 30100 }), 'You repaid 30,100.00, more than double this.');
+  assert.equal(validateField('borrow_amount', '30000', { repay_amount: 30100 }), null);
+});
+
 /* --------------------------------------------------- the form's own context */
 
 check('a field is judged against what is typed beside it, not the saved trade', () => {
