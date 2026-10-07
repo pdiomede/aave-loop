@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the other suites gain sixteen more.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the other suites gain twenty-eight more.
 
 ### Fixed
 
@@ -43,6 +43,7 @@ Tooling:
 - **Four behaviours had no check**, so breaking them passed `npm run check`: the blended rate's weighting, a partial sale's cost in the coin, the CSV's formula defusing and a Telegram 429 being retried.
 - **Four form rules had no check either**: an amount of 0, and editing an earlier stage past a later one (the borrow date after the purchase, the ETH below what was sold, the loan below what was repaid).
 - **Nine of the CSV's rules had no check**: empty cells for unknown figures, quoting, CRLF, the byte order mark, oldest first, unreached stages, the rate's rounding, estimates kept apart, and the year a trade is filed under.
+- **Eighteen of `lib/calc.js`'s edge-case rules had no check**, among them impossible dates, backwards spans, unrecorded fees, the year tabs' order, open trades in Total borrowed and the loan cost's two rows adding up.
 
 Documents:
 

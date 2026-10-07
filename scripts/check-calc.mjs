@@ -24,6 +24,14 @@ import {
   summaryReport,
   derivedOn,
   intervalMs,
+  parseDate,
+  isProvisionalFx,
+  accruedInterest,
+  annualizedPct,
+  stages,
+  statsYear,
+  statsYears,
+  summarize,
 } from '../lib/calc.js';
 import { tradesCsv, csvFileName } from '../lib/csv.js';
 
@@ -464,6 +472,114 @@ check('the landing pages\' inline scripts are the ones nginx admits', () => {
 
 check('the ledger page has no inline script for the CSP to block', () => {
   assert.deepEqual(inlineScriptHashes('public/index.html'), []);
+});
+
+/* ----------------------------------------------- dates, spans and stages */
+
+check('an impossible date is not a date', () => {
+  assert.equal(parseDate('2026-02-31'), null);
+  assert.equal(parseDate('2026-02-28'), Date.UTC(2026, 1, 28));
+});
+
+check('a stand-in rate is asked about again only while its day is recent', () => {
+  // A Saturday trade on Friday's rate, asked about the Monday after: still
+  // replaceable. Eleven days on, the rate it has is the rate.
+  assert.equal(isProvisionalFx('2026-09-19', '2026-09-18', '2026-09-21'), true);
+  assert.equal(isProvisionalFx('2026-09-19', '2026-09-18', '2026-09-30'), false);
+  assert.equal(isProvisionalFx('2026-09-19', '2026-09-19', '2026-09-20'), false, 'its own day\'s rate');
+});
+
+check('a backwards span has no interest and no rate; a same-day one counts as a day', () => {
+  assert.equal(accruedInterest(1000, 4, -1), null);
+  assert.equal(annualizedPct(10, 1000, -1), null);
+  // 10 on 1,000 in a day: 1% a day, 365% a year.
+  near(annualizedPct(10, 1000, 0), 365, 'same day');
+});
+
+check('a stage with an amount of 0 is not filled in', () => {
+  assert.equal(stages(held({ buy_amount: 0 })).bought, false);
+  assert.equal(stages(held()).bought, true);
+});
+
+check('selling more ETH than was bought leaves none held, not a negative', () => {
+  // Aave's interest: 10.5 ETH sold of 10 bought.
+  assert.equal(derive(sold({ sell_eth: 10.5 }), AS_OF).retainedEth, 0);
+});
+
+check('an unrecorded fee is not a free one, and a blank Aave fee is not unrecorded', () => {
+  const none = derive(held({ borrow_gas_usd: null, buy_gas_usd: null }), AS_OF);
+  assert.equal(none.feesUsd, null);
+  assert.deepEqual(none.feesMissing, ['borrow', 'buy']);
+  // The swap fee is there and the lend fee left blank: nothing is missing.
+  assert.deepEqual(derive(held({ buy_lend_gas_usd: null }), AS_OF).feesMissing, []);
+});
+
+/* ---------------------------------------------------------- the year tabs */
+
+check('an open trade counts in the current year, and the tabs run newest first', () => {
+  const open = held({ id: 1, borrow_date: '2025-12-01', buy_date: '2025-12-01' });
+  assert.equal(statsYear(open, AS_OF), '2026');
+  const old = closed({ id: 2, borrow_date: '2024-03-01', buy_date: '2024-03-01', sell_date: '2024-03-05', repay_date: '2024-03-06' });
+  assert.deepEqual(statsYears([old, open], AS_OF), ['2026', '2024']);
+});
+
+/* --------------------------------------------------------------- Stats */
+
+// A dollar trade closed on `to`: 1,000 on 1 ETH, sold for 1,000 + gain.
+const shut = (id, to, gain, over = {}) => ({
+  id, borrow_currency: 'USDC', borrow_date: '2026-03-01', borrow_amount: 1000, borrow_apr: 0, borrow_gas_usd: 0,
+  buy_date: '2026-03-01', buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0, sell_date: to, sell_amount: 1000 + gain,
+  sell_eth: 1, sell_gas_usd: 0, repay_date: to, repay_amount: 1000, repay_gas_usd: 0, ...over,
+});
+
+check('Stats: months run newest first, and a flat trade is neither won nor lost', () => {
+  const r = summaryReport([shut(1, '2026-03-11', 50), shut(2, '2026-05-11', 0)], AS_OF);
+  assert.deepEqual(r.byMonth.map((m) => m.label), ['May 2026', 'Mar 2026']);
+  assert.equal(r.wins, 1);
+  assert.equal(r.losses, 0);
+});
+
+check('Stats: Total borrowed counts open trades; Average hold only closed ones with a result', () => {
+  // Closed in 10 days, a 2,000 loan still open, and a closed euro trade with
+  // no rate held 30 days, which has no dollar result to average.
+  const open = { id: 3, borrow_currency: 'USDC', borrow_date: '2026-09-01', borrow_amount: 2000, borrow_apr: 0 };
+  const rateless = shut(4, '2026-03-31', 10, { borrow_currency: 'EURC' });
+  const r = summaryReport([shut(1, '2026-03-11', 50), open, rateless], AS_OF);
+  assert.equal(r.totalBorrowed, 3000, '1,000 closed + 2,000 open; the euro trade has no rate');
+  assert.equal(r.avgHoldDays, 10);
+});
+
+check('Stats: a closed trade whose rate cannot be worked out is not ranked by rate', () => {
+  // Dated backwards, so annualizedPct answers null. Compared as a number it
+  // sat below every positive rate and took "smallest".
+  const odd = shut(2, '2026-02-20', 5);
+  const r = summaryReport([shut(1, '2026-03-11', 50), odd], AS_OF);
+  assert.equal(r.worstPct.id, 1);
+});
+
+check('Stats: open capital is what has not been repaid', () => {
+  // Repaid without a sale - the server refuses it, the maths must not count
+  // it as capital still out either way.
+  const repaidUnsold = held({ id: 5, repay_date: '2026-09-10', repay_amount: 30000 });
+  assert.equal(summarize([repaidUnsold], AS_OF).deployed, null);
+});
+
+check('a euro loan cost splits into interest and currency rows that add up to it', () => {
+  // Several fractional cases: the two rows as printed always sum to the cost.
+  for (const [b, r, bf, rf] of [[30000.55, 30123.99, 1.1234, 1.1412], [9999.99, 10055.5, 1.0507, 1.0731], [12345.67, 12400.01, 1.1789, 1.0923]]) {
+    const d = derive(closed({ ...eur(bf), repay_fx: rf, borrow_amount: b, repay_amount: r }), AS_OF);
+    const P = (v) => Math.round(Number(Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false })) * 100) * Math.sign(v);
+    assert.equal(P(d.interestPaidUsd) + P(d.principalFxUsd), P(d.loanCostUsd), `${b} at ${bf} to ${rf}`);
+  }
+  // One the two rates alone would miss by a cent: borrowed 9,999.99 at 1.1234
+  // ($11,233.99), repaid 10,040.99 at 1.1111 ($11,156.54), so the loan cost
+  // -$77.45 with $45.56 of it interest (41 x 1.1111). The rates give the
+  // currency -122.9999, printed -$123.00, and the rows -$77.44; what is left
+  // of the cost is -$123.01, and they add up.
+  const d = derive(closed({ ...eur(1.1234), repay_fx: 1.1111, borrow_amount: 9999.99, repay_amount: 10040.99 }), AS_OF);
+  near(d.loanCostUsd, -77.45, 'loan cost');
+  near(d.interestPaidUsd, 45.56, 'of which interest');
+  near(d.principalFxUsd, -123.01, 'of which currency');
 });
 
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);
