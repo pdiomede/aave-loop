@@ -3551,7 +3551,7 @@ function wire() {
       const drop = () => {
         // Where the row sat on screen, so focus can go to the one that takes
         // its place. Deleting replaced the Delete button and sent focus to the
-        // top of the page, as Save and Cancel did before 1.4.3.
+        // top of the page, as Save and Cancel did before 1.5.0.
         const at = [...document.querySelectorAll('.row[data-trade]')].findIndex(
           (r) => Number(r.dataset.trade) === id,
         );

@@ -6,7 +6,7 @@
  * The arithmetic has its own checks. These cover what only shows when the
  * pieces run: the rules the API enforces on a write, the message an alert
  * sends, and what the sweep does with each way a send can fail. Every one was
- * a bug found by hand and fixed in 1.4.3, and nothing else would notice it
+ * a bug found by hand and fixed in 1.5.0, and nothing else would notice it
  * coming back.
  *
  * Nothing here touches the network or data/myaave.db. The server runs as a
