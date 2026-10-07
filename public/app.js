@@ -3679,6 +3679,12 @@ function wire() {
     });
     if (ok) {
       const drop = () => {
+        // Where the row sat on screen, so focus can go to the one that takes
+        // its place. Deleting replaced the Delete button and sent focus to the
+        // top of the page, as Save and Cancel did before 1.4.3.
+        const at = [...document.querySelectorAll('.row[data-trade]')].findIndex(
+          (r) => Number(r.dataset.trade) === id,
+        );
         state.trades = state.trades.filter((t) => t.id !== id);
         writeSeq += 1;
         state.openIds.delete(id);
@@ -3690,6 +3696,14 @@ function wire() {
         if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.tradeId !== id);
         alertWriteSeq += 1;
         render();
+        // The next row, the last one if this was last, or New trade when the
+        // table is empty - and only if focus has nowhere better to be.
+        const active = document.activeElement;
+        if (!active || active === document.body) {
+          const rows = document.querySelectorAll('.row[data-trade]');
+          const next = rows.length ? rows[Math.min(Math.max(at, 0), rows.length - 1)] : null;
+          (next ?? document.getElementById('new-trade'))?.focus();
+        }
         toast('Trade deleted.');
       };
       api(`/api/trades/${id}`, { method: 'DELETE' })

@@ -55,7 +55,7 @@ A second round over the whole app, in three parts: the server, the interface in 
 - **A slow save closed whichever stage editor was open when it landed**, taking a sale typed into another card meanwhile, and a failed one wrote its error into a form no longer on screen. It closes only its own editor, and the error shows on the live form or as a toast.
 - **Escape anywhere threw away the open stage editor**, from the new trade form or a Stats tab too. It now works on the Trades view, outside the new trade card.
 - **Deleting a trade another tab had deleted left it on screen**, with "Trade not found.". The row goes, as for an alert already gone.
-- **Save, Cancel and Escape on a stage form sent keyboard focus to the top of the page.** It goes back to the stage's Edit button.
+- **Save, Cancel and Escape on a stage form, and deleting a trade, sent keyboard focus to the top of the page.** It goes back to the stage's Edit button, and after a delete to the row that took its place, or New trade when none is left.
 - **The Alerts view drew a bare "Trade #23"** for a trade added in another tab. It loads the trades when the log names one it does not have.
 - **The Alerts Trade tooltip said a new goal always adds a row.** One set over a goal still armed replaces it, and the tooltip says so.
 - **`/help` and `/watch` rounded the watch interval to minutes**, so 90 seconds read "every 2 minutes" and `/watch` said "1 minutes". They name it in minutes or seconds as set.
