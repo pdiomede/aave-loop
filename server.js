@@ -63,10 +63,11 @@ app.disable('x-powered-by');
  * trade. `frame-ancestors` is the modern form and X-Frame-Options the one
  * older browsers read, so both are sent.
  *
- * It stops at framing on purpose. A script-src policy would need
- * 'unsafe-inline' for the theme script that runs before first paint and for
- * the bar widths in the summary, and a CSP that allows inline script is most
- * of the way back to no CSP at all. Tightening it means removing those first.
+ * It stops at framing on purpose. This header goes on everything served here,
+ * and the landing page and the 404 page run inline scripts, so a script-src
+ * policy would block them whenever the app runs without nginx; in production
+ * nginx sets their policy, pinning those scripts by hash. The ledger page has
+ * no inline script (its theme runs from public/theme.js).
  */
 app.use((_req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
@@ -440,6 +441,16 @@ function checkEthPrice(patch, row) {
 const withDerived = (row) => ({ ...row, derived: derive(row) });
 
 /**
+ * A row id from the path: digits, as the page writes them, or null. Read with
+ * `Number()`, "0x1", "1e0", "+1" and "1.0" were all trade 1, so a malformed id
+ * edited, armed or deleted a real row rather than finding nothing.
+ */
+function idParam(raw) {
+  const n = /^[1-9]\d*$/.test(raw) ? Number(raw) : NaN;
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+/**
  * One writer at a time per trade.
  *
  * PATCH became asynchronous when rate lookups moved into it, so two requests
@@ -504,7 +515,8 @@ app.post('/api/trades', async (req, res, next) => {
 
 app.patch('/api/trades/:id', async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
+    const id = idParam(req.params.id);
+    if (id === null) return res.status(404).json({ error: 'Trade not found.' });
     // Validate the body before queueing, so a bad request is refused at once
     // rather than after waiting behind someone else's rate lookup.
     const patch = normalise(req.body || {}, { requireBorrow: false });
@@ -776,8 +788,8 @@ const goalInRange = priceInRange;
 
 app.put('/api/trades/:id/alert', async (req, res, next) => {
   try {
-    const id = Number(req.params.id);
-    const trade = selectOne.get(id);
+    const id = idParam(req.params.id);
+    const trade = id === null ? undefined : selectOne.get(id);
     if (!trade) return res.status(404).json({ error: 'Trade not found.' });
 
     if (derive(trade).status !== STATUS.HOLDING) {
@@ -817,7 +829,8 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
 
 /** One alert, by its own id. */
 app.delete('/api/alerts/:id', (req, res) => {
-  if (!deleteAlert(Number(req.params.id))) {
+  const id = idParam(req.params.id);
+  if (id === null || !deleteAlert(id)) {
     return res.status(404).json({ error: 'No such alert.' });
   }
   res.status(204).end();
@@ -876,13 +889,18 @@ app.post('/api/alerts/test', async (req, res, next) => {
  * figure is an ordinary state of a form and not an error.
  */
 app.get('/api/trades/:id/alert/preview', (req, res) => {
-  const id = Number(req.params.id);
-  const trade = selectOne.get(id);
+  const id = idParam(req.params.id);
+  const trade = id === null ? undefined : selectOne.get(id);
   if (!trade) return res.status(404).json({ error: 'Trade not found.' });
 
   const goal = parseAmount(req.query.goal);
-  // The save's own bounds, so the window never previews a goal it would refuse.
-  if (goal === null || !goalInRange(goal)) return res.json({ text: null });
+  // The save's own bounds, so the window never previews a goal it would refuse
+  // - the trade's as well as the goal's. Without the status test a trade sold
+  // while the window was open went on previewing a message the save then
+  // refused, and one with no purchase read "Bought: - ETH".
+  if (goal === null || !goalInRange(goal) || derive(trade).status !== STATUS.HOLDING) {
+    return res.json({ text: null });
+  }
 
   // The live price only settles which way the alert reads; the message itself
   // is written at the goal, because that is the position it will describe when
@@ -891,7 +909,8 @@ app.get('/api/trades/:id/alert/preview', (req, res) => {
 });
 
 app.delete('/api/trades/:id', (req, res) => {
-  const info = prepare('DELETE FROM trades WHERE id = ?').run(Number(req.params.id));
+  const id = idParam(req.params.id);
+  const info = id === null ? { changes: 0 } : prepare('DELETE FROM trades WHERE id = ?').run(id);
   if (info.changes === 0) return res.status(404).json({ error: 'Trade not found.' });
   res.status(204).end();
 });

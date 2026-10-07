@@ -246,6 +246,24 @@ await check('DELETE /api/alerts/ with a trailing slash deletes nothing', async (
   assert.equal((await api('GET', '/api/alerts/log')).data.alerts.length, 1);
 });
 
+await check('an id that is not plain digits reaches no row', async () => {
+  const alertId = (await api('GET', '/api/alerts/log')).data.alerts[0].id;
+  for (const id of [`0x${t2.id.toString(16)}`, `${t2.id}e0`, `${t2.id}.0`]) {
+    assert.equal((await api('PATCH', `/api/trades/${id}`, { notes: 'x' })).status, 404, id);
+    assert.equal((await api('PUT', `/api/trades/${id}/alert`, { goal_price: '4000' })).status, 404, id);
+    assert.equal((await api('GET', `/api/trades/${id}/alert/preview?goal=4000`)).status, 404, id);
+    assert.equal((await api('DELETE', `/api/trades/${id}`)).status, 404, id);
+  }
+  assert.equal((await api('DELETE', `/api/alerts/${alertId}.0`)).status, 404);
+  assert.equal((await api('GET', '/api/alerts/log')).data.alerts.length, 1);
+  assert.ok((await api('GET', '/api/trades')).data.some((t) => t.id === t2.id && t.notes == null));
+});
+
+await check('the alert preview is empty on a trade holding no ETH, as its save is refused', async () => {
+  assert.equal((await api('PUT', `/api/trades/${t1.id}/alert`, { goal_price: '4000' })).status, 400);
+  assert.equal((await api('GET', `/api/trades/${t1.id}/alert/preview?goal=4000`)).data.text, null);
+});
+
 await check('an unknown /API path answers JSON, in any case', async () => {
   const r = await api('GET', '/API/nope');
   assert.equal(r.status, 404);

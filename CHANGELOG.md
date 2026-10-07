@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
 - **Export CSV has a tooltip** saying what it downloads.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the other suites gain twenty-eight more.
+- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the other suites gain thirty more.
 
 ### Fixed
 
@@ -35,6 +35,11 @@ Interface:
 - **White on the landing page's violet buttons was 2.58:1**, under the 4.5:1 it needs. A darker violet gives 5.71:1.
 - **The ledger set real information in its faintest grey**, 2.4 to 2.6:1 in the light theme: the rate under a converted figure, the "of which" labels, a field's unit, the `?` hint and "Not yet.". They use the muted grey, 4.2:1 and up; the faint one is for decoration.
 - **The nav told a screen reader nothing about which view was showing**: only the underline marked it. The current tab carries `aria-current="page"`, as the pager's current page already did.
+
+API:
+
+- **An id that was not plain digits reached a real row**: `/api/trades/0x1`, `1e0` or `1.0` edited, armed or deleted trade 1. It now finds nothing.
+- **The alert window previewed a message for a trade no longer holding ETH**, one the save then refused. It previews none.
 
 Tooling:
 
