@@ -24,6 +24,7 @@ Statement:
 Figures:
 
 - **Totals and cards did not add up from their lines**, missing by a cent: By month closed came to $8,156.72 under $8,156.71, and so did about one euro trade card in four, Telegram's `/holding` and two fees of 1.005. Every figure is now built from amounts as printed.
+- **The CSV's gas columns did not add up to its fees_usd** when a fee had three decimals. Amounts and fees are written as printed.
 
 Interface:
 

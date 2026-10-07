@@ -296,6 +296,15 @@ check('the CSV rounds 1.005 to 1.01, as the page prints it', () => {
   assert.equal(row[head.indexOf('net_gain_usd')], '-1,01');
 });
 
+check('the CSV\'s gas columns add up to its fees_usd', () => {
+  // Two fees typed as 1.005, which the cards print $1.01 each and fees_usd
+  // counts as 2.02. Written as typed, the columns read 1,005 and 1,005.
+  const t = { ...flat(1.005), borrow_gas_usd: 1.005 };
+  const [head, row] = tradesCsv([t]).trim().split(/\r?\n/).map((l) => l.split(';'));
+  assert.equal(row[head.indexOf('borrow_gas_usd')], '1,01');
+  assert.equal(row[head.indexOf('fees_usd')], '2,02');
+});
+
 check('a timer interval from the environment stays where a timer can use it', () => {
   assert.equal(intervalMs(undefined, 3600000), 3600000);
   assert.equal(intervalMs('abc', 3600000), 3600000);
