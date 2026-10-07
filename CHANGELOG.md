@@ -3,34 +3,42 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.4.3] - 2026-10-07
 
 ### Changed
 
+- **Currency comes before Amount borrowed** on the borrow form, so the amount's unit is set before it is typed.
+- **Gas on the borrow and the repayment is optional.** A fee left blank is saved as not recorded and its card says so; 0 still means none was paid.
+- **The swap fee is now Costs & Fees (swap)**, on the purchase and the sale: gas plus the DEX or aggregator fee, as one dollar figure. Still required.
 - **The Telegram alert reads more clearly.** "ETH reached your goal" whichever way it moved, the value lines set apart by a blank line, and a new **Gain (%)** over what the ETH cost beside **Gain ($)**. The alert and `/holding` say "fees", not "gas", since the figure carries the swaps' DEX fees too.
 
 ### Fixed
 
+- **The Total fees paid tooltip said gas only**, though the total also carries the swaps' DEX and aggregator fees. It now names them.
+
+Telegram and alerts:
+
 - **An alert whose send failed was retried only if ETH was past the goal again**, so a dip that came back left it armed with no message sent. It is now retried every check, up to three times, and keeps the price that triggered it.
 - **A bot reply sent as plain text showed `&lt;` and `&amp;`** where the values had `<` and `&`. The HTML fallback now unescapes them.
 - **A huge or negative bot timing setting made the bot poll in a 1 ms loop.** `MYAAVE_BOT_POLL_S`, `MYAAVE_BOT_LEASE_MS`, `MYAAVE_BOT_LEASE_RETRY_MS` and `MYAAVE_WATCH_MS` are now bounded like the other intervals.
-- **The Total fees paid tooltip said gas only**, but since 1.4.3 the total also carries the swaps' DEX and aggregator fees. It now names them.
+- **`/help` said `/watch` sends every 20 minutes** whatever `MYAAVE_WATCH_MS` set. It names the interval in use.
 
 Three audits, of input checks, of the math and of the database, each finding reproduced before its fix and re-run after. `npm run check` is at 37.
 
 Input checks:
 
 - **A typed decimal comma was dropped.** "3,20" saved a $320 fee and "32.000,00" a loan of 32, and on a phone whose decimal keypad offers only "," every decimal was multiplied. The form keeps the separators and the server's parser reads the finished figure.
-- **A paste the parser refuses was cut down to a number it accepts.** "1.5 ETH ($5,175.00)" saved 1.55175 ETH. It now says the field is not a number, as the server does.
+- **A paste the parser refuses was cut down to a number it accepts.** "1.5 ETH ($5,175.00)" saved 1.55175 ETH, and a typed "1e5" saved 15. Both now say the field is not a number, as the server does.
 - **Nothing checked the ETH price a purchase or sale implies.** 25,000 for 80,773 ETH stored ETH at $0.31. Both sides now refuse a price outside $1 to $1,000,000.
 - **Selling ETH withdrawn from Aave with its interest was refused.** Only 0.01% over the purchase was allowed, two days of supply interest. A sale may run 10% over.
 - **The form accepted an alert goal under $1** that the save refused. Both use one range.
 
-Math:
+Math and Stats:
 
 - **A sale within 0.01% of the purchase showed as a full exit with a partial cost.** 9.9995 of 10 ETH read +$3,001.50 under a card adding to +$3,000.00. It takes off the whole purchase now.
 - **The repayment preview counted to today with the amount blank.** It said 36 days and suggested 30,118.36 beside a date giving 19 days and 30,062.47. It uses the date in the form.
 - **`/holding` gave the euro's move for some trades under the total of all.** With a purchase rate missing, it now leaves the move out.
+- **By month closed drew every bar short when no month reached a dollar.** +$0.40 filled 40% of its bar. The largest month fills it now.
 
 Database:
 
@@ -39,14 +47,6 @@ Database:
 - **A failed alert send could be counted over a failure the other copy recorded**, so the alert retried past its three tries. The count is kept in SQL.
 
 Measured at 200 and 5,000 trades, every query already uses an index and nothing on the read or write path is worth changing at a personal ledger's size.
-
-## [1.4.3] - 2026-10-07
-
-### Changed
-
-- **Currency comes before Amount borrowed** on the borrow form, so the amount's unit is set before it is typed.
-- **Gas on the borrow and the repayment is optional.** A fee left blank is saved as not recorded and its card says so; 0 still means none was paid.
-- **The swap fee is now Costs & Fees (swap)**, on the purchase and the sale: gas plus the DEX or aggregator fee, as one dollar figure. Still required.
 
 ## [1.4.2] - 2026-10-03
 

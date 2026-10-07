@@ -960,7 +960,14 @@ const EARLIEST_DATE = '2015-07-30';
  * the same text, says it is not a number.
  */
 function sanitizeNumeric(text) {
-  return String(text ?? '').replace(/[^0-9.,+-]/g, '');
+  const s = String(text ?? '');
+  // An exponent stays, so the parser can refuse it as the server does.
+  // Stripped like any other letter, "1e5" became 15 and was saved. Only an
+  // "e" straight after a digit - "1e", "1e5", "2E-3" - so the "E" of a pasted
+  // "12,000 EURC" still goes. A trailing one is kept because the digit after
+  // it has not been typed yet.
+  const exponent = /\d[eE][+-]?(?:\d|$)/.test(s);
+  return s.replace(exponent ? /[^0-9.,+\-eE]/g : /[^0-9.,+-]/g, '');
 }
 
 // A swap's cost is more than its gas: the DEX or aggregator takes a fee too,
@@ -2082,7 +2089,12 @@ function currencyTable(rows) {
 
 function monthTable(rows) {
   if (rows.length === 0) return `<p class="muted">No trades have been closed yet.</p>`;
-  const peak = Math.max(...rows.map((r) => Math.abs(r.netGain)), 1);
+  // The largest month fills its bar, as the Share tooltip says. A floor of $1
+  // drew every bar short on a ledger whose months all netted under a dollar -
+  // +$0.40 at 40% - and a month that prints as $0.00 does not set the scale
+  // either, or a ledger of them drew full-width bars beside "$0.00".
+  const peak =
+    Math.max(...rows.map((r) => (printsZero(r.netGain, USD_DP) ? 0 : Math.abs(r.netGain)))) || 1;
   return `<table class="table table--flush">
     <thead>
       <tr>

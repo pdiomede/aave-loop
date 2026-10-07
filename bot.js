@@ -292,7 +292,7 @@ async function textFor(command) {
       // Including /help and /start. Telegram sends /start by itself when a chat
       // with a bot is first opened, and an unknown command in your own group
       // reads as a broken bot, so both get the list.
-      return helpText();
+      return helpText(Math.round(WATCH_MS / 60000));
   }
 }
 

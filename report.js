@@ -264,14 +264,18 @@ export function summaryText(s) {
 
 /* -------------------------------------------------------------------- help */
 
-export function helpText() {
+/**
+ * `watchMinutes` is the interval the bot actually sends `/watch` at, which
+ * `MYAAVE_WATCH_MS` can change; this said "every 20 minutes" regardless.
+ */
+export function helpText(watchMinutes = 20) {
   return [
     '<b>Aave Loop</b>',
     '',
     '/price - ETH now, with 24h, 7d and 30d change',
     '/holding - open positions, one line each',
     '/summary - realized gain, annualized, closed and open',
-    '/watch - send the price every 20 minutes',
+    `/watch - send the price every ${watchMinutes} minute${watchMinutes === 1 ? '' : 's'}`,
     '/unwatch - stop the price updates',
   ].join('\n');
 }
