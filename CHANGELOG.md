@@ -49,7 +49,7 @@ Database:
 
 Measured at 200 and 5,000 trades, every query already uses an index and nothing on the read or write path is worth changing at a personal ledger's size.
 
-`npm run check` also runs `scripts/check-server.mjs`: 20 checks of the API's write rules, the alert message, the sweep's handling of every kind of failed send, and the bot's reports, against the real server on a throwaway database with Telegram and the price service mocked. Run against the code from before these fixes, 8 of them fail.
+`npm run check` also runs `scripts/check-input.mjs`: 18 checks of how the forms read a typed or pasted figure and what they accept, on `lib/input.js`, where `sanitizeNumeric`, `validateField` and the field labels moved out of `public/app.js` so the browser and the checks run the same file. With the sanitizer as it was before 1.4.3, 7 of them fail. And it runs `scripts/check-server.mjs`: 20 checks of the API's write rules, the alert message, the sweep's handling of every kind of failed send, and the bot's reports, against the real server on a throwaway database with Telegram and the price service mocked. Run against the code from before these fixes, 8 of them fail.
 
 A second round over the whole app, in three parts: the server, the interface in a browser, and Telegram, alerts and the math. The server's fuzz of 3,500 requests found no 500 and no broken invariant. `npm run check` is at 38.
 
@@ -62,7 +62,7 @@ A second round over the whole app, in three parts: the server, the interface in 
 - **Save on one form did nothing while another form was saving**, with no sign why: the alert window's Save while a euro stage waited on its rate, or Create trade. Each form has its own lock now, and a stage reply overtaken by a later save of the same trade no longer puts the row back.
 - **The Alerts view drew a bare "Trade #23"** for a trade added in another tab. It loads the trades when the log names one it does not have.
 - **The Alerts Trade tooltip said a new goal always adds a row.** One set over a goal still armed replaces it, and the tooltip says so.
-- **`/help` and `/watch` rounded the watch interval to minutes**, so 90 seconds read "every 2 minutes" and `/watch` said "1 minutes". They name it in minutes or seconds as set.
+- **`/help` and `/watch` rounded the watch interval to minutes**, so 90 seconds read "every 2 minutes" and `/watch` said "1 minutes". They name it in minutes or seconds as set, and the interval is at least a minute: the bot comes round every 50 seconds, so a shorter one could not be kept.
 - **The comment on Gain (%) described a dollar figure it does not compute.** It is the return in the coin spent, both sides at today's rate. The comment says so, and a euro case is checked.
 - **A reached alert was used up when Telegram's setup was wrong.** A revoked token, a bot removed from the group or a chat id that names nothing marked it fired with an error, and fixing config.env never sent it. It now waits, armed with the reason on the card, and goes on the first check after the fix. A refusal of the message itself is still final.
 - **`DELETE /api/alerts/` with a trailing slash deleted every alert.** The delete-all route is strict now, and the slash gets the 404.

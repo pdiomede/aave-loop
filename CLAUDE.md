@@ -10,14 +10,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./run_myAave.sh --port 3011  # a specific port
 ./resetDatabase.sh           # empty the ledger; asks twice, backs up to data/backups
 npm start                    # node server.js, no port hunting
-npm run check                # scripts/check-calc.mjs, then scripts/check-server.mjs
+npm run check                # scripts/check-calc.mjs, check-input.mjs, then check-server.mjs
 ```
 
 **There is no test framework, no linter and no build step.** Nothing is transpiled;
-the files on disk are the files that run. `npm run check` runs two scripts.
+the files on disk are the files that run. `npm run check` runs three scripts.
 `scripts/check-calc.mjs` covers the estimate math in `lib/calc.js` against hand-worked
 figures on a fixed date; add a case there when you change a formula, with the expected
 value worked out from the inputs rather than by calling the function again.
+`scripts/check-input.mjs` covers `lib/input.js` - how a typed or pasted figure is read
+and what the forms accept - typing each figure a keystroke at a time as the page does;
+add a case there when you change an input rule.
 `scripts/check-server.mjs` starts the real server as a child on a free port, against a
 database in a temp directory with Telegram and the price service mocked on loopback,
 and checks the API's write rules, the alert message, every way the alert sweep handles
@@ -120,6 +123,10 @@ sort, Telegram's `/holding` and the alert message all print it, so one trade nev
 reads two ways. It takes the ETH price and today's rate per coin as arguments rather
 than fetching them, which is what keeps it in `lib/`. It is the one place an open
 position is marked to today's exchange rate; `derive`'s own figures never are.
+
+`lib/input.js` is the forms' input half - `sanitizeNumeric`, `validateField`, the field
+labels - out of `public/app.js` so it can be checked; like `lib/csv.js` it imports
+`calc.js` and nothing else, and keeps no DOM.
 
 `fx.js`, `eth.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
 `report.js` and `format.js` sit at the root **because they are server-only** — the

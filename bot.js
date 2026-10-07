@@ -68,7 +68,11 @@ const MAX_AGE_S = Number(process.env.MYAAVE_BOT_MAX_AGE_S) || 600;
 
 // Added to the clock and written as a date, which throws past year 275760, so
 // bounded the same way.
-const WATCH_MS = intervalMs(process.env.MYAAVE_WATCH_MS, 1_200_000);
+//
+// And at least a minute. The report goes out from the poll loop, which comes
+// round once a long poll returns - every 50 seconds when nobody is typing - so
+// "every 20 seconds" was a promise the bot could not keep.
+const WATCH_MS = Math.max(intervalMs(process.env.MYAAVE_WATCH_MS, 1_200_000), 60_000);
 
 /**
  * The interval in words, for /help and the /watch reply alike. Rounded to whole
