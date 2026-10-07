@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Export CSV has a tooltip** saying what it downloads.
 - **`npm run check` runs a fourth suite**, 13 checks of the statement, and the calc and server suites gain five more.
 - **The README is 44% shorter** and corrected: four check suites, the Statement, ten alerts to a page, 7.2% (not 7%) over three days reading 876%, and a profitable partial exit, not any, never shown as a loss.
+- **`config.env.example` called `TELEGRAM_CHAT_ID` the only chat the bot answers**, and a private chat the only way to the Menu button; `TELEGRAM_OWNER_ID` gives both. It says so, and that the chat name is in the test message too.
 
 ### Fixed
 
