@@ -25,6 +25,10 @@ A last pass over the Stats math, every figure checked against hand-worked ledger
 
 - **Totals did not add up from the lines under them.** A total added fractions of a cent and rounded once, so a ledger's By month closed rows came to $8,156.72 under a Realized net gain of $8,156.71. Every money total now adds each trade's figure as printed, on Stats, the statement and the header's estimate.
 
+An audit of the History page math - the forms' previews, the stage cards and the table - against 4,000 random closed trades. One bug, the same one on the cards:
+
+- **A stage card's lines did not add up to its result.** On about one euro trade in four, Gross gain less Loan cost and fees missed the Net gain by a cent, as did Received less the cost and the two "of which" rows; and gas typed to three decimals did it on any coin, two fees of 1.005 printing $1.01 each over a Total fees paid of $2.01. Every amount, conversion and fee is now taken to the cent as printed, so each card adds up, and the table and Stats show the same figures.
+
 ## [1.5.0] - 2026-10-07
 
 ### Changed

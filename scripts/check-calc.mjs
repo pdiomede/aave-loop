@@ -189,11 +189,13 @@ check('partial euro sale falls back to its stored rates without today\'s', () =>
 
 check('selling a sliver of a euro position moves its estimate by the sliver only', () => {
   // 0.01 ETH sold at today's price, no gas on the sale: closing today should
-  // come to the same thing either way.
-  const fx = { EURC: 1.17 };
+  // come to the same thing either way. At 1.15 the sliver's $34.50 is exactly
+  // 30.00 EURC, a figure a card can print; at 1.17 it was 29.487179..., which
+  // the Sold card shows as 29.49.
+  const fx = { EURC: 1.15 };
   const before = est(held(eur(1.05)), PRICE, fx);
-  const after = est(sold({ ...eur(1.05), sell_amount: (0.01 * PRICE) / 1.17, sell_eth: 0.01, sell_gas_usd: 0 }), PRICE, fx);
-  near(before, 10 * PRICE - (30000 + INTEREST) * 1.17 - 8, 'held');
+  const after = est(sold({ ...eur(1.05), sell_amount: 30, sell_eth: 0.01, sell_gas_usd: 0 }), PRICE, fx);
+  near(before, 10 * PRICE - (30000 + INTEREST) * 1.15 - 8, 'held');
   near(after, before, 'after the sliver');
 });
 
@@ -213,12 +215,14 @@ check('a closed trade has its result, not an estimate', () => {
   const d = derive(closed(), AS_OF);
   assert.equal(hasEstimate(d), false);
   assert.equal(estimatedGainUsd(closed(), d, PRICE, {}), null);
-  near(d.netGainUsd, 33000 - 30000 - INTEREST - 12, 'net gain');
+  // Repaid 30,098.630137..., which the Repaid card prints 30,098.63: the result
+  // is what the card adds up to, 33,000 - 30,098.63 - 12.
+  near(d.netGainUsd, 2889.37, 'net gain');
 });
 
 check('a closed partial sale is the gain on the ETH sold, nothing more', () => {
   const t = closed({ sell_amount: 21000, sell_eth: 6 });
-  near(derive(t, AS_OF).netGainUsd, 21000 - 18000 - INTEREST - 12, 'net gain');
+  near(derive(t, AS_OF).netGainUsd, 21000 - 18000 - 98.63 - 12, 'net gain'); // interest as printed
 });
 
 check('a loan with nothing bought holds no position to value', () => {
@@ -326,8 +330,9 @@ check('a half cent is a cent in a total, as the page prints it', () => {
   // A fee of 1.005 prints $1.01; multiplying by 100 first rounded it to 1.00.
   const r = summaryReport([cent(1, '03', { buy_gas_usd: 1.005 }), cent(2, '04', { buy_gas_usd: 1.005 })], AS_OF);
   assert.equal(r.feesPaid, 2.02);
-  // 1,100 - 1,000 - 1.005 = 98.995, which the page prints $99.00.
-  assert.equal(r.netGain, 198);
+  // Each card: Gross +100.00, less the fee it prints, $1.01, is $98.99. Taking
+  // off the raw 1.005 left 98.995, printed $99.00 under lines adding to 98.99.
+  assert.equal(r.netGain, 197.98);
 });
 
 check('the header\'s estimate is the sum of the positions under it', () => {

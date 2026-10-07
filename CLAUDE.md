@@ -222,11 +222,14 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   and `signOf` in `format.js` exist for this; `pctClass`/`gainClass` are the colour
   half. This rule has been broken and re-fixed several times — check it whenever you
   touch a formatter.
-- **A money total is the sum of its lines as printed.** Every total in `summarize`,
-  `summaryReport` and `openGainsUsd` adds `cents(v)` - each figure rounded by the
-  page's own formatter - never the raw floats, so By month closed and By currency
-  add up to Realized net gain to the cent. Summed raw and rounded once, they drifted
-  apart by a cent on nearly half of random ledgers. A new total follows the same rule.
+- **A money figure is built from figures as printed.** `derive` takes every amount,
+  dollar conversion and fee to the cent as its card prints it (`asPrinted`), and
+  every result is a difference of those, so a stage card adds up line by line; the
+  currency effect is what is left of the loan cost after the interest. Every total in
+  `summarize`, `summaryReport` and `openGainsUsd` then adds `cents(v)`, never raw
+  floats, so By month closed and By currency add up to Realized net gain. Rounded
+  only at the end, cards missed their result by a cent on a quarter of euro trades and
+  totals their rows on nearly half of random ledgers. New figures follow the same rule.
 - **A figure and its label must describe the same thing.** A number that is
   arithmetically correct under a label describing something else is a bug here.
 - **Exchange rates are resolved server-side and never accepted from a request.** A
