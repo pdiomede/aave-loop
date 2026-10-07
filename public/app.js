@@ -1076,7 +1076,7 @@ function validateField(name, raw, trade = {}) {
   const spent = name === 'buy_eth' ? trade.buy_amount : name === 'sell_eth' ? trade.sell_amount : null;
   if (isNum(spent) && !priceInRange(spent / value)) {
     const shown = (spent / value).toLocaleString('en-US', { maximumSignificantDigits: 4 });
-    return `That is ${shown} ${trade.borrow_currency || 'USDC'} per ETH. Check the amount and the ETH.`;
+    return `That is ${shown} ${unitOf(trade)} per ETH. Check the amount and the ETH.`;
   }
 
   if (name === 'sell_eth' && isNum(trade.buy_eth) && value > trade.buy_eth * SELL_OVER_BUY) {
@@ -1130,7 +1130,7 @@ const coinIcon = (c) =>
     ? `<img class="coin coin--art coin--sm" src="${COIN_ART[c]}" alt="" width="20" height="20" />`
     : `<span class="coin coin--sm" aria-hidden="true">${esc(String(c).slice(0, 1))}</span>`;
 
-// The full name beside the ticker, unless it is the ticker again (GHO).
+// The full name beside the ticker, unless it is the ticker again.
 const coinFace = (c) => {
   const label = CURRENCY_META[c]?.label ?? '';
   return (
@@ -1346,7 +1346,9 @@ const actions = (submitLabel, cancelAttr) => `
 
 // Amounts on a trade are denominated in the coin that was borrowed, so the
 // fields carry that ticker rather than a dollar sign.
-const unitOf = (t) => t.borrow_currency || 'USDC';
+// A new trade starts on the first coin in the picker, so its Amount field
+// carries that ticker until another is picked.
+const unitOf = (t) => t.borrow_currency || CURRENCIES[0];
 
 // The one figure on a stage that is not in the borrowed coin: gas is what the
 // transaction cost, typed in dollars whatever was borrowed, so it carries a
@@ -1357,7 +1359,7 @@ const gasField = (t, name, label, tip, required = false) =>
 function borrowFields(t = {}) {
   return `<div class="grid">
     ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened on Aave.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
-    ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The stablecoin you borrowed.', value: t.borrow_currency || 'USDC', options: CURRENCIES })}
+    ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The stablecoin you borrowed.', value: unitOf(t), options: CURRENCIES })}
     ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed from Aave.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
     ${field({ name: 'borrow_apr', label: 'Borrow APR', tip: 'Borrow rate on the day, as a percent.', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
     ${gasField(t, 'borrow_gas_usd', 'Gas fee', 'Gas paid to borrow, in USD. Optional.')}
