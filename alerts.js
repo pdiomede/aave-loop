@@ -25,12 +25,12 @@
  * a partial unique index in db.js.
  */
 import { db, prepare } from './db.js';
-import { derive, derivedOn, estimatedGainUsd, estimateRate, isUsdPegged, todayISO, intervalMs } from './lib/calc.js';
+import { derive, derivedOn, estimatedGainUsd, estimatedGainPct, estimateRate, isUsdPegged, todayISO, intervalMs } from './lib/calc.js';
 import { resolveRate, cachedRate } from './fx.js';
 import { ethPrice } from './eth.js';
 import { sendTelegramMessage } from './telegram.js';
 import { telegramConfig } from './config.js';
-import { n2, n4, fmtDate, signedUsd } from './format.js';
+import { n2, n4, fmtDate, signedUsd, signedPct2 } from './format.js';
 
 /**
  * Fifteen minutes. The price is checked on a schedule rather than watched, and
@@ -259,7 +259,9 @@ export function deleteAllAlerts() {
 /**
  * What lands in the group. Written to be read on a phone, at a glance, by
  * someone who has not opened the ledger: the headline first, then enough of
- * the trade to know which one it is without going and looking.
+ * the trade to know which one it is without going and looking, then - after a
+ * blank line, so the two blocks do not run together - what it is worth and
+ * what it would make.
  *
  * It carries the trade's figures because that is what was asked for. Worth
  * remembering that a group is a room full of other people, and the alert
@@ -273,8 +275,6 @@ export function deleteAllAlerts() {
 export function alertMessage(trade, alert, price, fxNow = {}) {
   const d = derive(trade, derivedOn(trade));
   const c = trade.borrow_currency;
-  const verb = alert.direction === 'above' ? 'hit' : 'fell to';
-
   // The price is only worth stating when it is not the goal, which it usually
   // is not: a check every quarter hour finds the market somewhere past it. In
   // the window, where the two are equal by construction, saying it twice read
@@ -282,7 +282,9 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
   const at = n2(price) === n2(alert.goal_price) ? '' : ` - now $${n2(price)}`;
 
   const lines = [
-    `ETH ${verb} your $${n2(alert.goal_price)} goal${at}`,
+    // "Reached" either way. "Fell to" read as bad news on a goal set below
+    // the price, which is often the one somebody is waiting to buy at.
+    `ETH reached your $${n2(alert.goal_price)} goal${at}`,
     '',
     `Trade #${trade.id}: borrowed ${n2(trade.borrow_amount)} ${c} on ${fmtDate(trade.borrow_date)}`,
     `Bought: ${n4(trade.buy_eth)} ETH`,
@@ -290,11 +292,13 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
 
   if (typeof d.buyPriceUsd === 'number') lines.push(`Purchase price: $${n2(d.buyPriceUsd)}`);
 
+  const value = [];
+
   // Worth stands on its own line, so it can still be stated on a trade whose
   // rate is missing: what the ETH is worth needs no exchange rate, while the
   // gain underneath it is measured against a cost basis that does.
   if (Number.isFinite(d.ethHeld) && Number.isFinite(price)) {
-    lines.push(`Worth now: $${n2(d.ethHeld * price)}`);
+    value.push(`Worth now: $${n2(d.ethHeld * price)}`);
   }
 
   const gain = estimatedGainUsd(trade, d, price, fxNow);
@@ -306,10 +310,11 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
     // Through `signedUsd` rather than a sign built here from the held value,
     // which put a minus on a gain too small to show: a goal typed a fraction
     // of a cent below break-even previewed as `Gain: -$0.00`.
-    // The gas already paid is deducted too, so it is named too, for the same
-    // reason the interest is. Left off when nothing was recorded, rather than
-    // claiming a $0.00 deduction nobody measured.
-    const gas = Number.isFinite(d.feesUsd) ? ` and $${n2(d.feesUsd)} gas` : '';
+    // The fees already paid are deducted too, so they are named too, for the
+    // same reason the interest is. "Fees", not "gas": the swaps' figure carries
+    // the DEX's own fee as well. Left off when nothing was recorded, rather
+    // than claiming a $0.00 deduction nobody measured.
+    const fees = Number.isFinite(d.feesUsd) ? ` and $${n2(d.feesUsd)} fees` : '';
     // The interest named is the interest taken off, so it is converted at the
     // rate the gain was: today's for a euro loan when it is known, which the
     // line then says, rather than the borrow day's figure from the card.
@@ -318,7 +323,7 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
     const interestUsd = marked ? d.accruedInterest * rate : d.accruedInterestUsd;
     // And what the move since the purchase did, because the lines above price
     // the purchase at the rate it was made at: without it "Worth now" less
-    // that cost, the interest and the gas came to +$2,876.60 above a gain of
+    // that cost, the interest and the fees came to +$2,876.60 above a gain of
     // -$723.40, the missing $3,600 being 30,000 EURC from 1.05 to 1.17.
     const moved =
       marked && Number.isFinite(trade.buy_fx) ? -trade.buy_amount * (rate - trade.buy_fx) : null;
@@ -327,8 +332,13 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
       : moved === null
         ? ` (${c} at ${rate.toFixed(4)} today)`
         : ` (${c} at ${rate.toFixed(4)} today, bought at ${trade.buy_fx.toFixed(4)}: ${signedUsd(moved)})`;
-    lines.push(`Gain: ${signedUsd(gain)} after $${n2(interestUsd)} interest${gas}${at}`);
+    // The same gain over what the ETH cost, signed the way the dollars are.
+    const pct = estimatedGainPct(trade, d, price, fxNow);
+    if (pct !== null) value.push(`Gain (%): ${signedPct2(pct)}`);
+    value.push(`Gain ($): ${signedUsd(gain)} after $${n2(interestUsd)} interest${fees}${at}`);
   }
+
+  if (value.length) lines.push('', ...value);
 
   return lines.join('\n');
 }
@@ -385,9 +395,12 @@ async function fire(row, price) {
   // read before the price lookup and every earlier send, which together can
   // take a quarter of a minute, and a sale recorded in that window still sent
   // the alert: a goal message for a position that no longer existed.
+  //
+  // A retry keeps the time and price of the first claim. They say when the goal
+  // was reached, and the retry goes out later, at whatever ETH costs by then.
   const claimed = prepare(`
-    UPDATE alerts SET status = 'fired', fired_at = @now, fired_price = @price,
-      last_error = NULL, updated_at = @now
+    UPDATE alerts SET status = 'fired', fired_at = COALESCE(fired_at, @now),
+      fired_price = COALESCE(fired_price, @price), last_error = NULL, updated_at = @now
     WHERE id = @id AND status = 'armed'
       AND EXISTS (SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING})
   `).run({ id: row.id, price, now });
@@ -417,8 +430,7 @@ async function fire(row, price) {
     // when the goal was reached, which is true however the send went, and an
     // alert that gives up after three tries needs them to say what it was
     // trying to tell you - blanking them left the window reading "Reached ,
-    // but the message could not be sent". A row back at 'armed' ignores them,
-    // and re-firing overwrites them.
+    // but the message could not be sent". The retry's claim keeps them too.
     // Keyed on the alert, not the trade. With history in the table a trade can
     // have many, and `WHERE trade_id` would rewrite the status and the error
     // across every alert ever set on it - putting fired ones back to armed and
@@ -509,7 +521,13 @@ export async function runAlertSweep() {
 
     let fired = 0;
     for (const row of armed) {
-      if (!reached(row, quote.price)) continue;
+      // A row with attempts on it already reached its goal and is only waiting
+      // for the message to go through, so it is sent whatever ETH costs now.
+      // Gated on the price like a fresh one, a send that timed out was retried
+      // only if ETH happened to be past the goal again a quarter of an hour
+      // later: a dip that came back never got its message, and the card went on
+      // calling the alert armed.
+      if (!(row.attempts > 0) && !reached(row, quote.price)) continue;
       // Each one on its own. The catch below covers the pass, so anything
       // thrown here used to abandon every alert still to be looked at - and
       // the one that threw had already been claimed, which is to say marked

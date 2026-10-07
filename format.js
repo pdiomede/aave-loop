@@ -70,6 +70,10 @@ export const pct1 = (v) =>
 
 export const pct2 = (v) => (isNum(v) ? `${signOf(v, 2)}${Math.abs(v).toFixed(2)}%` : MISSING);
 
+/** `pct2` with the plus `signedUsd` puts on a gain, for a percentage printed beside one. */
+export const signedPct2 = (v) =>
+  isNum(v) ? `${plusOf(v, 2)}${Math.abs(v).toFixed(2)}%` : MISSING;
+
 export const padLeft = (s, w) => String(s).padStart(w, ' ');
 export const padRight = (s, w) => String(s).padEnd(w, ' ');
 

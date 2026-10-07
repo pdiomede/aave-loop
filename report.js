@@ -174,10 +174,11 @@ export function holdingText(rows, price, fxNow = {}) {
     const caveat = unpriced
       ? ` (${unpriced} without an exchange rate ${unpriced === 1 ? 'is' : 'are'} not counted)`
       : '';
-    // The estimate takes the gas already paid off too, and a figure has to
+    // The estimate takes the fees already paid off too, and a figure has to
     // be described by what was actually taken from it: "after interest" alone
-    // under a total that is also after gas named one deduction and hid one.
-    const less = gassed ? 'interest and gas' : 'interest';
+    // under a total that is also after fees named one deduction and hid one.
+    // "Fees", not "gas": the swaps' figure carries the DEX's own fee as well.
+    const less = gassed ? 'interest and fees' : 'interest';
     // A euro loan is marked at today's rate rather than the one it was bought
     // at, and a figure has to say how it was arrived at.
     const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');

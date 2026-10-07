@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **The Telegram alert reads more clearly.** "ETH reached your goal" whichever way it moved, the value lines set apart by a blank line, and a new **Gain (%)** over what the ETH cost beside **Gain ($)**. The alert and `/holding` say "fees", not "gas", since the figure carries the swaps' DEX fees too.
+
+### Fixed
+
+- **An alert whose send failed was retried only if ETH was past the goal again**, so a dip that came back left it armed with no message sent. It is now retried every check, up to three times, and keeps the price that triggered it.
+- **A bot reply sent as plain text showed `&lt;` and `&amp;`** where the values had `<` and `&`. The HTML fallback now unescapes them.
+- **A huge or negative bot timing setting made the bot poll in a 1 ms loop.** `MYAAVE_BOT_POLL_S`, `MYAAVE_BOT_LEASE_MS`, `MYAAVE_BOT_LEASE_RETRY_MS` and `MYAAVE_WATCH_MS` are now bounded like the other intervals.
+- **The Total fees paid tooltip said gas only**, but since 1.4.3 the total also carries the swaps' DEX and aggregator fees. It now names them.
+
 ## [1.4.3] - 2026-10-07
 
 ### Changed

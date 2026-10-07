@@ -27,19 +27,25 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { db, prepare } from './db.js';
 import { telegramConfig } from './config.js';
+import { intervalMs } from './lib/calc.js';
 import { sendTelegramMessage } from './telegram.js';
 import { priceMessage, watchMessage, holdingMessage, summaryMessage, helpText } from './report.js';
 
 const OFF = process.env.MYAAVE_BOT_OFF === '1';
 
-/** Telegram holds a long poll open this long before answering with nothing. */
-const POLL_S = Number(process.env.MYAAVE_BOT_POLL_S) || 50;
+/**
+ * Telegram holds a long poll open this long before answering with nothing.
+ * Kept to 1-50 seconds: the abort guard below is a timer built from it, and a
+ * huge value made that a 1 ms timer, so every poll was aborted as it left and
+ * the loop - which does not wait after an abort - asked again at once, forever.
+ */
+const POLL_S = Math.min(Math.max(Math.round(Number(process.env.MYAAVE_BOT_POLL_S)) || 50, 1), 50);
 
 /**
  * Long enough to outlive a whole poll several times over, so a holder that is
  * simply waiting is never mistaken for one that has died.
  */
-const LEASE_MS = Number(process.env.MYAAVE_BOT_LEASE_MS) || Math.max(POLL_S * 3000, 120_000);
+const LEASE_MS = intervalMs(process.env.MYAAVE_BOT_LEASE_MS, Math.max(POLL_S * 3000, 120_000));
 
 /**
  * How long an instance without the lease waits before asking for it again.
@@ -49,7 +55,9 @@ const LEASE_MS = Number(process.env.MYAAVE_BOT_LEASE_MS) || Math.max(POLL_S * 30
  * restarted. Commands are not lost meanwhile - Telegram keeps them until
  * somebody asks - only delayed.
  */
-const LEASE_RETRY_MS = Number(process.env.MYAAVE_BOT_LEASE_RETRY_MS) || 15_000;
+// Through `intervalMs`, like every interval from the environment: it is a
+// sleep, and a negative or huge value became a 1 ms one.
+const LEASE_RETRY_MS = intervalMs(process.env.MYAAVE_BOT_LEASE_RETRY_MS, 15_000);
 
 /**
  * A command older than this is confirmed and not answered. Coming back from an
@@ -58,7 +66,9 @@ const LEASE_RETRY_MS = Number(process.env.MYAAVE_BOT_LEASE_RETRY_MS) || 15_000;
  */
 const MAX_AGE_S = Number(process.env.MYAAVE_BOT_MAX_AGE_S) || 600;
 
-const WATCH_MS = Number(process.env.MYAAVE_WATCH_MS) || 1_200_000;
+// Added to the clock and written as a date, which throws past year 275760, so
+// bounded the same way.
+const WATCH_MS = intervalMs(process.env.MYAAVE_WATCH_MS, 1_200_000);
 
 /**
  * A flood costs a bounded number of sends, however long the backlog.
@@ -196,7 +206,14 @@ async function reply(html, to = null) {
   if (sent.ok) return;
 
   if (!sent.retryable && /pars|entity|tag/i.test(sent.error || '')) {
-    const plain = html.replace(/<[^>]+>/g, '');
+    // The tags go, and the escapes `escHtml` made go back to what they were:
+    // left in, plain text showed "&lt;" and "&amp;" where the values had them.
+    // `&amp;` last, so an escaped "&lt;" in the value is not undone twice.
+    const plain = html
+      .replace(/<[^>]+>/g, '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
     const second = await sendTelegramMessage(plain, { chatId: to });
     if (second.ok) {
       console.error('A bot reply would not parse as HTML and was sent as plain text.');

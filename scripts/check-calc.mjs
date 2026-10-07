@@ -16,6 +16,7 @@ import {
   derive,
   unrealisedUsd,
   estimatedGainUsd,
+  estimatedGainPct,
   hasEstimate,
   estimateNeedsPrice,
   openGainsUsd,
@@ -93,6 +94,16 @@ check('held dollar loan: ETH at today\'s price less cost, interest and gas', () 
 check('held dollar loan agrees with unrealisedUsd, which Telegram alerts use', () => {
   const t = held();
   near(est(t), unrealisedUsd(derive(t, AS_OF), PRICE), 'estimate');
+});
+
+check('held dollar loan: gain % is over the 30,000 spent on the ETH', () => {
+  const t = held();
+  near(estimatedGainPct(t, derive(t, AS_OF), PRICE), ((34500 - 30000 - INTEREST - 8) / 30000) * 100, 'pct');
+});
+
+check('a loan with nothing bought has no gain %', () => {
+  const t = { ...held(), buy_date: null, buy_amount: null, buy_eth: null, buy_gas_usd: null };
+  assert.equal(estimatedGainPct(t, derive(t, AS_OF), PRICE), null);
 });
 
 check('held dollar loan ignores any rate it is handed', () => {

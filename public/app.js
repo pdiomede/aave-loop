@@ -219,8 +219,8 @@ const TIPS = {
     'A running total, not what is at risk today.',
   avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
-    "Gas paid on every stage of this tab's trades, Aave lend and unstake included, open ones too. " +
-    'Unrecorded ones are counted below.',
+    "Every fee on this tab's trades, open ones too: the borrow and repay gas, the swaps' costs and fees, " +
+    'and the Aave lend and unstake gas. Unrecorded ones are counted below.',
   best:
     "The largest dollar result among closed trades that have one. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
