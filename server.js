@@ -832,7 +832,11 @@ app.delete('/api/alerts/:id', (req, res) => {
  * matches nothing, which is correct: the message was already sent, and there is
  * no row left to record that on.
  */
-app.delete('/api/alerts', (_req, res) => res.json({ deleted: deleteAllAlerts() }));
+//
+// A strict path. Express routes ignore a trailing slash by default, so
+// `DELETE /api/alerts/` - an alert id that came out empty - matched this rather
+// than `/api/alerts/:id` and deleted every alert. It now falls to the JSON 404.
+app.delete(/^\/api\/alerts$/i, (_req, res) => res.json({ deleted: deleteAllAlerts() }));
 
 /*
  * A dry run. Proving the token and the chat id are right by waiting for ETH to
@@ -909,7 +913,10 @@ app.use((req, res, next) => {
   // `/api` exactly, as well as anything under it. Matching only the trailing
   // slash handed an API caller the browser's HTML error page for the one path
   // most likely to be typed by hand.
-  if (req.path === '/api' || req.path.startsWith('/api/')) {
+  // Any case, as the routes and the guards above match it: `/API/nope` was
+  // handed the HTML page while `/API/version` answered JSON.
+  const p = req.path.toLowerCase();
+  if (p === '/api' || p.startsWith('/api/')) {
     return res.status(404).json({ error: 'No such endpoint.' });
   }
   res.status(404).sendFile(path.join(root, 'landing', '404.html'), (err) => {

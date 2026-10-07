@@ -96,6 +96,14 @@ check('held dollar loan agrees with unrealisedUsd, which Telegram alerts use', (
   near(est(t), unrealisedUsd(derive(t, AS_OF), PRICE), 'estimate');
 });
 
+check('held euro loan: gain % is the return on the 30,000 EURC spent, at today\'s rate both sides', () => {
+  // 30,000 EURC bought at 1.05, EURC at 1.17 today: the gain at today's rate
+  // over the 30,000 EURC at today's rate too, so -2.06%, not over $31,500.
+  const t = held(eur(1.05));
+  const gain = 10 * PRICE - (30000 + INTEREST) * 1.17 - 8;
+  near(estimatedGainPct(t, derive(t, AS_OF), PRICE, { EURC: 1.17 }), (gain / (30000 * 1.17)) * 100, 'pct');
+});
+
 check('a sale within 0.01% of the purchase is a full exit, its whole cost taken off', () => {
   // 9.9995 of 10 ETH sold for 33,000 and 30,000 repaid, fees 0: the card shows
   // a full exit, so 33,000 - 30,000 = 3,000, not 33,000 - 29,998.50.

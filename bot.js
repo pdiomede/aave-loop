@@ -71,6 +71,15 @@ const MAX_AGE_S = Number(process.env.MYAAVE_BOT_MAX_AGE_S) || 600;
 const WATCH_MS = intervalMs(process.env.MYAAVE_WATCH_MS, 1_200_000);
 
 /**
+ * The interval in words, for /help and the /watch reply alike. Rounded to whole
+ * minutes, 90 seconds read "every 2 minutes", 20 seconds "every 0 minutes",
+ * and the reply said "1 minutes".
+ */
+const plural = (n, unit) => `${n} ${unit}${n === 1 ? '' : 's'}`;
+const WATCH_EVERY =
+  WATCH_MS % 60_000 === 0 ? plural(WATCH_MS / 60_000, 'minute') : plural(Math.round(WATCH_MS / 1000), 'second');
+
+/**
  * A flood costs a bounded number of sends, however long the backlog.
  *
  * This is the only limit, deliberately. A minimum gap between replies was the
@@ -284,7 +293,7 @@ async function textFor(command) {
       return summaryMessage();
     case 'watch':
       setWatch(true);
-      return `${await watchMessage()}\n\n<i>Watching. The price every ${Math.round(WATCH_MS / 60000)} minutes until /unwatch.</i>`;
+      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY} until /unwatch.</i>`;
     case 'unwatch':
       setWatch(false);
       return 'Stopped. No more price updates.';
@@ -292,7 +301,7 @@ async function textFor(command) {
       // Including /help and /start. Telegram sends /start by itself when a chat
       // with a bot is first opened, and an unknown command in your own group
       // reads as a broken bot, so both get the list.
-      return helpText(Math.round(WATCH_MS / 60000));
+      return helpText(WATCH_EVERY);
   }
 }
 

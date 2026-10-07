@@ -251,7 +251,7 @@ const TIPS = {
   estToday: "Estimated at today's exchange rate. This trade's own rate is not fetched yet; it is looked up every hour.",
   alerts: {
     trade:
-      'The trade the goal is on. A trade can appear twice: a new goal adds a row instead of replacing the old one.',
+      'The trade the goal is on. A goal set after the last one fired or closed adds a row; one set over a goal still armed replaces it.',
     goal: 'The ETH price to wait for, in USD.',
     direction:
       "Set when saved, against ETH's price at that moment. A goal above it waits for a rise; below it, for a fall.",
@@ -961,6 +961,11 @@ const EARLIEST_DATE = '2015-07-30';
  */
 function sanitizeNumeric(text) {
   const s = String(text ?? '');
+  // Anything else between two runs of digits is left whole, for the parser to
+  // refuse. Stripped, it glued two numbers into one it accepts: a pasted
+  // "1.5 ETH ($5175)" saved 1.55175 ETH and "3 (≈$3.20)" saved 33.20. Spaces
+  // alone do not count, so "1 234,56" still reads as 1234.56.
+  if (/\d[^\d.,+\-\s]+[\s\S]*\d/.test(s.replace(/\s+/g, ''))) return s;
   // An exponent stays, so the parser can refuse it as the server does.
   // Stripped like any other letter, "1e5" became 15 and was saved. Only an
   // "e" straight after a digit - "1e", "1e5", "2E-3" - so the "E" of a pasted
@@ -2729,8 +2734,14 @@ async function submitStage(form) {
     });
     state.trades = state.trades.map((t) => (t.id === id ? withoutDerived(updated) : t));
     writeSeq += 1;
-    state.editing = null;
-    state.draft = null;
+    // Only the editor this save came from. A slow save - a euro rate being
+    // looked up - closed whatever was open when it landed, and took a sale
+    // typed into another card in the meantime with it.
+    const mine = state.editing?.id === id && state.editing?.stage === stage;
+    if (mine) {
+      state.editing = null;
+      state.draft = null;
+    }
     // The save can move the row: adding a sale gives a trade a net gain it did
     // not have, and under any sort but the default that can be a different
     // page. The row stays open, so follow it - otherwise the toast says saved
@@ -2739,7 +2750,10 @@ async function submitStage(form) {
     state.page = pageOfTrade(id);
     closeAlertsOnSale(id);
     render();
-    state.draft = null;
+    if (mine) {
+      state.draft = null;
+      focusStageButton(id, stage);
+    }
     // A purchase is what makes an open position, and this save is the only
     // way one is recorded, with no reload behind it to ask for today's rate.
     // Without this a new euro position sat at its stored rates until the
@@ -2747,10 +2761,27 @@ async function submitStage(form) {
     loadFxNow().catch(() => {});
     toast(`${STAGES.find((s) => s.key === stage).name} saved.`);
   } catch (err) {
-    showFormError(form, err.message, err.field);
+    // On the form as it is now. A re-render while the save was away replaces
+    // the one captured at the click, and the error went into that detached
+    // copy: nothing on screen said the save had failed.
+    const live = document.querySelector(`[data-stage-form="${stage}"][data-trade="${id}"]`);
+    if (live) showFormError(live, err.message, err.field);
+    else toast(err.message || 'Could not save that stage.');
   } finally {
     done();
   }
+}
+
+/**
+ * Put focus back on the stage's Edit button once its form has gone, rather
+ * than leave it on the page body, the way the sort and pager controls do since
+ * 1.3.5. Only when focus has fallen to the body: a user who has moved on to
+ * another control keeps it.
+ */
+function focusStageButton(id, stage) {
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  document.querySelector(`[data-edit-stage="${stage}"][data-trade="${id}"]`)?.focus();
 }
 
 async function submitBorrow(form) {
@@ -3185,7 +3216,16 @@ function setView(view, { updateHash = true } = {}) {
   // Asked for on every visit, not only the first. An alert can fire while this
   // tab sits open, and a table that goes on calling it ARMED until a reload is
   // worse than one request against a local file.
-  if (state.view === 'alerts') loadAlertLog().then(render);
+  // The trades too when the log names one this tab has not loaded - added in
+  // another tab - or its row drew a bare "Trade #23" with no coin or date.
+  if (state.view === 'alerts') {
+    loadAlertLog()
+      .then(async () => {
+        const known = new Set(state.trades.map((t) => t.id));
+        if (state.alertLog?.some((a) => !known.has(a.tradeId))) await loadTrades().catch(() => {});
+      })
+      .then(render);
+  }
 }
 
 /* ------------------------------------------------------------------ theme */
@@ -3315,9 +3355,11 @@ function wire() {
     }
 
     if (e.target.closest('[data-cancel-stage]')) {
+      const was = state.editing;
       state.editing = null;
       render();
       state.draft = null;
+      if (was) focusStageButton(was.id, was.stage);
       return;
     }
 
@@ -3435,22 +3477,25 @@ function wire() {
       body: 'Its whole history goes with it, alerts included. This cannot be undone.',
     });
     if (ok) {
+      const drop = () => {
+        state.trades = state.trades.filter((t) => t.id !== id);
+        writeSeq += 1;
+        state.openIds.delete(id);
+        if (state.editing?.id === id) state.editing = null;
+        // The trade's alerts went with it, so both collections lose them.
+        state.alerts = Object.fromEntries(
+          Object.entries(state.alerts).filter(([tradeId]) => Number(tradeId) !== id),
+        );
+        if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.tradeId !== id);
+        alertWriteSeq += 1;
+        render();
+        toast('Trade deleted.');
+      };
       api(`/api/trades/${id}`, { method: 'DELETE' })
-        .then(() => {
-          state.trades = state.trades.filter((t) => t.id !== id);
-          writeSeq += 1;
-          state.openIds.delete(id);
-          if (state.editing?.id === id) state.editing = null;
-          // The trade's alerts went with it, so both collections lose them.
-          state.alerts = Object.fromEntries(
-            Object.entries(state.alerts).filter(([tradeId]) => Number(tradeId) !== id),
-          );
-          if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.tradeId !== id);
-          alertWriteSeq += 1;
-          render();
-          toast('Trade deleted.');
-        })
-        .catch((err) => toast(err.message || 'Could not delete that trade.'));
+        .then(drop)
+        // A 404 is the state we were after: another tab already deleted it.
+        // Shown as an error, the row stayed on screen and in every total.
+        .catch((err) => (err.status === 404 ? drop() : toast(err.message || 'Could not delete that trade.')));
     }
   }
 
@@ -3460,9 +3505,20 @@ function wire() {
       e.preventDefault();
       row.click();
     }
-    if (e.key === 'Escape' && state.editing) {
+    // Only on the Trades view and outside the new trade card. From anywhere,
+    // Escape on a Stats tab or in the new trade form threw away the stage
+    // editor and whatever was typed into it.
+    if (
+      e.key === 'Escape' &&
+      state.editing &&
+      state.view === 'trades' &&
+      !e.target.closest('#new-trade-card')
+    ) {
+      const was = state.editing;
       state.editing = null;
       render();
+      state.draft = null;
+      focusStageButton(was.id, was.stage);
     }
   });
 
