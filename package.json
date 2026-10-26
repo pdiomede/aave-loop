@@ -1,7 +1,7 @@
 {
   "name": "myaave",
   "version": "1.5.1",
-  "description": "Aave Loop: track stablecoin and EURC borrow, ETH buy and sell, and repay cycles.",
+  "description": "ETH Roundtrip: track stablecoin and EURC borrow, ETH buy and sell, and repay cycles.",
   "type": "module",
   "private": true,
   "main": "server.js",

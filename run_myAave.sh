@@ -25,7 +25,7 @@ Usage: ./run_myAave.sh [options]
   --port N     Start on port N instead of 3000.
   --kill       If another program holds the port, stop it and reuse the port.
                Without this flag the script moves to the next free port.
-               An earlier Aave Loop started from this folder is always
+               An earlier ETH Roundtrip started from this folder is always
                stopped and replaced, flag or not.
   --help       Show this message.
 

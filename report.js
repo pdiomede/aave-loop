@@ -277,7 +277,7 @@ export function summaryText(s) {
  */
 export function helpText(every = '20 minutes') {
   return [
-    '<b>Aave Loop</b>',
+    '<b>ETH Roundtrip</b>',
     '',
     '/price - ETH now, with 24h, 7d and 30d change',
     '/holding - trades still holding ETH, one line each',

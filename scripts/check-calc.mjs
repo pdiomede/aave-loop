@@ -373,9 +373,9 @@ check('the CSV files a trade by the year it was repaid, and names the file by ye
   const across = { ...flat(1), borrow_date: '2025-12-30', buy_date: '2025-12-30', sell_date: '2026-01-02', repay_date: '2026-01-02' };
   const { rows, at } = csvRows([across]);
   assert.equal(at(rows[0], 'stats_year'), '2026');
-  assert.equal(csvFileName('2026'), 'aave-loop-trades-2026.csv');
-  assert.equal(csvFileName('all'), 'aave-loop-trades-all.csv');
-  assert.equal(csvFileName('../x'), 'aave-loop-trades-all.csv');
+  assert.equal(csvFileName('2026'), 'eth-roundtrip-trades-2026.csv');
+  assert.equal(csvFileName('all'), 'eth-roundtrip-trades-all.csv');
+  assert.equal(csvFileName('../x'), 'eth-roundtrip-trades-all.csv');
 });
 
 check('the CSV\'s gas columns add up to its fees_usd', () => {

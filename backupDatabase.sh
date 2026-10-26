@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Aave Loop: back up the live database.
+# ETH Roundtrip: back up the live database.
 #
 # Safe against a server that is running while this fires: it uses SQLite's own
 # online backup API rather than copying the file, so a write landing mid-copy

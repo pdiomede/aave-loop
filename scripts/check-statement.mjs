@@ -90,8 +90,8 @@ check('the logo is drawn, clipped round, from its image object', () => {
 });
 
 check('the file name carries the year', () => {
-  assert.equal(statementFileName('2026'), 'aave-loop-statement-2026.pdf');
-  assert.equal(statementFileName('../x'), 'aave-loop-statement-all.pdf');
+  assert.equal(statementFileName('2026'), 'eth-roundtrip-statement-2026.pdf');
+  assert.equal(statementFileName('../x'), 'eth-roundtrip-statement-all.pdf');
 });
 
 /* --------------------------------------------------------------- the file */
@@ -175,9 +175,9 @@ check('the period: the year to date, or the whole of a past year', () => {
 
 check('the header names the site and links to it', () => {
   const pdf = build(sample);
-  assert.ok(shows(pdf, 'Aave Loop') && shows(pdf, ' :: aaveloop.com'));
+  assert.ok(shows(pdf, 'ETH Roundtrip') && shows(pdf, ' :: ethroundtrip.com'));
   assert.match(pdf, /\/Annots \[9 0 R\]/);
-  assert.match(pdf, /\/Subtype \/Link \/Rect \[[\d. ]+\] \/Border \[0 0 0\] \/A << \/S \/URI \/URI \(https:\/\/aaveloop\.com\) >>/);
+  assert.match(pdf, /\/Subtype \/Link \/Rect \[[\d. ]+\] \/Border \[0 0 0\] \/A << \/S \/URI \/URI \(https:\/\/ethroundtrip\.com\) >>/);
 });
 
 check('a figure that prints as zero carries no minus, and is not called a loss', () => {

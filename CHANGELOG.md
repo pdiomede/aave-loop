@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **The site moved to ethroundtrip.com and is renamed ETH Roundtrip.** The registrar suspended aaveloop.com over the Aave name. The pages, the Statement's header and link, the Telegram help and the download names (`eth-roundtrip-trades-2026.csv`) carry the new name, and the social card is redrawn as `landing/og4.png`, a new filename because scrapers cache by URL.
+
 ## [1.5.1] - 2026-10-07
 
 ### Added

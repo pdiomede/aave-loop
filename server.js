@@ -872,7 +872,7 @@ app.post('/api/alerts/test', async (req, res, next) => {
 
     const { chatName } = telegramConfig();
     const sent = await sendTelegramMessage(
-      `Test message from the Aave Loop ledger. Price alerts will arrive here, in ${chatName}.`,
+      `Test message from the ETH Roundtrip ledger. Price alerts will arrive here, in ${chatName}.`,
     );
     res.json({ ok: sent.ok, error: sent.error });
   } catch (err) {
@@ -977,7 +977,7 @@ app.use((err, _req, res, _next) => {
 // Loopback only. This is a personal ledger with no authentication, so it has
 // no business being reachable from the rest of the network.
 const server = app.listen(PORT, '127.0.0.1', () => {
-  console.log(`Aave Loop v${pkg.version} running at http://localhost:${PORT}`);
+  console.log(`ETH Roundtrip v${pkg.version} running at http://localhost:${PORT}`);
   // Started here rather than at import, so the port being taken below cannot
   // leave a poller running in a process that is on its way out.
   reportConfig();
