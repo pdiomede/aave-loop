@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **After deleting an alert, focus goes to the next row's Delete,** or to the Alerts heading once the list is empty, instead of the top of the page.
+- **Why an alert was "not sent" can be read by keyboard and screen reader,** not only by hovering.
+- **On a phone, what the alert statuses mean is said under the table,** where the hidden header's tip could not be reached.
+- **Alerts that cannot load say "Could not reach the server."** instead of the browser's "Failed to fetch".
+
 ## [2.1.4] - 2026-11-13
 
 ### Fixed

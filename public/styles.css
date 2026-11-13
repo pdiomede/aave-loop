@@ -1409,6 +1409,31 @@ th[aria-sort="ascending"] .th-sort__caret {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03), 0 0 0 1px var(--warn);
 }
 
+/* What the statuses mean, under the Alerts table. Only on a phone: anywhere
+   wider, the Status header carries it as a tip. */
+.alerts-legend {
+  display: none;
+  margin: 14px 16px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .alerts-legend {
+    display: block;
+  }
+}
+
+#alerts-title:focus {
+  outline: none;
+}
+
+#alerts-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 /* Under By month closed: the closed trades its months cannot hold yet. */
 .month-gap {
   margin: 12px 0 0;

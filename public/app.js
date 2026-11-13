@@ -783,7 +783,10 @@ async function loadAlertLog() {
     // Whatever was on screen is left there. A refresh that could not get
     // through should not blank a table that is still true.
     if (seq !== alertLogSeq) return;
-    state.alertLogError = err.message || 'Could not reach the server.';
+    // No status means the request never got a reply, and the browser's own
+    // "Failed to fetch" says nothing useful - the wording removeAlert and
+    // deleteAllAlerts already use for that case.
+    state.alertLogError = err.status ? err.message : 'Could not reach the server.';
   }
 }
 
@@ -2891,9 +2894,12 @@ function alertLogRow(a) {
   // under the fired date. Side by side it made Status the widest column in the
   // table, and the table then ran past the right edge of a tablet held upright
   // - taking the Delete button with it, which is the only control in here.
+  //
+  // Focusable, and with the reason in the text a screen reader reads: on
+  // hover alone, why a message did not go was out of reach by keyboard.
   const notSent = a.lastError
-    ? `<span class="cell-note"><span class="chip chip--warn"
-         data-tip="${esc(a.lastError)}">not sent</span></span>`
+    ? `<span class="cell-note"><span class="chip chip--warn" tabindex="0"
+         data-tip="${esc(a.lastError)}">not sent<span class="sr-only">: ${esc(a.lastError)}</span></span></span>`
     : '';
 
   // Read from the firing itself, not the status. A reached goal Telegram
@@ -2919,8 +2925,10 @@ function alertLogRow(a) {
   const st = t ? derive(t).stages : null;
   const suspended =
     a.status === 'armed' && st && (!st.bought || st.sold)
-      ? `<span class="cell-note"><span class="chip chip--warn"
-           data-tip="${esc(TIPS.alerts.suspended)}">not watched</span></span>`
+      ? `<span class="cell-note"><span class="chip chip--warn" tabindex="0"
+           data-tip="${esc(TIPS.alerts.suspended)}">not watched<span class="sr-only">: ${esc(
+             TIPS.alerts.suspended,
+           )}</span></span></span>`
       : '';
 
   const status = esc(String(a.status).toUpperCase());
@@ -2981,6 +2989,11 @@ function renderAlerts() {
     </tr></thead>
     <tbody>${state.alertLog.slice(start, start + PAGE_SIZE).map(alertLogRow).join('')}</tbody>
   </table>
+  ${
+    // On a phone the header row, and the Status tip in it, is not drawn, so
+    // what ARMED, FAILED or "not sent" mean is said under the table instead.
+    `<p class="alerts-legend muted">${esc(TIPS.alerts.status)}</p>`
+  }
   ${pager(total, 'alerts')}`;
 }
 
@@ -3522,9 +3535,30 @@ async function removeAlert(id) {
   if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.id !== id);
   alertWriteSeq += 1;
 
+  // Where the row's Delete sat, so focus can go to the one that takes its
+  // place - or to the heading when none is left. Rendering replaced the
+  // button and dropped focus to the top of the page. Only from the table: the
+  // alert window hands focus back on its own as it closes.
+  const fromTable = [...document.querySelectorAll('[data-alert-delete]')];
+  const at = fromTable.findIndex((b) => Number(b.dataset.alertDelete) === id);
+  const pageBefore = state.alertsPage;
+
   closeAlertDialog();
   render();
+  if (at >= 0) focusAlertRow(at, state.alertsPage !== pageBefore);
   toast('Alert removed.');
+}
+
+/**
+ * Focus the Delete button at `at` on the page now drawn, the last one when the
+ * page changed or is shorter, or the Alerts heading when the list is empty.
+ */
+function focusAlertRow(at, pageChanged = false) {
+  const active = document.activeElement;
+  if (active && active !== document.body) return;
+  const buttons = document.querySelectorAll('[data-alert-delete]');
+  const i = pageChanged ? buttons.length - 1 : Math.min(at, buttons.length - 1);
+  (buttons.length ? buttons[i] : document.getElementById('alerts-title'))?.focus();
 }
 
 /**
@@ -3564,6 +3598,9 @@ async function deleteAllAlerts() {
     // Then read the list again, which shows anything set since it was read.
     await loadAlertLog();
     render();
+    // The button pressed is hidden now; focus the first row left, or the
+    // heading, rather than leave it on nothing.
+    focusAlertRow(0);
   } catch (err) {
     toast(err.status ? err.message : 'Could not reach the server, so nothing was deleted.');
   }
