@@ -27,8 +27,16 @@ import { resolveRate } from './fx.js';
 import { alertPollMs } from './alerts.js';
 import { n4, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
-/** Telegram refuses a message over 4096 characters, so stop well short of it. */
-const MAX_CHARS = 3900;
+/**
+ * Telegram refuses a message over 4096 characters, counted after its HTML is
+ * parsed - tags gone, entities one character each. The table is trimmed to
+ * what is left once the lines above it are counted, with room to spare.
+ */
+const TELEGRAM_MAX = 4096;
+const MARGIN = 100;
+
+/** A message's length as Telegram counts it. */
+const visibleLength = (html) => html.replace(/<[^>]+>/g, '').replace(/&(?:lt|gt|amp|quot|#\d+);/g, '_').length;
 
 /* ------------------------------------------------------------------- price */
 
@@ -111,6 +119,7 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
   if (!rows.length) return 'Nothing is being held right now.';
 
   const hasPrice = Number.isFinite(price);
+  // In ten-thousandths of an ETH, as the rows print (see below).
   let eth = 0;
   // In whole cents as each row prints it (see `cents` in lib/calc.js), so the
   // Unrealised total is the sum of the gains listed under it. Summed raw, three
@@ -133,7 +142,10 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
   const cells = rows.map((t) => {
     const d = derive(t, derivedOn(t));
     const held = ethHeldNow(d);
-    eth += held;
+    // Added as each row prints it, to four places, so the header's total is
+    // the sum of the rows under it: 1.23455 and 2.23455 ETH print 1.2346 and
+    // 2.2346, and summed raw they were headed 3.4691.
+    eth += Math.round(Number(n4(held).replace(/,/g, '')) * 1e4);
 
     const g = hasPrice ? estimatedGainUsd(t, d, price, fxNow) : null;
     if (g === null) unpriced += 1;
@@ -195,9 +207,10 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
   // The tags are ours; only the values are escaped, and escaped where they are
   // interpolated rather than by a pass over the finished line, which would have
   // to be taught to leave the tags alone.
-  const worth = hasPrice ? ` · ${escHtml(usd(eth * price))} at ${escHtml(usd(price))}` : '';
+  const ethTotal = eth / 1e4;
+  const worth = hasPrice ? ` · ${escHtml(usd(ethTotal * price))} at ${escHtml(usd(price))}` : '';
   const head = [
-    `<b>Holding ${rows.length} trade${rows.length === 1 ? '' : 's'}</b> · ${escHtml(n4(eth))} ETH${worth}`,
+    `<b>Holding ${rows.length} trade${rows.length === 1 ? '' : 's'}</b> · ${escHtml(n4(ethTotal))} ETH${worth}`,
   ];
   // A price the service could not refresh is the cached one, possibly hours
   // old, and every figure below is worked out at it. /price said so; this
@@ -235,17 +248,22 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
     );
   }
 
-  return `${head.join('\n')}\n\n<pre>${escHtml(fit(body))}</pre>`;
+  // The table gets what the lines above it leave. It used to have 3,900 of
+  // its own whatever they took, and a long ledger at an old price, its
+  // stale-price and move lines included, came to 4,102 and got no reply.
+  const top = `${head.join('\n')}\n\n`;
+  return `${top}<pre>${escHtml(fit(body, TELEGRAM_MAX - visibleLength(top) - MARGIN))}</pre>`;
 }
 
 /** Trim trailing rows rather than let Telegram refuse the whole message. */
-function fit(lines) {
+function fit(lines, budget) {
   let out = lines.join('\n');
-  if (out.length <= MAX_CHARS) return out;
+  if (out.length <= budget) return out;
   const kept = [];
   let size = 0;
   for (const line of lines) {
-    if (size + line.length + 1 > MAX_CHARS - 40) break;
+    // Room left for the "... and N more" line.
+    if (size + line.length + 1 > budget - 40) break;
     kept.push(line);
     size += line.length + 1;
   }

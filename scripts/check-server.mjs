@@ -712,6 +712,23 @@ await check('/holding counts a part-sold trade as holding what it kept, and its 
   assert.match(holdingText([eur(1, 10002), eur(2, 10005.5)], 3000, { EURC: 1.1712 }), /-\$2,414\.90 of it from the move/);
 });
 
+await check('/holding heads its rows with their sum as printed, and fits Telegram however long', async () => {
+  const { holdingText } = await import('../report.js');
+  const row = (id, eth, over = {}) => ({ id, platform: 'aave', borrow_currency: 'USDC', borrow_amount: 5000,
+    borrow_apr: 4, borrow_date: today, buy_date: today, buy_amount: 5000, buy_eth: eth, buy_gas_usd: 2, ...over });
+  // 1.23455 and 2.23455 print 1.2346 and 2.2346; summed raw they read 3.4691.
+  assert.match(holdingText([row(1, 1.23455), row(2, 2.23455)], 3000, {}), /3\.4692 ETH/);
+
+  // 150 seven-figure euro positions at an hour-old price: every line above the
+  // table at its longest. Counted as Telegram counts it, tags out.
+  const big = Array.from({ length: 150 }, (_, i) => row(i + 1, 2.5, {
+    borrow_currency: 'EURC', borrow_amount: 1234567.89, buy_amount: 1234567.89, borrow_fx: 1.0512, buy_fx: 1.0512 }));
+  const text = holdingText(big, 2999.99, { EURC: 1.1712 }, { ageMs: 3 * 3_600_000 });
+  const visible = text.replace(/<[^>]+>/g, '').replace(/&(?:lt|gt|amp);/g, '_').length;
+  assert.ok(visible <= 4096, `${visible} characters`);
+  assert.match(text, /and \d+ more<\/pre>$/);
+});
+
 /* ------------------------------------------------------------------ the end */
 
 closeDb();

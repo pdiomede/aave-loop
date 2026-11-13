@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [2.1.7] - 2026-11-13
+
+### Fixed
+
+- **/holding's ETH total is the sum of its rows as printed:** 1.2346 and 2.2346 ETH were headed 3.4691.
+- **A very long /holding always fits Telegram's limit.** The table was trimmed without counting the lines above it, so a long ledger at an old price could come to 4,102 characters and get no reply.
+
 ## [2.1.6] - 2026-11-13
 
 ### Fixed
