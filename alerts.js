@@ -274,9 +274,18 @@ export function deleteAlert(id) {
 /**
  * Everything, armed included. Answers how many went, because the only honest
  * thing the interface can say afterwards is the number.
+ *
+ * `through` is the newest alert id the page was showing. The page's list is
+ * only as fresh as the last visit to the view, and the confirmation counts
+ * from it, so without the bound a goal set since - from another device, or
+ * the other copy of the app - was deleted unseen: "Delete all 15?" deleted
+ * 16, the new armed goal among them, never to alert. Ids only grow, so
+ * everything newer than the list is left.
  */
-export function deleteAllAlerts() {
-  return prepare('DELETE FROM alerts').run().changes;
+export function deleteAllAlerts(through = null) {
+  return through == null
+    ? prepare('DELETE FROM alerts').run().changes
+    : prepare('DELETE FROM alerts WHERE id <= ?').run(through).changes;
 }
 
 /* ------------------------------------------------------------------ message */

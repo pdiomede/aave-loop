@@ -874,7 +874,17 @@ app.delete('/api/alerts/:id', (req, res) => {
 // A strict path. Express routes ignore a trailing slash by default, so
 // `DELETE /api/alerts/` - an alert id that came out empty - matched this rather
 // than `/api/alerts/:id` and deleted every alert. It now falls to the JSON 404.
-app.delete(/^\/api\/alerts$/i, (_req, res) => res.json({ deleted: deleteAllAlerts() }));
+//
+// `?through=<id>` deletes only up to the newest alert the page showed (see
+// `deleteAllAlerts`). Digits only, like a trade id; anything else is refused
+// rather than read as "everything".
+app.delete(/^\/api\/alerts$/i, (req, res) => {
+  const raw = req.query.through;
+  if (raw !== undefined && !(typeof raw === 'string' && /^[1-9]\d*$/.test(raw))) {
+    throw new BadRequest('Not an alert id.', 'through');
+  }
+  res.json({ deleted: deleteAllAlerts(raw === undefined ? null : Number(raw)) });
+});
 
 /*
  * A dry run. Proving the token and the chat id are right by waiting for ETH to

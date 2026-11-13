@@ -320,6 +320,27 @@ await check('deleting a trade takes its alerts with it', async () => {
   assert.equal((await api('GET', '/api/alerts/log')).data.alerts.length, 0);
 });
 
+await check('Delete all deletes only up to the newest alert the page showed', async () => {
+  // Two holding trades, a goal on each; the page saw only the first.
+  const held = async () => {
+    const t = (await api('POST', '/api/trades', borrow({ borrow_date: today }))).data;
+    await api('PATCH', `/api/trades/${t.id}`, { buy_date: today, buy_amount: '30000', buy_eth: '10', buy_gas_usd: '3' });
+    return t;
+  };
+  const [a, b] = [await held(), await held()];
+  const first = (await api('PUT', `/api/trades/${a.id}/alert`, { goal_price: '3500' })).data;
+  await api('PUT', `/api/trades/${b.id}/alert`, { goal_price: '3600' });
+  const firstId = first.id ?? first.alert?.id;
+  assert.equal((await api('DELETE', '/api/alerts?through=abc')).status, 400);
+  assert.equal((await api('DELETE', '/api/alerts?through=007')).status, 400);
+  const r = await api('DELETE', `/api/alerts?through=${firstId}`);
+  assert.equal(r.data.deleted, 1, 'only the one shown');
+  const left = (await api('GET', '/api/alerts/log')).data.alerts;
+  assert.deepEqual(left.map((x) => x.tradeId), [b.id], 'the goal set since is still there');
+  assert.equal((await api('DELETE', '/api/alerts')).data.deleted, 1, 'no bound: everything');
+  for (const t of [a, b]) await api('DELETE', `/api/trades/${t.id}`);
+});
+
 server.kill('SIGTERM');
 await new Promise((r) => server.once('exit', r));
 if (process.exitCode && serverErr) warn(`server stderr:\n${serverErr}`);

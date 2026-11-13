@@ -269,13 +269,14 @@ const TIPS = {
   estToday: "Estimated at today's exchange rate. This trade's own rate is not fetched yet; it is looked up every hour.",
   alerts: {
     trade:
-      'The trade the goal is on. A goal set after the last one fired or closed adds a row; one set over a goal still armed replaces it.',
+      'The trade the goal is on. A new goal replaces one not yet reached, and adds a row otherwise; a reached goal still waiting to be sent is kept, as FAILED.',
     goal: 'The ETH price to wait for, in USD.',
     direction:
       "Set when saved, against ETH's price at that moment. A goal above it waits for a rise; below it, for a fall.",
     status:
-      'ARMED: still watched. FIRED: goal reached. FAILED: not delivered after three tries. ' +
-      'CLOSED: the trade sold its ETH, so it can never fire. "not sent": reached, but Telegram refused it. Under ARMED it goes once Telegram takes it; under FIRED or FAILED it will not.',
+      'ARMED: still watched. FIRED: goal reached. FAILED: not delivered - three failed tries, or replaced by a new goal before it went. ' +
+      'CLOSED: the trade stopped holding ETH (sold, or the purchase undone), so it is no longer watched. ' +
+      '"not sent": reached, but not delivered. Under ARMED it goes once Telegram takes it; under FIRED, FAILED or CLOSED it will not.',
     suspended:
       'No ETH held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',
@@ -3547,14 +3548,22 @@ async function deleteAllAlerts() {
   });
   if (!ok) return;
 
+  // Up to the newest alert in the list the dialog counted, and no further: a
+  // goal set since the list was read is not one the user agreed to delete.
+  const through = Math.max(...state.alertLog.map((a) => a.id));
   try {
-    const { deleted } = await api('/api/alerts', { method: 'DELETE' });
-    state.alerts = {};
-    state.alertLog = [];
+    const { deleted } = await api(`/api/alerts?through=${through}`, { method: 'DELETE' });
+    state.alertLog = state.alertLog.filter((a) => a.id > through);
+    state.alerts = Object.fromEntries(
+      state.alertLog.filter((a) => a.status === 'armed').map((a) => [a.tradeId, a]),
+    );
     state.alertsPage = 1;
     alertWriteSeq += 1;
     render();
     toast(`${deleted} alert${deleted === 1 ? '' : 's'} deleted.`);
+    // Then read the list again, which shows anything set since it was read.
+    await loadAlertLog();
+    render();
   } catch (err) {
     toast(err.status ? err.message : 'Could not reach the server, so nothing was deleted.');
   }
@@ -3744,6 +3753,10 @@ function wire() {
     if (document.visibilityState === 'hidden') return stopEthPoller();
     if (ethQuoteDue()) loadEth();
     startEthPoller();
+    // The Alerts table is read when the view is opened, and a tab left on it
+    // never read it again: an alert that fired meanwhile still said ARMED,
+    // and its bell stayed lit. Coming back to it is a visit too.
+    if (state.view === 'alerts') loadAlertLog().then(render);
   });
 
   document.getElementById('theme-toggle').addEventListener('click', () => {

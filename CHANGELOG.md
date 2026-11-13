@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [2.1.4] - 2026-11-13
+
+### Fixed
+
+- **Delete all alerts deletes only the alerts it counted.** The list was as old as the last visit to Alerts, so a goal set since - from another device - was deleted unseen ("Delete all 15?" deleted 16). It now deletes up to the newest alert shown, then reloads the list.
+- **A tab left on Alerts refreshes when you come back to it,** rather than showing ARMED, and a lit bell, for an alert that had fired.
+- **The Alerts tooltips match what the statuses mean now:** FAILED includes a goal replaced before it was sent, CLOSED includes a purchase undone, and a new goal replaces only one not yet reached.
+
 ## [2.1.3] - 2026-11-13
 
 ### Fixed
