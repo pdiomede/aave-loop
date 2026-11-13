@@ -84,7 +84,7 @@ The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat i
 | `/price` | ETH now, with 24h, 7d and 30d change |
 | `/holding` | each trade still holding ETH, with its estimated gain, the total and what it is worth. A trade sold but not repaid is open, and `/summary` counts it, but it holds no ETH and is not listed |
 | `/summary` | realized net gain, blended annualized, closed trades, open positions |
-| `/watch` / `/unwatch` | the price every twenty minutes, sent to the alerts chat, or stop |
+| `/watch` / `/unwatch` | the price every twenty minutes in the chat that asked, or stop. One watch at a time: `/watch` from the other chat moves it there |
 
 `/help`, `/start` and anything unrecognised list the commands. A `@name` suffix, capitals and arguments are fine. Commands are read by long polling, so nothing needs to be reachable from the internet; two copies of the app share one reader by a lease. `/watch` survives a restart.
 

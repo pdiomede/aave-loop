@@ -26,11 +26,10 @@
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { db, prepare } from './db.js';
-import { telegramConfig, FALLBACK_NAME } from './config.js';
+import { telegramConfig } from './config.js';
 import { intervalMs } from './lib/calc.js';
 import { sendTelegramMessage } from './telegram.js';
 import { priceMessage, watchMessage, holdingMessage, summaryMessage, helpText } from './report.js';
-import { escHtml } from './format.js';
 
 const OFF = process.env.MYAAVE_BOT_OFF === '1';
 
@@ -179,11 +178,19 @@ function commitOffset(nextOffset) {
   return changed.changes === 1;
 }
 
-function setWatch(on) {
+// `chat` is the chat that sent /watch, where the reports then go. One watch
+// for the bot, not one per chat: /watch from another chat moves it there, and
+// /unwatch from either stops it.
+function setWatch(on, chat = null) {
   if (!db.open) return;
   prepare(
-    'UPDATE bot_state SET watch = @on, watch_next_at = @next, updated_at = @now WHERE id = 1',
-  ).run({ on: on ? 1 : 0, next: on ? new Date(Date.now() + WATCH_MS).toISOString() : null, now: nowISO() });
+    'UPDATE bot_state SET watch = @on, watch_next_at = @next, watch_chat = @chat, updated_at = @now WHERE id = 1',
+  ).run({
+    on: on ? 1 : 0,
+    next: on ? new Date(Date.now() + WATCH_MS).toISOString() : null,
+    chat: on && chat != null ? String(chat) : null,
+    now: nowISO(),
+  });
 }
 
 export function botStatus() {
@@ -211,8 +218,8 @@ export function botStatus() {
  * whole reason TELEGRAM_OWNER_ID exists, since Telegram draws its Menu button
  * there and nowhere else - was answered in the group instead, which both left
  * the private chat silent and put a position report in a room full of other
- * people. The price report on the timer has no chat that asked, so it leaves
- * this out and goes to the group as it always has.
+ * people. The price report on the timer goes to the chat that sent /watch
+ * (`watch_chat`), or to the group when none is stored.
  */
 async function reply(html, to = null) {
   const sent = await sendTelegramMessage(html, { parseMode: 'HTML', chatId: to });
@@ -295,21 +302,11 @@ async function textFor(command, from = null) {
       return holdingMessage();
     case 'summary':
       return summaryMessage();
-    case 'watch': {
-      setWatch(true);
-      // The reports are sent on a timer with no chat that asked, so they go
-      // to the group (see `reply`). Asked from the private chat, this promised
-      // the price "every 20 minutes" there, and none ever came.
-      // Named when TELEGRAM_CHAT_NAME gives a name; config's fallback, "your
-      // chat", would read as the private chat it is meant to tell apart.
-      const { chatId, chatName } = telegramConfig();
-      const named = chatName !== FALLBACK_NAME ? chatName : '';
-      const where =
-        from != null && String(from) !== String(chatId)
-          ? ` to ${named ? escHtml(named) : 'the alerts chat'}, not here,`
-          : '';
-      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY}${where} until /unwatch.</i>`;
-    }
+    case 'watch':
+      // The reports go to the chat that asked (`tickWatch`), so "here" is
+      // where they will arrive.
+      setWatch(true, from);
+      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY} here until /unwatch.</i>`;
     case 'unwatch':
       setWatch(false);
       return 'Stopped. No more price updates.';
@@ -404,7 +401,12 @@ async function tickWatch(row) {
   prepare('UPDATE bot_state SET watch_next_at = @next, updated_at = @now WHERE id = 1 AND holder = @me').run(
     { next: new Date(Date.now() + WATCH_MS).toISOString(), now: nowISO(), me: ME },
   );
-  await reply(await watchMessage());
+  // To the chat that asked, while it is still one the bot answers in: a
+  // private chat whose TELEGRAM_OWNER_ID has since been taken out of the
+  // config is not sent a position report, and the group gets it instead, as
+  // a watch set before the chat was stored does.
+  const to = row.watch_chat && allowedChats().has(String(row.watch_chat)) ? row.watch_chat : null;
+  await reply(await watchMessage(), to);
 }
 
 /**

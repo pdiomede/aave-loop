@@ -49,7 +49,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Telegram and CoinGecko in one loopback server. `mock.tg` is a queue of
 // answers to sendMessage, [status, description]; empty means 200.
-const mock = { price: 3000, tg: [], sent: [] };
+// `updates` is what the next getUpdates hands the bot; `sentTo` the chat
+// each sent message went to, beside its text in `sent`.
+const mock = { price: 3000, tg: [], sent: [], sentTo: [], updates: [] };
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
@@ -58,10 +60,15 @@ const mockServer = http.createServer((req, res) => {
     if (req.url.startsWith('/coins/markets')) {
       return res.end(JSON.stringify([{ id: 'ethereum', current_price: mock.price }]));
     }
+    if (req.url.includes('/getUpdates')) {
+      return res.end(JSON.stringify({ ok: true, result: mock.updates.splice(0) }));
+    }
+    if (req.url.includes('/getMe')) return res.end('{"ok":true,"result":{"username":"TestBot"}}');
     if (req.url.includes('/sendMessage')) {
       const [status = 200, description = ''] = mock.tg.shift() ?? [];
       if (status === 200) {
         mock.sent.push(JSON.parse(body).text);
+        mock.sentTo.push(String(JSON.parse(body).chat_id ?? ''));
         return res.end('{"ok":true,"result":{}}');
       }
       res.statusCode = status;
@@ -570,6 +577,43 @@ await check('set-platform: a dry run writes nothing, --apply sets Aave on the re
   assert.deepEqual(platforms(), ['aave', 'etherfi', 'etherfi'], `#${a} Aave, #${b} and #${c} Ether.fi`);
   assert.match(runIt('--apply'), /Nothing to change/);
   db.close();
+});
+
+/* --------------------------------------------------------------- the bot */
+
+await check('/watch reports go to the chat that asked, or to the group once that chat is not allowed', async () => {
+  // The group is -1 (set above); 42 is the owner's private chat.
+  process.env.TELEGRAM_OWNER_ID = '42';
+  const bot = await import('../bot.js');
+  const tick = async () => {
+    mock.sent.length = 0;
+    mock.sentTo.length = 0;
+    await bot.runBotTick();
+    return mock.sentTo.slice();
+  };
+  const due = () =>
+    prepare('UPDATE bot_state SET watch_next_at = ? WHERE id = 1').run(new Date(Date.now() - 1000).toISOString());
+  const say = (chat, text, id) =>
+    mock.updates.push({ update_id: id, message: { chat: { id: chat }, text, date: Math.floor(Date.now() / 1000) } });
+
+  say(42, '/watch', 1);
+  assert.deepEqual(await tick(), ['42']);
+  assert.match(mock.sent[0], /Watching\. The price every .+ here until \/unwatch\./);
+
+  due();
+  assert.deepEqual(await tick(), ['42'], 'the report goes where /watch was asked, not to the group');
+
+  // The owner taken out of the config: no position report to a chat the bot
+  // no longer answers in. The group gets it, as before the chat was stored.
+  process.env.TELEGRAM_OWNER_ID = '';
+  due();
+  assert.deepEqual(await tick(), ['-1']);
+
+  say(-1, '/unwatch', 2);
+  await tick();
+  due();
+  assert.deepEqual(await tick(), [], 'stopped');
+  assert.equal(prepare('SELECT watch_chat FROM bot_state WHERE id = 1').get().watch_chat, null);
 });
 
 /* ------------------------------------------------------------------ the end */

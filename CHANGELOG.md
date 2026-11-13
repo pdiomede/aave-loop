@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [3.0.0] - 2026-11-13
+
+### Changed
+
+- **/watch reports go to the chat that asked,** stored as `bot_state.watch_chat`. From the private chat they all went to the group; they now arrive there, and fall back to the group if that chat is no longer in the config.
+
 ## [2.1.0] - 2026-11-13
 
 ### Added

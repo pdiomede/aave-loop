@@ -116,6 +116,7 @@ db.exec(`
     next_offset   INTEGER NOT NULL DEFAULT 0,
     watch         INTEGER NOT NULL DEFAULT 0,
     watch_next_at TEXT,
+    watch_chat    TEXT,
     updated_at    TEXT    NOT NULL
   );
 `);
@@ -140,7 +141,9 @@ db.exec(`
  * `watch` and `watch_next_at` are the price report every twenty minutes. The
  * deadline is stored, not just the switch: keeping only the switch would reset
  * the phase on every restart, and a process that crashes and comes back would
- * send a report each time it did.
+ * send a report each time it did. `watch_chat` is the chat that asked, where
+ * the reports go: with only the switch they all went to the group, so a
+ * /watch from the private chat was acknowledged there and never reported to.
  *
  * Every time written here comes from JavaScript, never from SQLite's own
  * `datetime('now')`. The lease is compared as text, which is exact for ISO
@@ -334,6 +337,10 @@ const GAS_COLUMN_TYPES = [
 // old ones. Same pairing again - the DDL and this list both carry it.
 const PLATFORM_COLUMNS = [['platform', 'TEXT']];
 
+// Where /watch's reports go (see bot_state above). NULL on a database from
+// before, which sends them to the group as they always went.
+const BOT_STATE_COLUMNS = [['watch_chat', 'TEXT']];
+
 function addMissingColumns(table, columns) {
   const present = new Set(db.pragma(`table_info(${table})`).map((c) => c.name));
   const missing = columns.filter(([name]) => !present.has(name));
@@ -353,6 +360,7 @@ db.transaction(() => {
   addMissingColumns('trades', GAS_COLUMN_TYPES);
   addMissingColumns('trades', PLATFORM_COLUMNS);
   addMissingColumns('eth_price', ETH_MARKET_COLUMNS);
+  addMissingColumns('bot_state', BOT_STATE_COLUMNS);
 }).immediate();
 
 export const FIELDS = [
