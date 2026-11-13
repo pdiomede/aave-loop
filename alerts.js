@@ -84,12 +84,20 @@ const selectLog = () => prepare('SELECT * FROM alerts ORDER BY id DESC');
  * `closeUnwatched`.
  */
 // The HOLDING test as SQL, for the trade aliased `t`. Shared by the read that
-// lists the armed alerts and by the claim, which has to ask again: see `fire`.
-const HOLDING = `
+// lists the armed alerts, by the claim, which has to ask again (see `fire`),
+// and by /holding in report.js.
+//
+// Not repaid either, as `stages()` has it: `derive` calls a repaid trade
+// CLOSED whether or not its sale is complete. Without that line a row repaid
+// with no full sale - which the API refuses now, but older rows can carry -
+// was listed by /holding, its alert never closed, and the sweep fired it with
+// interest counted to today on a loan repaid months before.
+export const HOLDING = `
       t.buy_date IS NOT NULL
       AND t.buy_amount IS NOT NULL
       AND t.buy_eth IS NOT NULL
-      AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)`;
+      AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)
+      AND (t.repay_date IS NULL OR t.repay_amount IS NULL OR t.repay_amount <= 0)`;
 
 const selectArmed = () =>
   prepare(`

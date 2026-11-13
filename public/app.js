@@ -231,7 +231,7 @@ const TIPS = {
   avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
     "Every fee on this tab's trades, open ones too: the borrow and repay gas, the swaps' costs and fees, " +
-    'and the Aave lend and unstake gas. Unrecorded ones are counted below.',
+    'and the gas to lend and unstake the ETH. Unrecorded ones are counted below.',
   best:
     "The largest dollar result among closed trades that have one. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
@@ -1318,9 +1318,9 @@ function borrowFields(t = {}, { platform = false } = {}) {
       ? field({ name: 'platform', label: 'Platform', tip: 'Where the loop was run: Aave or Ether.fi.', value: t.platform ?? '', options: PLATFORMS })
       : ''
   }
-    ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened on Aave.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
+    ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
     ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The stablecoin you borrowed.', value: unitOf(t), options: CURRENCIES })}
-    ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed from Aave.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
+    ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
     ${field({ name: 'borrow_apr', label: 'Borrow APR', tip: 'Borrow rate on the day, as a percent.', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
     ${gasField(t, 'borrow_gas_usd', 'Gas fee', 'Gas paid to borrow, in USD. Optional.')}
   </div>`;
@@ -1332,7 +1332,7 @@ function buyFields(t) {
     ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Stablecoins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
     ${field({ name: 'buy_eth', label: 'ETH purchased', tip: 'ETH received from the swap.', type: 'number', value: t.buy_eth ?? '', suffix: 'ETH', placeholder: '8.0773' })}
     ${gasField(t, 'buy_gas_usd', SWAP_FEE, 'What the swap into ETH cost, in USD: gas plus any swap or aggregator fee.', true)}
-    ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', 'Gas paid to supply the ETH on Aave, in USD. Optional.')}
+    ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', 'Gas paid to supply the ETH to the lending platform, in USD. Optional.')}
   </div>`;
 }
 
@@ -1341,7 +1341,7 @@ function sellFields(t) {
     ${field({ name: 'sell_date', label: 'Sale date', tip: 'Day you swapped the ETH back.', type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
     ${field({ name: 'sell_amount', label: 'Amount received', tip: 'Stablecoins received from the sale.', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
     ${field({ name: 'sell_eth', label: 'ETH sold', tip: 'ETH swapped back to stablecoins.', type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: 'ETH' })}
-    ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', 'Gas paid to withdraw the ETH from Aave, in USD. Optional.')}
+    ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', 'Gas paid to withdraw the ETH from the lending platform, in USD. Optional.')}
     ${gasField(t, 'sell_gas_usd', SWAP_FEE, 'What the swap out of ETH cost, in USD: gas plus any swap or aggregator fee.', true)}
   </div>`;
 }
@@ -2306,8 +2306,25 @@ function currencyTable(rows) {
   </table>`;
 }
 
-function monthTable(rows) {
-  if (rows.length === 0) return `<p class="muted">No trades have been closed yet.</p>`;
+/**
+ * `closed` and `valued` are the tab's closed trades and those of them with a
+ * dollar result. The months can only hold the second: "No trades have been
+ * closed yet" under an overview reading Closed trades 1 was a claim about the
+ * wrong set, and a month missing a closure said nothing at all.
+ */
+function monthTable(rows, { closed = 0, valued = 0 } = {}) {
+  const short = closed - valued;
+  if (rows.length === 0) {
+    return short > 0
+      ? `<p class="muted">${short} closed trade${short === 1 ? '' : 's'}, none with an exchange rate yet. ${RATE_MISSING}</p>`
+      : `<p class="muted">No trades have been closed yet.</p>`;
+  }
+  const gap =
+    short > 0
+      ? `<p class="muted month-gap">${short} closed trade${short === 1 ? ' has' : 's have'} no exchange rate yet and ${
+          short === 1 ? 'is' : 'are'
+        } not in these months. ${RATE_MISSING}</p>`
+      : '';
   // The largest month fills its bar, as the Share tooltip says. A floor of $1
   // drew every bar short on a ledger whose months all netted under a dollar -
   // +$0.40 at 40% - and a month that prints as $0.00 does not set the scale
@@ -2336,7 +2353,7 @@ function monthTable(rows) {
         )
         .join('')}
     </tbody>
-  </table>`;
+  </table>${gap}`;
 }
 
 /**
@@ -2700,7 +2717,7 @@ function renderStatsView() {
   const breakdownCards = [
     ['by-platform', 'By Platform', platformTable(r.byPlatform)],
     ['by-currency', 'By currency (All Platforms)', currencyTable(r.byCurrency)],
-    ['by-month', 'By month closed (All Platforms)', monthTable(r.byMonth)],
+    ['by-month', 'By month closed (All Platforms)', monthTable(r.byMonth, { closed: r.closedCount, valued: r.valuedCount })],
   ]
     .map(([key, title, body]) => collapsibleCard({ key, title, body, open: state.statsOpen.has(key) }))
     .join('');
@@ -3862,6 +3879,7 @@ function wire() {
 
     if (e.target.closest('#fetch-rates')) {
       const btn = e.target.closest('#fetch-rates');
+      const hadFocus = document.activeElement === btn;
       btn.disabled = true;
       btn.textContent = 'Fetching...';
       // With `refresh` the run also asks again about a rate that stood in for
@@ -3872,6 +3890,12 @@ function wire() {
         .then(async (out) => {
           await loadTrades();
           render();
+          // The render replaced the button, and focus fell to the body. Back
+          // to the new one, or to the year tab when every rate came in and
+          // the banner went with it.
+          if (hadFocus) {
+            (document.getElementById('fetch-rates') ?? document.querySelector('.years__tab.is-active'))?.focus();
+          }
           // A run now stops at a time budget, so say when there is more to do
           // rather than letting the banner sit there looking stuck.
           const more = out.timedOut ? ' Press again for the rest.' : '';

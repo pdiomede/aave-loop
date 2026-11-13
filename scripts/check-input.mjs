@@ -38,6 +38,12 @@ check('a typed decimal comma is a decimal point', () => {
   assert.equal(reads(typed('4,27')), 4.27);
   assert.equal(reads(typed('8,0773')), 8.0773);
   assert.equal(reads(typed('0,125')), 0.125);
+  // A comma that cannot be grouping, typed a key at a time: the fee ",125"
+  // and the loan "30000,125" were read as 125 and 30,000,125.
+  assert.equal(reads(typed(',125')), 0.125);
+  assert.equal(reads(typed('30000,125')), 30000.125);
+  assert.equal(reads(typed('35 401,022')), 35401.022);
+  assert.equal(validateField('buy_gas_usd', ',125'), null);
 });
 
 check('a typed European thousands figure keeps its size', () => {

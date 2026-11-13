@@ -197,6 +197,10 @@ check('a closed euro trade with no rate is "no rate", not $0.00', () => {
   assert.ok(!shows(pdf, '$0.00'), 'nothing measured is printed as zero');
   assert.ok(shows(pdf, '-'), 'a dash where the rate is missing');
   assert.ok(shows(pdf, '1 closed trade, none with a rate yet'));
+  // By month closed can hold only trades with a dollar result, so it says
+  // why it is empty rather than that nothing closed.
+  assert.ok(shows(pdf, '1 closed trade, none with an exchange rate yet.'));
+  assert.ok(!shows(pdf, 'No trades have been closed yet.'));
 });
 
 check('a full year - twelve months, every coin, a warning - still fits one page', () => {

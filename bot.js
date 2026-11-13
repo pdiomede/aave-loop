@@ -26,10 +26,11 @@
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { db, prepare } from './db.js';
-import { telegramConfig } from './config.js';
+import { telegramConfig, FALLBACK_NAME } from './config.js';
 import { intervalMs } from './lib/calc.js';
 import { sendTelegramMessage } from './telegram.js';
 import { priceMessage, watchMessage, holdingMessage, summaryMessage, helpText } from './report.js';
+import { escHtml } from './format.js';
 
 const OFF = process.env.MYAAVE_BOT_OFF === '1';
 
@@ -286,7 +287,7 @@ async function botUsername() {
   return myName;
 }
 
-async function textFor(command) {
+async function textFor(command, from = null) {
   switch (command) {
     case 'price':
       return priceMessage();
@@ -294,9 +295,21 @@ async function textFor(command) {
       return holdingMessage();
     case 'summary':
       return summaryMessage();
-    case 'watch':
+    case 'watch': {
       setWatch(true);
-      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY} until /unwatch.</i>`;
+      // The reports are sent on a timer with no chat that asked, so they go
+      // to the group (see `reply`). Asked from the private chat, this promised
+      // the price "every 20 minutes" there, and none ever came.
+      // Named when TELEGRAM_CHAT_NAME gives a name; config's fallback, "your
+      // chat", would read as the private chat it is meant to tell apart.
+      const { chatId, chatName } = telegramConfig();
+      const named = chatName !== FALLBACK_NAME ? chatName : '';
+      const where =
+        from != null && String(from) !== String(chatId)
+          ? ` to ${named ? escHtml(named) : 'the alerts chat'}, not here,`
+          : '';
+      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY}${where} until /unwatch.</i>`;
+    }
     case 'unwatch':
       setWatch(false);
       return 'Stopped. No more price updates.';
@@ -490,7 +503,7 @@ async function handle(updates) {
 
     handled += 1;
     try {
-      await reply(await textFor(command), from);
+      await reply(await textFor(command, from), from);
     } catch (err) {
       console.error(`Could not answer /${command}:`, redact(err.message));
     }

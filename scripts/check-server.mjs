@@ -498,6 +498,33 @@ await check('/holding names each trade\'s platform, and a dash where none was re
   assert.match(lines[2], /^#3   -         1\.0000 ETH/);
 });
 
+await check('a trade repaid with no full sale is not held: its alert closes and /holding leaves it out', async () => {
+  // A row from before the API refused repaid-without-sold. `derive` calls it
+  // CLOSED; the SQL used to call it held.
+  const { closeUnwatched } = await import('../alerts.js');
+  const { holdingMessage } = await import('../report.js');
+  const now = new Date().toISOString();
+  const id = prepare(`
+    INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr, buy_date, buy_amount, buy_eth,
+                        buy_gas_usd, repay_date, repay_amount, platform, created_at, updated_at)
+    VALUES ('2026-05-01', 30000, 'USDC', 4, '2026-05-01', 30000, 10, 3, '2026-07-01', 30200, 'aave', @now, @now)
+  `).run({ now }).lastInsertRowid;
+  const alert = prepare(`
+    INSERT INTO alerts (trade_id, goal_price, direction, status, created_at, updated_at)
+    VALUES (?, 3500, 'up', 'armed', @now, @now)
+  `).run(id, { now }).lastInsertRowid;
+  closeUnwatched();
+  assert.notEqual(prepare('SELECT status FROM alerts WHERE id = ?').get(alert).status, 'armed');
+  assert.doesNotMatch(await holdingMessage(), new RegExp(`#${id}\\b`));
+});
+
+await check('/holding says when it is valued at an old price, as /price does', async () => {
+  const row = { id: 1, platform: 'aave', borrow_date: today, borrow_amount: 1000, borrow_currency: 'USDT',
+    borrow_apr: 0, borrow_gas_usd: 0, buy_date: today, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 };
+  assert.match(holdingText([row], 1100, {}, { ageMs: 2 * 3_600_000 }), /At the price last fetched .+ ago\./);
+  assert.doesNotMatch(holdingText([row], 1100, {}, { ageMs: 1000 }), /last fetched/);
+});
+
 await check('/help says what /holding lists: trades still holding ETH', async () => {
   // Not "open positions": /summary counts a sold, unrepaid trade as open, and
   // /holding does not list it.

@@ -12,6 +12,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ### Changed
 
 - **Stats' By Platform, By currency and By month closed tables fold like the per-platform cards,** starting closed and remembered in this browser.
+- **Muted text and the "no rate" chip are darker in the light theme,** to pass AA contrast on the grey tiles (4.2:1 and 3.8:1 before).
+
+### Fixed
+
+- **A comma that cannot group thousands is the decimal point.** ",125", "30000,125" and a pasted "35 401,022" were read as a thousand times the figure: a gas fee of ,125 was stored as $125.
+- **By month closed no longer says "No trades have been closed yet" when the closed trades only lack a rate,** on the page and the Statement; it says how many are waiting, and a month table missing some says so.
+- **"Cost of ETH sold" in dollars is the coin cost at the rate printed under it,** a cent off on about a quarter of partial euro sales.
+- **A trade repaid without a full sale is not held:** /holding listed it and its alert could still fire. The alert and report queries now ask what `derive` asks.
+- **/holding says when the ETH price is an old cached one,** as /price does.
+- **/watch from the private chat says the reports go to the alerts chat,** rather than promising them there.
+- **Fetch rates keeps keyboard focus,** and **a page turn no longer hides the table's top under the sticky header.**
+- **Tooltips no longer say Aave where the trade may be on Ether.fi** (the borrow, lend and unstake fields, and Total fees paid).
 
 ## [2.0.1] - 2026-11-13
 

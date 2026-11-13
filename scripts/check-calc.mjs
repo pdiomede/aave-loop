@@ -278,8 +278,26 @@ check('amounts in either convention, including three decimals', () => {
     '1.234,567': 1234.567, '26.810,928': 26810.928, '1.234,5678': 1234.5678,
     '32.000,00': 32000, '12,345.67': 12345.67, '1.234.567,89': 1234567.89,
     '12,000': 12000, '0,125': 0.125, '8,0773': 8.0773, '$1.234,56': 1234.56,
+    // A comma that cannot be grouping is the decimal point: no whole part, or
+    // four digits or more before it, or text grouped by spaces. Each was read
+    // as a thousand times the figure.
+    ',125': 0.125, ',500': 0.5, '30000,125': 30000.125, '1368,738': 1368.738,
+    '35 401,022': 35401.022, '1,234,567': 1234567,
   };
   for (const [text, want] of Object.entries(cases)) assert.equal(parseAmount(text), want, text);
+});
+
+check('a partial euro sale\'s dollar cost is its coin cost at the rate shown under it', () => {
+  // 29,876.54 EURC on 9.8765 ETH at 1.0857, 3.3333 ETH sold: the card prints
+  // 10,083.28 EURC "at 1.0857", and 10,083.28 x 1.0857 = 10,947.416, $10,947.42.
+  const d = derive({
+    id: 1, borrow_currency: 'EURC', borrow_date: '2026-03-01', borrow_amount: 29876.54, borrow_apr: 0,
+    borrow_fx: 1.0857, buy_date: '2026-03-01', buy_amount: 29876.54, buy_eth: 9.8765, buy_fx: 1.0857,
+    buy_gas_usd: 0, sell_date: '2026-03-05', sell_amount: 11000, sell_eth: 3.3333, sell_fx: 1.0857, sell_gas_usd: 0,
+  }, AS_OF);
+  assert.equal(d.costOfSoldEth, 10083.28);
+  assert.equal(d.costOfSoldEthUsd, 10947.42);
+  assert.equal(d.grossGainUsd, d.sellUsd - d.costOfSoldEthUsd);
 });
 
 check('malformed grouping is refused, not read as some other number', () => {

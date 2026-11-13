@@ -23,7 +23,7 @@ import {
 } from './lib/calc.js';
 import { ethPrice, ethStatus } from './eth.js';
 import { resolveRate } from './fx.js';
-import { alertPollMs } from './alerts.js';
+import { alertPollMs, HOLDING } from './alerts.js';
 import { n4, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
 /** Telegram refuses a message over 4096 characters, so stop well short of it. */
@@ -92,10 +92,7 @@ const selectHolding = () =>
     SELECT t.*, a.goal_price AS alert_goal
       FROM trades t
       LEFT JOIN alerts a ON a.trade_id = t.id AND a.status = 'armed'
-     WHERE t.buy_date IS NOT NULL
-       AND t.buy_amount IS NOT NULL
-       AND t.buy_eth IS NOT NULL
-       AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)
+     WHERE ${HOLDING}
      ORDER BY t.borrow_date, t.id
   `);
 
@@ -104,7 +101,7 @@ const selectHolding = () =>
  * tile uses, so a euro position reads the same figure in the chat as on the
  * page (see `estimatedGainUsd`).
  */
-export function holdingText(rows, price, fxNow = {}) {
+export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
   if (!rows.length) return 'Nothing is being held right now.';
 
   const hasPrice = Number.isFinite(price);
@@ -192,6 +189,12 @@ export function holdingText(rows, price, fxNow = {}) {
   const head = [
     `<b>Holding ${rows.length} trade${rows.length === 1 ? '' : 's'}</b> · ${escHtml(n4(eth))} ETH${worth}`,
   ];
+  // A price the service could not refresh is the cached one, possibly hours
+  // old, and every figure below is worked out at it. /price said so; this
+  // valued the positions at it in silence. Same threshold and words.
+  if (hasPrice && Number.isFinite(ageMs) && ageMs > alertPollMs) {
+    head.push(`<i>At the price last fetched ${escHtml(ageWords(ageMs))} ago.</i>`);
+  }
 
   if (gainKnown > 0) {
     // Never a total over a subset without saying so. A gain missing a term is
@@ -335,7 +338,7 @@ export async function holdingMessage() {
   // Not asked for without a price: every figure is a dash then, and today's
   // rate is provisional until the ECB publishes, so asking goes to the network
   // and held the reply back for nothing.
-  return holdingText(rows, price, Number.isFinite(price) ? await ratesToday(rows) : {});
+  return holdingText(rows, price, Number.isFinite(price) ? await ratesToday(rows) : {}, { ageMs: quote?.ageMs });
 }
 
 /**

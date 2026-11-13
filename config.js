@@ -119,7 +119,7 @@ function checkPermissions() {
 // Every sentence this appears in already says Telegram, so this must not say
 // it again: "send this to your Telegram chat on Telegram" is what it read
 // before.
-const FALLBACK_NAME = 'your chat';
+export const FALLBACK_NAME = 'your chat';
 
 /**
  * What the alert subsystem needs, and a sentence explaining what is missing
