@@ -654,8 +654,8 @@ await check('/watch reports go to the chat that asked, or to the group once that
   };
   const due = () =>
     prepare('UPDATE bot_state SET watch_next_at = ? WHERE id = 1').run(new Date(Date.now() - 1000).toISOString());
-  const say = (chat, text, id) =>
-    mock.updates.push({ update_id: id, message: { chat: { id: chat }, text, date: Math.floor(Date.now() / 1000) } });
+  const say = (chat, text, id, ageS = 0) =>
+    mock.updates.push({ update_id: id, message: { chat: { id: chat }, text, date: Math.floor(Date.now() / 1000) - ageS } });
 
   // Something held, so reports go out; `holding()` is the sweep's own trade.
   const held = holding();
@@ -684,11 +684,32 @@ await check('/watch reports go to the chat that asked, or to the group once that
   due();
   assert.deepEqual(await tick(), ['-1'], 'held again, sent again');
 
-  say(-1, '/unwatch', 2);
+  // Typed while the app was down for a quarter of an hour: still a stop. An
+  // old /unwatch was skipped as stale, and the reports went on.
+  say(-1, '/unwatch', 2, 900);
   await tick();
   due();
   assert.deepEqual(await tick(), [], 'stopped');
   assert.equal(prepare('SELECT watch_chat FROM bot_state WHERE id = 1').get().watch_chat, null);
+});
+
+await check('/holding counts a part-sold trade as holding what it kept, and its move adds up', async () => {
+  const { holdingText, holdingMessage } = await import('../report.js');
+  // 4 ETH bought, 1 sold, not repaid: the card reads "Still held" 3 ETH.
+  const now = new Date().toISOString();
+  const id = prepare(`
+    INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr, buy_date, buy_amount, buy_eth,
+                        buy_gas_usd, sell_date, sell_amount, sell_eth, sell_gas_usd, platform, created_at, updated_at)
+    VALUES (@d, 10000, 'USDC', 4, @d, 10000, 4, 3, @d, 3000, 1, 2, 'aave', @now, @now)
+  `).run({ d: today, now }).lastInsertRowid;
+  const text = await holdingMessage();
+  assert.match(text, new RegExp(`#${id}\\s+Aave\\s+3\\.0000 ETH`));
+
+  // Two euro positions whose moves print -$1,207.24 and -$1,207.66: the line
+  // under the total names their sum as printed, -$2,414.90.
+  const eur = (n, amt) => ({ id: n, borrow_currency: 'EURC', platform: 'aave', borrow_amount: amt, borrow_apr: 4,
+    borrow_date: today, buy_date: today, buy_amount: amt, buy_eth: 3, buy_gas_usd: 2, borrow_fx: 1.0505, buy_fx: 1.0505 });
+  assert.match(holdingText([eur(1, 10002), eur(2, 10005.5)], 3000, { EURC: 1.1712 }), /-\$2,414\.90 of it from the move/);
 });
 
 /* ------------------------------------------------------------------ the end */

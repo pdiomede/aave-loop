@@ -19,11 +19,12 @@ import {
   isUsdPegged,
   todayISO,
   cents,
+  ethHeldNow,
   PLATFORM_META,
 } from './lib/calc.js';
 import { ethPrice, ethStatus } from './eth.js';
 import { resolveRate } from './fx.js';
-import { alertPollMs, HOLDING } from './alerts.js';
+import { alertPollMs } from './alerts.js';
 import { n4, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
 /** Telegram refuses a message over 4096 characters, so stop well short of it. */
@@ -73,28 +74,33 @@ export function priceText(quote) {
 /**
  * The trades still holding ETH, with the alert on each where there is one.
  *
- * Not every open position: a trade whose ETH is sold but whose loan is not
+ * Not every open position: a trade whose ETH is all sold but whose loan is not
  * repaid is open - /summary and the page count it - and holds no ETH, so it is
- * not here, and /help says so rather than calling this the open positions.
+ * not here, and /help says so rather than calling this the open positions. A
+ * trade sold in part holds what it kept until it is repaid, and is here.
  *
- * The WHERE clause is the one the alert sweep uses, spelled out rather than
- * asking whether the ETH has been sold: a purchase can be undone as well as
- * followed by a sale, and both take a trade out of HOLDING. Both halves name
- * all three columns, because `stages()` does, and a bare `sell_date` is a row
- * the page still calls HOLDING. Only an armed alert earns a bell; a fired one
- * is not something still being waited for.
+ * The query reads every trade that could hold ETH - bought, not repaid, with
+ * all three purchase columns as `stages()` asks - and `ethHeldNow` decides
+ * which do, so a partial sale is judged as its card judges it. Only an armed
+ * alert earns a bell; a fired one is not something still being waited for.
  *
  * Oldest first, which is the opposite of the table on the page. A chat report
  * is read downwards from the position you have held longest.
  */
+// Bought and not repaid: every trade that can hold ETH. Which of them do is
+// `derive`'s answer (`ethHeldNow`), not SQL's - HOLDING, the alerts' test,
+// counts a partial sale as holding nothing, and the bot left those out.
 const selectHolding = () =>
   prepare(`
     SELECT t.*, a.goal_price AS alert_goal
       FROM trades t
       LEFT JOIN alerts a ON a.trade_id = t.id AND a.status = 'armed'
-     WHERE ${HOLDING}
+     WHERE t.buy_date IS NOT NULL AND t.buy_amount IS NOT NULL AND t.buy_eth IS NOT NULL
+       AND (t.repay_date IS NULL OR t.repay_amount IS NULL OR t.repay_amount <= 0)
      ORDER BY t.borrow_date, t.id
   `);
+
+const heldRows = () => selectHolding().all().filter((t) => ethHeldNow(derive(t, derivedOn(t))) > 0);
 
 /**
  * `fxNow` is today's rate per borrowed coin, the one the page's Open positions
@@ -126,7 +132,7 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
 
   const cells = rows.map((t) => {
     const d = derive(t, derivedOn(t));
-    const held = Number.isFinite(d.ethHeld) ? d.ethHeld : 0;
+    const held = ethHeldNow(d);
     eth += held;
 
     const g = hasPrice ? estimatedGainUsd(t, d, price, fxNow) : null;
@@ -138,8 +144,12 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
       const today = fxNow?.[t.borrow_currency];
       if (!d.isUsdPegged && Number.isFinite(today)) {
         marked.add(t.borrow_currency);
-        if (Number.isFinite(t.buy_fx)) {
-          moved += -t.buy_amount * (today - t.buy_fx);
+        // In cents as each alert prints it, which is also how each gain took
+        // it (`markedUsd`): summed raw, two moves printed -$1,207.24 and
+        // -$1,207.66 were called -$2,414.91. A partial sale's gain is marked
+        // otherwise, so no move is claimed for it.
+        if (Number.isFinite(t.buy_fx) && Number.isFinite(d.ethHeld)) {
+          moved += cents(-t.buy_amount * (today - t.buy_fx));
           movedKnown = true;
         } else moveGap = true;
       }
@@ -210,7 +220,7 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
     // A euro loan is marked at today's rate rather than the one it was bought
     // at, and a figure has to say how it was arrived at.
     const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');
-    const move = movedKnown && !moveGap ? ` (${signedUsd(moved)} of it from the move since purchase)` : '';
+    const move = movedKnown && !moveGap ? ` (${signedUsd(moved / 100)} of it from the move since purchase)` : '';
     head.push(
       `Unrealised ${escHtml(signedUsd(gain / 100))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
     );
@@ -327,7 +337,7 @@ export async function priceMessage() {
 export function holdingCount() {
   if (!db.open) return null;
   try {
-    return prepare(`SELECT COUNT(*) AS n FROM trades t WHERE ${HOLDING}`).get().n;
+    return heldRows().length;
   } catch (err) {
     console.error('Could not count the open positions:', err.message);
     return null;
@@ -342,7 +352,7 @@ export async function holdingMessage() {
   if (!db.open) return CLOSED;
   let rows;
   try {
-    rows = selectHolding().all();
+    rows = heldRows();
   } catch (err) {
     // A refused statement is not a reason to say nothing back. The command was
     // asked in a chat, and silence there reads as a broken bot.

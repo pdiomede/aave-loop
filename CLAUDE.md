@@ -140,8 +140,10 @@ drift between a hand-written SQL predicate and `stages()`.
 `estimatedGainUsd(t, d, price, fxNow)` is the same for an open position's estimate:
 the header's Open positions tile (`openGainsUsd`), the table's `est` figures and their
 sort, Telegram's `/holding` and the alert message all print it, so one trade never
-reads two ways. `/holding` lists only trades still holding ETH; a trade sold and not
-repaid is open (the tile and `/summary` count it) but not in `/holding`. It takes the ETH price and today's rate per coin as arguments rather
+reads two ways. `/holding` lists only trades still holding ETH (`ethHeldNow`), a
+part-sold one with what it kept; a trade sold in full and not repaid is open (the
+tile and `/summary` count it) but not in `/holding`. It takes the ETH price and
+today's rate per coin as arguments rather
 than fetching them, which is what keeps it in `lib/`. It is the one place an open
 position is marked to today's exchange rate; `derive`'s own figures never are.
 
@@ -187,10 +189,11 @@ copy; this is mostly a dev-machine state, but the code holds for both. This is w
   because the rate lookup in between can take seconds; three misses answer 503;
 - an alert's failed sends are counted in SQL (`attempts = attempts + 1`), never from
   the row the sweep read at its start;
-- "held" is one SQL predicate, `HOLDING` exported from `alerts.js`, used by the sweep,
-  `closeUnwatched`, `/holding` and `holdingCount()`; it must ask what `stages()` asks
-  (bought, sale incomplete, **not repaid**) or a trade `derive` calls CLOSED is
-  alerted on and listed as held;
+- "held" for alerts is one SQL predicate, `HOLDING` exported from `alerts.js`, used by
+  the sweep and `closeUnwatched`; it must ask what `stages()` asks (bought, sale
+  incomplete, **not repaid**) or a trade `derive` calls CLOSED is alerted on. Any
+  sale closes an alert. `/holding` and `holdingCount()` ask `ethHeldNow` instead,
+  so a part-sold trade still counts as holding what it kept;
 - Delete all alerts sends `?through=<newest id shown>` and the server deletes only up
   to it, so a goal set from elsewhere since the page read its list is not deleted
   unseen;

@@ -82,7 +82,7 @@ The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat i
 | Command | Returns |
 | --- | --- |
 | `/price` | ETH now, with 24h, 7d and 30d change |
-| `/holding` | each trade still holding ETH, with its estimated gain, the total and what it is worth. A trade sold but not repaid is open, and `/summary` counts it, but it holds no ETH and is not listed |
+| `/holding` | each trade still holding ETH, with its estimated gain, the total and what it is worth; one sold in part is listed with the ETH it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds no ETH and is not listed |
 | `/summary` | realized net gain, blended annualized, closed trades, open positions |
 | `/watch` / `/unwatch` | the price every twenty minutes in the chat that asked, sent only while a trade holds ETH, or stop. One watch at a time: `/watch` from the other chat moves it there |
 

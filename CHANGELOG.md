@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **An /unwatch sent while the app was down still stops the reports.** Older than ten minutes, it was skipped as stale and the price kept coming every twenty minutes.
+- **Restarting the app while the bot is answering no longer loses those commands:** shutdown waits for the batch, whose offset Telegram has already been told.
+- **A /watch report is not sent twice** when one copy of the app outlasts its lease and the other takes over; the report slot is now claimed before it is sent.
+- **A trade sold in part counts as holding the ETH it kept,** as its card says: /holding listed nothing and /watch skipped its reports.
+- **/holding's "of it from the move since purchase" adds the moves as printed,** a cent off before.
+
 ## [2.1.5] - 2026-11-13
 
 ### Fixed

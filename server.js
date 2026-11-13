@@ -48,7 +48,7 @@ import {
   closeUnwatched,
   freshPrice,
 } from './alerts.js';
-import { startBotPoller, stopBotPoller } from './bot.js';
+import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -1051,10 +1051,15 @@ function shutdown(signal) {
   stopFxRefresher();
   // A sweep mid-send is let finish before the database closes, so its result
   // is written: closed under it, an alert claimed as fired stayed fired though
-  // the send failed or never completed (`alertSweepDone`). A send gives up
-  // after ten seconds, so twelve is enough to wait.
+  // the send failed or never completed (`alertSweepDone`). So is a bot batch
+  // being answered: its offset is already confirmed, so commands cut off here
+  // are never handed out again (`botTickDone`). A send gives up after ten
+  // seconds, so twelve is enough to wait.
   const finish = async () => {
-    await Promise.race([alertSweepDone(), new Promise((r) => setTimeout(r, 12_000).unref())]);
+    await Promise.race([
+      Promise.all([alertSweepDone(), botTickDone()]),
+      new Promise((r) => setTimeout(r, 12_000).unref()),
+    ]);
     closeDb();
     process.exit(0);
   };

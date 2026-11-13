@@ -399,10 +399,19 @@ async function tickWatch(row) {
   if (!row?.watch) return;
   if (row.watch_next_at && row.watch_next_at > nowISO()) return;
   // Written before the send, so a failure cannot turn into a message per tick.
+  //
+  // And claimed: sent only if this write moved the deadline, while the lease
+  // is still ours and the report still due. A tick that outlasted its lease
+  // used to send regardless - its write matched nothing, the deadline did not
+  // move, and the copy that took the lease over sent the same report again.
   if (!db.open) return;
-  prepare('UPDATE bot_state SET watch_next_at = @next, updated_at = @now WHERE id = 1 AND holder = @me').run(
-    { next: new Date(Date.now() + WATCH_MS).toISOString(), now: nowISO(), me: ME },
-  );
+  const now = nowISO();
+  const claimed = prepare(`
+    UPDATE bot_state SET watch_next_at = @next, updated_at = @now
+     WHERE id = 1 AND holder = @me AND lease_until > @now AND watch = 1
+       AND (watch_next_at IS NULL OR watch_next_at <= @now)
+  `).run({ next: new Date(Date.now() + WATCH_MS).toISOString(), now, me: ME }).changes === 1;
+  if (!claimed) return;
   // To the chat that asked, while it is still one the bot answers in: a
   // private chat whose TELEGRAM_OWNER_ID has since been taken out of the
   // config is not sent a position report, and the group gets it instead, as
@@ -494,13 +503,17 @@ async function handle(updates) {
       continue;
     }
 
-    if (Number.isFinite(msg.date) && Date.now() / 1000 - msg.date > MAX_AGE_S) {
+    const command = commandOf(msg.text, me);
+    if (!command) continue;
+
+    // Except /unwatch. An old request for a report is not one for a report
+    // now, but an old request to stop is still one to stop: skipped as stale
+    // after the app was down ten minutes, it was confirmed to Telegram and
+    // dropped, and the reports went on coming every twenty minutes.
+    if (command !== 'unwatch' && Number.isFinite(msg.date) && Date.now() / 1000 - msg.date > MAX_AGE_S) {
       stale += 1;
       continue;
     }
-
-    const command = commandOf(msg.text, me);
-    if (!command) continue;
 
     // Past the cap they are dropped, and the offset covering them has already
     // been written, so they are gone rather than deferred. Rare enough to be
@@ -528,16 +541,31 @@ async function handle(updates) {
 
 /* ------------------------------------------------------------------- the loop */
 
+/**
+ * The tick under way, for shutdown to wait on. The offset is confirmed to
+ * Telegram before a batch is answered, so a process that closed its database
+ * mid-batch lost those commands for good: confirmed, never answered, never
+ * handed out again. Settles, never rejects.
+ */
+let tickInFlight = null;
+export function botTickDone() {
+  return tickInFlight ?? Promise.resolve();
+}
+
 async function loop() {
   while (running) {
     try {
-      const out = await runBotTick();
+      const tick = runBotTick();
+      tickInFlight = tick.catch(() => {});
+      const out = await tick;
+      tickInFlight = null;
       if (!running) break;
       // Without the lease there is nothing to do and nothing to ask, so this
       // instance costs one local UPDATE every half minute and no network at all.
       if (out.polled === false && out.reason === 'lease held elsewhere') await sleep(LEASE_RETRY_MS);
       else if (out.error) await sleep(backoff);
     } catch (err) {
+      tickInFlight = null;
       // An aborted poll on the way out is not a fault.
       if (running && err.name !== 'AbortError') {
         state.lastError = redact(err.message);
