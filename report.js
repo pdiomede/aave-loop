@@ -317,6 +317,23 @@ export async function priceMessage() {
  * the alert sweep settles for too, so a report landing near a sweep costs no
  * call at all.
  */
+/**
+ * How many trades still hold ETH, by the same test /holding and the alerts
+ * use. /watch reports only while this is above zero: the price every twenty
+ * minutes is for deciding when to sell, and with nothing held there is
+ * nothing to decide. Null when the ledger cannot be read, so a caller can
+ * tell "none" from "unknown".
+ */
+export function holdingCount() {
+  if (!db.open) return null;
+  try {
+    return prepare(`SELECT COUNT(*) AS n FROM trades t WHERE ${HOLDING}`).get().n;
+  } catch (err) {
+    console.error('Could not count the open positions:', err.message);
+    return null;
+  }
+}
+
 export async function watchMessage() {
   return priceText(await ethPrice({ maxAgeMs: 300_000 }));
 }

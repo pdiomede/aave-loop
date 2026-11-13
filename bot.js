@@ -29,7 +29,7 @@ import { db, prepare } from './db.js';
 import { telegramConfig } from './config.js';
 import { intervalMs } from './lib/calc.js';
 import { sendTelegramMessage } from './telegram.js';
-import { priceMessage, watchMessage, holdingMessage, summaryMessage, helpText } from './report.js';
+import { priceMessage, watchMessage, holdingMessage, holdingCount, summaryMessage, helpText } from './report.js';
 
 const OFF = process.env.MYAAVE_BOT_OFF === '1';
 
@@ -306,7 +306,9 @@ async function textFor(command, from = null) {
       // The reports go to the chat that asked (`tickWatch`), so "here" is
       // where they will arrive.
       setWatch(true, from);
-      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY} here until /unwatch.</i>`;
+      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY} here until /unwatch${
+        holdingCount() === 0 ? ', sent while a trade holds ETH - none does now' : ''
+      }.</i>`;
     case 'unwatch':
       setWatch(false);
       return 'Stopped. No more price updates.';
@@ -406,6 +408,11 @@ async function tickWatch(row) {
   // config is not sent a position report, and the group gets it instead, as
   // a watch set before the chat was stored does.
   const to = row.watch_chat && allowedChats().has(String(row.watch_chat)) ? row.watch_chat : null;
+  // Only while something is held: the report is for deciding when to sell.
+  // Skipped, not stopped - the deadline above has already moved on, so the
+  // next one is asked again in twenty minutes and resumes by itself once a
+  // purchase is recorded. A count that cannot be read sends as before.
+  if (holdingCount() === 0) return;
   await reply(await watchMessage(), to);
 }
 

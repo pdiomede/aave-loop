@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [2.1.2] - 2026-11-13
+
+### Changed
+
+- **/watch reports go out only while a trade holds ETH.** With nothing held the report is skipped, the watch stays on, and it resumes once a purchase is recorded; /watch says so when nothing is held.
+
+### Fixed
+
+- **An alert's lines add up to its Gain.** Worth now less what was spent, the interest and the fees missed the gain by a cent on about a quarter of messages; every estimate (alerts, the table's `est`, Open positions, /holding) now works from those figures as printed.
+- **Alerts no longer fire on an old cached ETH price.** When the price service failed, a goal could fire on a price days old called "now"; a new goal now needs a fresh price to fire, and one saved meanwhile takes its direction from what was paid.
+- **Saving a new goal keeps a reached alert that was never sent,** marked failed with its reason, instead of deleting it from the Alerts log.
+- **A goal is watched as it is shown, to the cent:** 3,449.996 was shown as $3,450.00 but not reached at $3,450.00.
+- **A send that never reached Telegram (no connection) is not counted** as one of an alert's three tries, so a short outage no longer uses the alert up.
+- **Stopping the app mid-send no longer marks an unsent alert as sent:** shutdown waits for the send to finish and records its result.
+
 ## [2.1.1] - 2026-11-13
 
 ### Changed

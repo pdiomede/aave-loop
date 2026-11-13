@@ -208,7 +208,23 @@ const reached = (alert, price) =>
  * Save the goal for a trade, replacing whatever was there. `price` is ETH's
  * current price, which decides the direction; null when it could not be had.
  */
-const clearArmed = () => prepare(`DELETE FROM alerts WHERE trade_id = ? AND status = 'armed'`);
+// Only a goal not yet reached. One that was reached and is waiting to be sent
+// - put back to armed with `fired_at` after a failed send - is history: the
+// Alerts view shows when and where it was hit, and deleting it took that
+// record, and the message it owed, with it. It is closed as failed instead,
+// its last error kept and the replacement named.
+const clearArmed = () =>
+  prepare(`DELETE FROM alerts WHERE trade_id = ? AND status = 'armed' AND fired_at IS NULL`);
+
+const failReachedArmed = () =>
+  prepare(`
+    UPDATE alerts
+       SET status = 'failed',
+           last_error = COALESCE(last_error || CASE WHEN last_error LIKE '%.' THEN ' ' ELSE '. ' END, '')
+                        || 'Replaced by a new goal before it was sent.',
+           updated_at = @now
+     WHERE trade_id = @trade_id AND status = 'armed' AND fired_at IS NOT NULL
+  `);
 
 const insertAlert = () =>
   prepare(`
@@ -230,6 +246,7 @@ const insertAlert = () =>
  * A fired or failed row on the same trade is not touched either way.
  */
 const replaceArmed = db.transaction((p) => {
+  failReachedArmed().run({ trade_id: p.trade_id, now: p.now });
   clearArmed().run(p.trade_id);
   return insertAlert().run(p).lastInsertRowid;
 });
@@ -489,9 +506,13 @@ async function fire(row, price) {
     // the other copy in between was written over, and the alert was re-armed
     // past its three tries. Every SET reads the row before the update, so
     // `attempts + 1` is the count this failure makes.
-    backToArmed({ counted: true }).run({
+    //
+    // Not counted when the request never left the machine (`notSent`): that
+    // send cannot have arrived, so it is waited out like a setup error.
+    const counted = !sent.notSent;
+    backToArmed({ counted }).run({
       id: row.id,
-      max: MAX_ATTEMPTS,
+      ...(counted ? { max: MAX_ATTEMPTS } : {}),
       error: sent.error,
       now: new Date().toISOString(),
     });
@@ -520,7 +541,52 @@ async function fire(row, price) {
  * with no alerts on it never touches the network however long it is left
  * running.
  */
-export async function runAlertSweep() {
+/**
+ * How old the sweep's price may be, and still be taken as today's: the age it
+ * asks for, twice over, so one late refresh is not an outage.
+ */
+const PRICE_FRESH_MS = 2 * Math.min(POLL_MS, 300_000);
+
+/**
+ * The quote's price while it is fresh, else null. `ethPrice` falls back to the
+ * cache when the service fails - a 429 parks it for up to an hour, and the
+ * network is gone after the Mac wakes - and the cache has no age limit, so a
+ * goal was fired, and a message that cannot be unsent went out, on a price a
+ * day and a half old called "now"; and a goal saved meanwhile took its
+ * direction from it. Exported for that save.
+ */
+export function freshPrice(quote) {
+  if (!quote || !Number.isFinite(quote.price)) return null;
+  return Number.isFinite(quote.ageMs) && quote.ageMs > PRICE_FRESH_MS ? null : quote.price;
+}
+
+/**
+ * The sweep under way, if any, for shutdown to wait on. Stopped mid-send, the
+ * claim had already marked the alert fired and the result was never written:
+ * a message Telegram refused, or never got, read as sent and was never tried
+ * again. Settles, never rejects.
+ */
+let sweepInFlight = null;
+export function alertSweepDone() {
+  return sweepInFlight ?? Promise.resolve();
+}
+
+export function runAlertSweep() {
+  const run = sweepOnce();
+  // A sweep that found one already running returns at once; the running one
+  // stays the one to wait on.
+  if (!sweepInFlight) {
+    const tracked = run
+      .catch(() => {})
+      .finally(() => {
+        if (sweepInFlight === tracked) sweepInFlight = null;
+      });
+    sweepInFlight = tracked;
+  }
+  return run;
+}
+
+async function sweepOnce() {
   // A tick can arrive while the last one is still away, and again after the
   // database has been closed on the way out.
   if (sweeping || !db.open) return { checked: 0, fired: 0 };
@@ -557,7 +623,9 @@ export async function runAlertSweep() {
       // retried only if ETH happened to be past the goal again a quarter of an
       // hour later: a dip that came back never got its message, and the card
       // went on calling the alert armed. A goal saved afresh has none.
-      if (row.fired_at == null && !reached(row, quote.price)) continue;
+      // A fresh goal is judged on a fresh price only. One already reached is
+      // owed its message, whatever the price is now.
+      if (row.fired_at == null && (freshPrice(quote) === null || !reached(row, quote.price))) continue;
       // Each one on its own. The catch below covers the pass, so anything
       // thrown here used to abandon every alert still to be looked at - and
       // the one that threw had already been claimed, which is to say marked

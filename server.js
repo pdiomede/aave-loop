@@ -16,6 +16,7 @@ import {
   todayISO,
   intervalMs,
   cents,
+  asPrinted,
   CURRENCIES,
   PLATFORMS,
   FX_STAGES,
@@ -43,7 +44,9 @@ import {
   alertPollMs,
   startAlertPoller,
   stopAlertPoller,
+  alertSweepDone,
   closeUnwatched,
+  freshPrice,
 } from './alerts.js';
 import { startBotPoller, stopBotPoller } from './bot.js';
 
@@ -815,7 +818,10 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
 
     // The same parser the browser uses, so "3,000" cannot mean one thing in
     // the form and another here.
-    const goal = toNumber(req.body?.goal_price, 'goal_price', 'ETH goal price');
+    // To the cent, as every place that shows a goal prints it: kept whole,
+    // 3449.996 was shown as $3,450.00 and did not fire with ETH at $3,450.00
+    // from below, so the goal on screen was not the goal being watched.
+    const goal = asPrinted(toNumber(req.body?.goal_price, 'goal_price', 'ETH goal price'));
     if (!goalInRange(goal)) {
       throw new BadRequest('That looks like a slipped digit. The price is in dollars.', 'goal_price');
     }
@@ -834,7 +840,9 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     if (derive(live).status !== STATUS.HOLDING) {
       throw new BadRequest('A price alert only applies while the ETH is held.', 'goal_price');
     }
-    const saved = saveAlert(live, goal, quote?.price ?? null);
+    // A stale quote is no price: the direction comes from what was paid, as
+    // it does when no price could be had at all (`freshPrice`).
+    const saved = saveAlert(live, goal, freshPrice(quote));
     // A second copy of the app can still sell it between that read and this
     // save; the sweep would close the alert, but there is no reason to wait.
     closeUnwatched();
@@ -910,7 +918,8 @@ app.get('/api/trades/:id/alert/preview', (req, res) => {
   const trade = id === null ? undefined : selectOne.get(id);
   if (!trade) return res.status(404).json({ error: 'Trade not found.' });
 
-  const goal = parseAmount(req.query.goal);
+  // To the cent, as the save takes it.
+  const goal = asPrinted(parseAmount(req.query.goal));
   // The save's own bounds, so the window never previews a goal it would refuse
   // - the trade's as well as the goal's. Without the status test a trade sold
   // while the window was open went on previewing a message the save then
@@ -1030,15 +1039,22 @@ function shutdown(signal) {
   stopAlertPoller();
   stopBotPoller();
   stopFxRefresher();
-  server.close(() => {
+  // A sweep mid-send is let finish before the database closes, so its result
+  // is written: closed under it, an alert claimed as fired stayed fired though
+  // the send failed or never completed (`alertSweepDone`). A send gives up
+  // after ten seconds, so twelve is enough to wait.
+  const finish = async () => {
+    await Promise.race([alertSweepDone(), new Promise((r) => setTimeout(r, 12_000).unref())]);
     closeDb();
     process.exit(0);
-  });
-  // Do not let a hung connection hold the database open indefinitely.
+  };
+  server.close(finish);
+  // Do not let a hung connection hold the database open indefinitely - but
+  // later than the sweep above may take, or this would cut it short.
   setTimeout(() => {
     closeDb();
     process.exit(0);
-  }, 3000).unref();
+  }, 13_000).unref();
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => shutdown(signal));

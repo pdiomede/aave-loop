@@ -51,6 +51,8 @@ function check(name, fn) {
     process.exitCode = 1;
   }
 }
+// A dollar figure to the cent, for expectations built from printed terms.
+const c2 = (v) => Math.round(v * 100) / 100;
 const near = (actual, expected, what) =>
   assert.ok(
     Number.isFinite(actual) && Math.abs(actual - expected) < 1e-6,
@@ -96,7 +98,7 @@ check('lib/calc.js imports nothing, so it still runs in the browser', () => {
 /* ---------------------------------------------------------- held positions */
 
 check('held dollar loan: ETH at today\'s price less cost, interest and gas', () => {
-  near(est(held()), 10 * PRICE - 30000 - INTEREST - 8, 'estimate');
+  near(est(held()), 10 * PRICE - 30000 - c2(INTEREST) - 8, 'estimate'); // interest as printed
 });
 
 check('held dollar loan agrees with unrealisedUsd, which Telegram alerts use', () => {
@@ -108,7 +110,8 @@ check('held euro loan: gain % is the return on the 30,000 EURC spent, at today\'
   // 30,000 EURC bought at 1.05, EURC at 1.17 today: the gain at today's rate
   // over the 30,000 EURC at today's rate too, so -2.06%, not over $31,500.
   const t = held(eur(1.05));
-  const gain = 10 * PRICE - (30000 + INTEREST) * 1.17 - 8;
+  // As printed: $31,500.00 at 1.05 plus the $3,600.00 move is $35,100.00.
+  const gain = 10 * PRICE - 35100 - c2(INTEREST * 1.17) - 8;
   near(estimatedGainPct(t, derive(t, AS_OF), PRICE, { EURC: 1.17 }), (gain / (30000 * 1.17)) * 100, 'pct');
 });
 
@@ -133,19 +136,22 @@ check('a loan with nothing bought has no gain %', () => {
 });
 
 check('held dollar loan ignores any rate it is handed', () => {
-  near(est(held(), PRICE, { USDT: 2 }), 10 * PRICE - 30000 - INTEREST - 8, 'estimate');
+  near(est(held(), PRICE, { USDT: 2 }), 10 * PRICE - 30000 - c2(INTEREST) - 8, 'estimate');
 });
 
 check('held euro loan is marked at today\'s rate, not the purchase rate', () => {
-  near(est(held(eur(1.05)), PRICE, { EURC: 1.17 }), 10 * PRICE - (30000 + INTEREST) * 1.17 - 8, 'estimate');
+  // $31,500.00 at 1.05 plus the $3,600.00 move to 1.17, interest to the cent.
+  near(est(held(eur(1.05)), PRICE, { EURC: 1.17 }), 10 * PRICE - 35100 - c2(INTEREST * 1.17) - 8, 'estimate');
 });
 
 check('held euro loan falls back to its stored rates without today\'s', () => {
-  near(est(held(eur(1.05))), 10 * PRICE - 30000 * 1.05 - INTEREST * 1.05 - 8, 'estimate');
+  near(est(held(eur(1.05))), 10 * PRICE - 31500 - c2(INTEREST * 1.05) - 8, 'estimate');
 });
 
 check('held euro loan saved before any rate is converted at today\'s', () => {
-  near(est(held(eur(null)), PRICE, { EURC: 1.1225 }), 10 * PRICE - (30000 + INTEREST) * 1.1225 - 8, 'estimate');
+  // From the terms as the alert prints them: 30,000 EURC at 1.1225 is
+  // $33,675.00, and the interest at today's rate to the cent.
+  near(est(held(eur(null)), PRICE, { EURC: 1.1225 }), 10 * PRICE - 33675 - c2(INTEREST * 1.1225) - 8, 'estimate');
 });
 
 check('held euro loan with no rate at all has no estimate, not a zero', () => {
@@ -159,7 +165,7 @@ check('held position with no ETH price has no estimate', () => {
 /* ------------------------------------------------------- sold, not repaid */
 
 check('sold in full: the projection, whatever ETH does now', () => {
-  const expected = 33000 - 30000 - INTEREST - 12;
+  const expected = 33000 - 30000 - c2(INTEREST) - 12; // interest as printed
   near(est(sold()), expected, 'at a price');
   near(est(sold(), null), expected, 'with no price');
 });
@@ -173,7 +179,7 @@ check('partial sale counts the ETH still held at today\'s price', () => {
   // 6 of 10 ETH sold for 21,000: the gain on those, plus 4 ETH at today's
   // price less the 12,000 they cost.
   const t = sold({ sell_amount: 21000, sell_eth: 6 });
-  near(est(t), 21000 - 18000 - INTEREST - 12 + (4 * PRICE - 12000), 'estimate');
+  near(est(t), 21000 - 18000 - c2(INTEREST) - 12 + (4 * PRICE - 12000), 'estimate'); // interest as printed
 });
 
 check('partial sale needs the ETH price, a full one does not', () => {
@@ -185,13 +191,17 @@ check('partial sale needs the ETH price, a full one does not', () => {
 
 check('partial euro sale is marked at today\'s rate, like a held one', () => {
   const t = sold({ ...eur(1.1), sell_amount: 21000, sell_eth: 6 });
-  const expected = (21000 - 18000 - INTEREST) * 1.2 - 12 + (4 * PRICE - 12000 * 1.2);
+  // As printed: 3,000 EURC gross at 1.2 is $3,600.00, the interest to the
+  // cent, and the 4 ETH kept less their cost of 12,000 EURC at 1.2, $14,400.00.
+  const expected = 3600 - c2(INTEREST * 1.2) - 12 + (4 * PRICE - 14400);
   near(est(t, PRICE, { EURC: 1.2 }), expected, 'estimate');
 });
 
 check('partial euro sale falls back to its stored rates without today\'s', () => {
   const t = sold({ ...eur(1.1), sell_amount: 21000, sell_eth: 6 });
-  const expected = (21000 - 18000) * 1.1 - INTEREST * 1.1 - 12 + (4 * PRICE - 12000 * 1.1);
+  // As printed at the stored 1.1: $3,300.00 gross, the interest to the cent,
+  // and the 4 ETH kept less their cost of $13,200.00.
+  const expected = 3300 - c2(INTEREST * 1.1) - 12 + (4 * PRICE - 13200);
   near(est(t, PRICE), expected, 'estimate');
 });
 
@@ -203,17 +213,22 @@ check('selling a sliver of a euro position moves its estimate by the sliver only
   const fx = { EURC: 1.15 };
   const before = est(held(eur(1.05)), PRICE, fx);
   const after = est(sold({ ...eur(1.05), sell_amount: 30, sell_eth: 0.01, sell_gas_usd: 0 }), PRICE, fx);
-  near(before, 10 * PRICE - (30000 + INTEREST) * 1.15 - 8, 'held');
+  // $31,500.00 at the purchase's 1.05 plus the $3,000.00 move to 1.15, and
+  // the interest at 1.15 to the cent, as the alert prints them.
+  near(before, 10 * PRICE - 34500 - c2(INTEREST * 1.15) - 8, 'held');
   near(after, before, 'after the sliver');
 });
 
 check('euro sale saved before any rate is converted at today\'s', () => {
-  near(est(sold(eur(null)), PRICE, { EURC: 1.2 }), (33000 - 30000 - INTEREST) * 1.2 - 12, 'estimate');
+  // As printed: the 3,000 EURC gross at 1.2 is $3,600.00, the interest to the cent.
+  near(est(sold(eur(null)), PRICE, { EURC: 1.2 }), 3600 - c2(INTEREST * 1.2) - 12, 'estimate');
 });
 
 check('euro partial sale with no stored rate: the ETH kept costs today\'s rate too', () => {
   const t = sold({ ...eur(null), sell_amount: 21000, sell_eth: 6 });
-  const expected = (21000 - 18000 - INTEREST) * 1.2 - 12 + (4 * PRICE - 12000 * 1.2);
+  // As printed: 3,000 EURC gross at 1.2 is $3,600.00, the interest to the
+  // cent, and the 4 ETH kept less their cost of 12,000 EURC at 1.2, $14,400.00.
+  const expected = 3600 - c2(INTEREST * 1.2) - 12 + (4 * PRICE - 14400);
   near(est(t, PRICE, { EURC: 1.2 }), expected, 'estimate');
 });
 

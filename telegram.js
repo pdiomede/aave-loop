@@ -88,8 +88,20 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
         /chat not found|upgraded to a supergroup|not a member|bot was kicked|not enough rights/i.test(described));
     return { ok: false, retryable, setup, error: described };
   } catch (err) {
+    // No connection at all - refused, no DNS, no route - means the request
+    // never reached Telegram, so it certainly did not arrive. `notSent` keeps
+    // that from being counted as one of an alert's three tries, which are for
+    // a send that may have got through: half an hour offline used a reached
+    // goal up for good, as "fetch failed". A timeout or a reset mid-request
+    // may have been delivered, and still counts.
+    const code = err.cause?.code;
+    const notSent = ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH'].includes(code);
     const message =
-      err.name === 'TimeoutError' ? 'Telegram did not answer in time.' : redact(err.message);
-    return { ok: false, retryable: true, error: message };
+      err.name === 'TimeoutError'
+        ? 'Telegram did not answer in time.'
+        : notSent
+          ? `Could not reach Telegram (${code}).`
+          : redact(err.message);
+    return { ok: false, retryable: true, notSent, error: message };
   }
 }

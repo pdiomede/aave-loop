@@ -3417,9 +3417,17 @@ async function submitAlert(form) {
     // the write answers with what it stored, so there is no second reply that
     // can arrive late and undo it.
     if (state.alertLog) {
+      // As the server does it: a goal not yet reached goes, one reached and
+      // still unsent stays in the log as failed - it used to vanish here too.
       state.alertLog = [
         alert,
-        ...state.alertLog.filter((a) => !(a.tradeId === id && a.status === 'armed')),
+        ...state.alertLog
+          .filter((a) => !(a.tradeId === id && a.status === 'armed' && !a.firedAt))
+          .map((a) =>
+            a.tradeId === id && a.status === 'armed'
+              ? { ...a, status: 'failed', lastError: `${a.lastError ? `${a.lastError.replace(/\.?$/, '.')} ` : ''}Replaced by a new goal before it was sent.` }
+              : a,
+          ),
       ];
     }
     alertWriteSeq += 1;

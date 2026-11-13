@@ -579,6 +579,46 @@ await check('set-platform: a dry run writes nothing, --apply sets Aave on the re
   db.close();
 });
 
+await check('a new goal keeps a reached, unsent alert in the log as failed, not deleted', async () => {
+  const t = holding();
+  const first = saveAlert(t, 2400, 2500);
+  // Reached and waiting to go out, as a failed send leaves it.
+  prepare("UPDATE alerts SET fired_at = @now, fired_price = 2390, last_error = 'Bad Gateway' WHERE id = @id").run({
+    id: first.id,
+    now: new Date().toISOString(),
+  });
+  const second = saveAlert(t, 2300, 2390);
+  const old = getAlertById(first.id);
+  assert.ok(old, 'still in the log');
+  assert.equal(old.status, 'failed');
+  assert.equal(old.lastError, 'Bad Gateway. Replaced by a new goal before it was sent.');
+  assert.equal(getAlertById(second.id).status, 'armed');
+  // A goal never reached is simply replaced, as before.
+  const third = saveAlert(t, 2200, 2390);
+  assert.equal(getAlertById(second.id), null);
+  assert.equal(getAlertById(third.id).status, 'armed');
+});
+
+/* ------------------------------------------------------- the alert message */
+
+await check('an alert\'s lines add up to its gain, to the cent', async () => {
+  // Worth now, less the dollars spent, the interest and the fees, is the Gain
+  // printed under them. Built from raw floats it missed by a cent on about a
+  // quarter of trades, so thirty days of loan age are tried, not one.
+  const { alertMessage } = await import('../alerts.js');
+  const dollars = (s) => Number(s.replace(/[$,+]/g, ''));
+  for (let age = 1; age <= 30; age += 1) {
+    const day = (n) => new Date(Date.parse(today) - n * 86_400_000).toISOString().slice(0, 10);
+    const t = { id: 1, platform: 'aave', borrow_currency: 'USDC', borrow_date: day(age + 1), borrow_amount: 12345.67,
+      borrow_apr: 4.37, buy_date: day(age), buy_amount: 12345.67, buy_eth: 3.7777, buy_gas_usd: 1.005 };
+    const text = alertMessage(t, { goal_price: 3450 }, 3450);
+    const worth = dollars(text.match(/Worth now: (\$[\d,.]+)/)[1]);
+    const [, gain, interest, fees] = text.match(/Gain \(\$\): ([+-]?\$[\d,.]+) after (\$[\d,.]+) interest and (\$[\d,.]+) fees/);
+    const sum = Math.round((worth - 12345.67 - dollars(interest) - dollars(fees)) * 100) / 100;
+    assert.equal(sum, dollars(gain), `${age} days: ${text.split('\n').slice(-2).join(' | ')}`);
+  }
+});
+
 /* --------------------------------------------------------------- the bot */
 
 await check('/watch reports go to the chat that asked, or to the group once that chat is not allowed', async () => {
@@ -596,6 +636,8 @@ await check('/watch reports go to the chat that asked, or to the group once that
   const say = (chat, text, id) =>
     mock.updates.push({ update_id: id, message: { chat: { id: chat }, text, date: Math.floor(Date.now() / 1000) } });
 
+  // Something held, so reports go out; `holding()` is the sweep's own trade.
+  const held = holding();
   say(42, '/watch', 1);
   assert.deepEqual(await tick(), ['42']);
   assert.match(mock.sent[0], /Watching\. The price every .+ here until \/unwatch\./);
@@ -608,6 +650,18 @@ await check('/watch reports go to the chat that asked, or to the group once that
   process.env.TELEGRAM_OWNER_ID = '';
   due();
   assert.deepEqual(await tick(), ['-1']);
+
+  // Nothing held: the report is skipped, the watch stays on, and it resumes
+  // by itself once a trade holds ETH again.
+  const stash = prepare("SELECT id FROM trades WHERE repay_date IS NULL").all().map((r) => r.id);
+  const shut = prepare("UPDATE trades SET repay_date = borrow_date, repay_amount = borrow_amount WHERE id = ?");
+  for (const id of stash) shut.run(id);
+  due();
+  assert.deepEqual(await tick(), [], 'nothing held, nothing sent');
+  assert.equal(prepare('SELECT watch FROM bot_state WHERE id = 1').get().watch, 1, 'still watching');
+  prepare('UPDATE trades SET repay_date = NULL, repay_amount = NULL WHERE id = ?').run(held.id);
+  due();
+  assert.deepEqual(await tick(), ['-1'], 'held again, sent again');
 
   say(-1, '/unwatch', 2);
   await tick();
