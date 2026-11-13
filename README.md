@@ -1,6 +1,6 @@
 # ETH Roundtrip
 
-Track leveraged trade cycles on Aave: borrow a stablecoin, buy ETH, sell it, repay the loan, and see what the round trip actually earned.
+Track leveraged trade cycles on Aave and Ether.fi: borrow a stablecoin, buy ETH, sell it, repay the loan, and see what the round trip actually earned.
 
 A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH to four places. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
 
@@ -14,6 +14,7 @@ Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script i
 
 - `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open, and keeps a backup under `data/backups`.
 - `./backupDatabase.sh` takes a backup that is safe while the server runs; `--help` gives the cron line.
+- `node scripts/set-platform.mjs --etherfi <id> --apply` fills in the platform on trades recorded before it was asked for: the ids named go to Ether.fi, the rest to Aave. Without `--apply` it only lists what would change; it honours `MYAAVE_DB`.
 - `npm run check` runs four offline suites: the formulas in `lib/calc.js` against hand-worked figures, the forms' input rules, the Statement PDF, and the server itself against a throwaway database with Telegram and the price service mocked.
 
 ## How a trade works
@@ -22,15 +23,15 @@ A trade starts with the borrow; each stage is added as it happens.
 
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
-| Borrow | date, currency, amount, APR, gas fee (optional) | `OPEN` |
+| Borrow | platform (Aave or Ether.fi), date, currency, amount, APR, gas fee (optional) | `OPEN` |
 | Buy ETH | date, amount spent, ETH received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
 | Sell ETH | date, ETH sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
 | Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
 
 Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank Aave lend or unstake fee means none was paid.
 
-- **Trades** is the history table. Expand a row to see and edit its four stages.
-- **Stats** shows performance, net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
+- **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on.
+- **Stats** shows performance for all platforms and, in cards that fold open, for Aave and Ether.fi alone; By App splits the tab by platform; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
 - **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
 - **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.
 - **Open positions**, in the header, estimates what the open trades would make if closed today, at the current ETH price and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.

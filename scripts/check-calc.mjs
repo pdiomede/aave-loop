@@ -564,6 +564,32 @@ check('Stats: a closed trade whose rate cannot be worked out is not ranked by ra
   assert.equal(r.worstPct.id, 1);
 });
 
+check('Stats: By App splits the tab by platform, unrecorded last, and its rows add up', () => {
+  // Three closed 1,000 loans, each at 0% on 1 ETH: Aave +50 in 10 days,
+  // Ether.fi +30 in 20, and one recorded nowhere +20 in 5; plus 2,000 still
+  // open on Ether.fi and one naming a platform this ledger does not know,
+  // which counts as not recorded rather than as a row of its own.
+  const open = { id: 4, borrow_currency: 'USDC', borrow_date: '2026-09-01', borrow_amount: 2000, borrow_apr: 0, platform: 'etherfi' };
+  const r = summaryReport([
+    shut(3, '2026-03-06', 20),
+    shut(2, '2026-03-21', 30, { platform: 'etherfi' }),
+    open,
+    shut(1, '2026-03-11', 50, { platform: 'aave' }),
+    shut(5, '2026-03-11', 0, { platform: 'uniswap' }),
+  ], AS_OF);
+  assert.deepEqual(r.byPlatform.map((b) => b.platform), ['aave', 'etherfi', null]);
+  const [aave, etherfi, none] = r.byPlatform;
+  assert.deepEqual([aave.closed, aave.open, aave.borrowed, aave.netGain], [1, 0, 1000, 50]);
+  assert.deepEqual([etherfi.closed, etherfi.open, etherfi.borrowed, etherfi.netGain], [1, 1, 3000, 30]);
+  assert.deepEqual([none.closed, none.open, none.borrowed, none.netGain], [2, 0, 2000, 20]);
+  // 50 on 1,000 over 10 days is 182.5% a year; 30 over 20 days is 54.75%.
+  assert.ok(Math.abs(aave.avgPct - 182.5) < 1e-9, aave.avgPct);
+  assert.ok(Math.abs(etherfi.avgPct - 54.75) < 1e-9, etherfi.avgPct);
+  assert.equal(r.byPlatform.reduce((s, b) => s + b.netGain, 0), r.netGain);
+  assert.equal(r.byPlatform.reduce((s, b) => s + b.borrowed, 0), r.totalBorrowed);
+  assert.ok(!('borrowedNative' in aave), 'no native sum across coins');
+});
+
 check('Stats: open capital is what has not been repaid', () => {
   // Repaid without a sale - the server refuses it, the maths must not count
   // it as capital still out either way.

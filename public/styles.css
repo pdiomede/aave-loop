@@ -568,6 +568,67 @@ a.brand {
   padding: 20px;
 }
 
+/* A card that folds: the per-app Performance cards on Stats. The whole head
+   is the button, drawn as the head it replaces; closed, its hairline would
+   sit on the card's own edge, so it goes. */
+.card__heading {
+  margin: 0;
+  font: inherit;
+}
+
+.card__toggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  /* A button resets letter-spacing to normal, and `font` does not carry it:
+     without this the folding titles were set looser than the cards above. */
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-card);
+}
+
+.card--collapsible:not(.is-open) .card__toggle {
+  box-shadow: none;
+}
+
+.card--collapsible.is-open .card__toggle {
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.card__toggle:hover .card__title {
+  color: var(--accent);
+}
+
+.card__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.card__chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.card--collapsible.is-open .card__chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card__chevron {
+    transition: none;
+  }
+}
+
+.card__title-app {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ---------------------------------------------------------------- fields */
 
 .field {
@@ -1003,9 +1064,10 @@ a.brand {
   background: none;
 }
 
-/* Where a trade was run: a small logo before the coin, with the sentence in
-   the tooltip. Positioned itself, so the bubble anchors here; it is wider than
-   the 18px mark, so the cap is the window rather than the mark. */
+/* Where a trade was run: a small logo, on the Borrowed card with the sentence
+   in the tooltip, and on Stats beside an app's name. Positioned itself, so the
+   bubble anchors here; it is wider than the 18px mark, so the cap is the window
+   rather than the mark. */
 .platform-mark {
   position: relative;
   flex: none;
@@ -1013,6 +1075,9 @@ a.brand {
   place-items: center;
   width: 18px;
   height: 18px;
+}
+
+.platform-mark[data-tip] {
   cursor: help;
 }
 
@@ -1041,16 +1106,6 @@ a.brand {
   width: max-content;
   max-width: calc(100vw - 48px);
   white-space: nowrap;
-}
-
-/* The platform and the coin read as one pair, so they sit closer together
-   than the row's other parts. It is also what keeps the Trade cell inside a
-   375px phone: the logo added 28px to a cell that had 17 to spare. */
-.row__venue {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 /* The Borrowed card's Platform row: logo, then the name. */
@@ -2374,13 +2429,6 @@ th[aria-sort="ascending"] .th-sort__caret {
      its label floating in the middle of it. Everything else stays centred. */
   .row td:first-child {
     align-items: flex-start;
-    /* Less room between the label and the trade than in the other cells:
-       the platform logo made this the one cell that ran past the gutter. */
-    gap: 10px;
-  }
-
-  .row td:first-child .row__asset {
-    gap: 8px;
   }
 
   .row td::before {

@@ -217,6 +217,23 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   it directly must call `syncCoinSelect`. `CURRENCIES` is the picker's order and
   `CURRENCIES[0]` is a new trade's coin (`unitOf`). Its list is `position: fixed`
   because the trades table's scroll wrapper clips anything positioned inside it.
+- **The platform picker is the same combobox** with `kind: 'platform'` (`FACES` picks
+  what it draws). On a new trade it sits in the card's heading, outside the form, and
+  its hidden input joins the form by `form="borrow-form"`; `fieldWrap` finds a field
+  tied in that way (`data-field-of`). It starts empty: the platform is required and
+  never guessed.
+
+### Platforms
+
+`PLATFORMS` / `PLATFORM_META` in `lib/calc.js` are where a trade ran (`aave`,
+`etherfi`), stored lowercase in `trades.platform`. The API requires it on a new trade
+and refuses to blank it; the column is nullable because a trade from before it was
+asked for has none, which shows as not recorded, never as Aave.
+`scripts/set-platform.mjs` fills those in (dry run unless `--apply`). Stats splits by
+it through `summaryReport().byPlatform`, built by the same `groupBuckets` loop as
+`byCurrency`, with a not-recorded row so the rows still add up to the totals; the
+per-platform Performance cards are `summaryReport` over that platform's trades, and
+their open/closed state is kept in localStorage (`myaave-stats-open`).
 
 ### Rules the code holds itself to
 

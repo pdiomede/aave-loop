@@ -251,6 +251,14 @@ const TIPS = {
     netGain: 'Dollar result of closed trades in this currency, after gas.',
     avgPct: 'Closed trades in this currency, blended by loan size and days held.',
   },
+  app: {
+    app: 'Where the loop was run. A trade from before this was asked for is not recorded.',
+    closed: 'Repaid trades on this app.',
+    open: 'Trades on this app not yet repaid.',
+    borrowed: 'Everything borrowed on this app, open and closed, in dollars.',
+    netGain: 'Dollar result of closed trades on this app, after gas.',
+    avgPct: 'Closed trades on this app, blended by loan size and days held.',
+  },
   month: {
     month: 'The month the loan was repaid, which is when the gain became real.',
     trades: 'Trades closed this month with a dollar result.',
@@ -315,17 +323,30 @@ function fxNote(usdValue, leg) {
 }
 
 /**
- * Where a trade was run, as a small logo with the sentence in the CSS tooltip.
- * A trade from before the field existed has none, and gets an empty dashed
- * circle saying so rather than an Aave logo nobody recorded.
+ * An app's logo, small. A trade from before the field existed has none, and
+ * gets an empty dashed circle rather than an Aave logo nobody recorded.
+ * Decorative: the name is always written beside it.
+ */
+function platformLogo(p) {
+  const meta = PLATFORM_META[p];
+  const img = meta
+    ? `<img src="${meta.art}" alt="" width="18" height="18" />`
+    : '<span class="platform-mark__none"></span>';
+  return `<span class="platform-mark" aria-hidden="true">${img}</span>`;
+}
+
+/**
+ * Where one trade was run, as the logo with the sentence in the CSS tooltip.
+ * Only on the expanded trade's Borrowed card: the table row leaves it out, at
+ * the user's call, so the row reads coin and amount as it always did.
  */
 function platformMark(p) {
   const meta = PLATFORM_META[p];
   const tip = meta ? `This trade happened on ${meta.label}` : 'Platform not recorded';
-  const img = meta
-    ? `<img src="${meta.art}" alt="${esc(meta.label)}" width="18" height="18" />`
-    : '<span class="platform-mark__none" aria-hidden="true"></span>';
-  return `<span class="platform-mark" data-tip="${esc(tip)}" aria-label="${esc(tip)}">${img}</span>`;
+  return platformLogo(p).replace(
+    '<span class="platform-mark" aria-hidden="true">',
+    `<span class="platform-mark" data-tip="${esc(tip)}">`,
+  );
 }
 
 const RATE_MISSING = `<span class="chip chip--warn" data-tip="${esc(TIPS.noRate)}">no rate</span>`;
@@ -384,6 +405,26 @@ function loadSort() {
     /* private browsing, or something else wrote nonsense to the key */
   }
   return { ...DEFAULT_SORT };
+}
+
+const STATS_OPEN_KEY = 'myaave-stats-open';
+
+function loadStatsOpen() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STATS_OPEN_KEY) || '[]');
+    if (Array.isArray(saved)) return new Set(saved.filter((k) => PLATFORMS.includes(k)));
+  } catch (e) {
+    /* private browsing, or something else wrote nonsense to the key */
+  }
+  return new Set();
+}
+
+function saveStatsOpen() {
+  try {
+    localStorage.setItem(STATS_OPEN_KEY, JSON.stringify([...state.statsOpen]));
+  } catch (e) {
+    /* the cards simply start collapsed next time */
+  }
 }
 
 function saveSort() {
@@ -574,6 +615,9 @@ const state = {
   // coming back to a ledger you have not looked at today and landing on page 4
   // of it is disorienting.
   sort: loadSort(),
+  // Which of the per-app Performance cards are open, remembered in this
+  // browser. They start collapsed.
+  statsOpen: loadStatsOpen(),
   page: 1,
   // Price alerts, keyed by trade id, plus what the server knows about where an
   // alert would go and what ETH last cost. All three are fetched once at boot
@@ -1899,7 +1943,7 @@ function tradeRow(t, index, total) {
     <td data-label="Trade date">
       <div class="row__asset">
         <span class="caret"></span>
-        <span class="row__venue">${platformMark(t.platform)}${coin(t.borrow_currency)}</span>
+        ${coin(t.borrow_currency)}
         <span class="row__stack">
           <span>${isNum(d.borrowUsd) ? usd(d.borrowUsd) : RATE_MISSING}</span>
           ${
@@ -2130,6 +2174,83 @@ function summaryCard(title, body, note = '') {
     }</div>
     <div class="card__body">${body}</div>
   </section>`;
+}
+
+/**
+ * A card whose body can be folded away, for the per-app Performance cards.
+ * The head is one button carrying `aria-expanded`, so the whole bar is the
+ * target and a keyboard reaches it like any other button. Toggled in place by
+ * `toggleCollapse`, not by a re-render, and remembered by `key`.
+ */
+function collapsibleCard({ key, title, note = '', body, open }) {
+  const id = `collapse-${key}`;
+  // The button inside the heading, as the ARIA accordion has it: a heading
+  // cannot sit inside a button, and this way the card is still listed by name
+  // among the page's headings. Named by its title alone: with the note inside
+  // it, the heading read "Performance (Aave)no closed trades yet".
+  return `<section class="card card--collapsible${open ? ' is-open' : ''}">
+    <h3 class="card__heading"><button class="card__head card__toggle" type="button" data-collapse="${esc(key)}"
+      aria-expanded="${open}" aria-controls="${id}" aria-labelledby="${id}-title">
+      <span class="card__title" id="${id}-title">${title}</span>${note ? `<span class="muted">${note}</span>` : ''}
+      <svg class="card__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+    </button></h3>
+    <div class="card__body" id="${id}"${open ? '' : ' hidden'}>${body}</div>
+  </section>`;
+}
+
+function toggleCollapse(button) {
+  const key = button.dataset.collapse;
+  const open = button.getAttribute('aria-expanded') !== 'true';
+  if (open) state.statsOpen.add(key);
+  else state.statsOpen.delete(key);
+  saveStatsOpen();
+  button.setAttribute('aria-expanded', String(open));
+  button.closest('.card')?.classList.toggle('is-open', open);
+  const body = document.getElementById(button.getAttribute('aria-controls'));
+  if (body) body.hidden = !open;
+}
+
+// An app's logo and name, or a trade from before the platform was recorded.
+// `extra` goes inside the flex row, as By currency places its `no rate` chip:
+// after it, the chip fell to a line of its own, and on a phone it made the
+// cell three flex items and floated the name into the middle.
+function appLabel(p, extra = '') {
+  const meta = PLATFORM_META[p];
+  const name = meta ? `<span>${esc(meta.label)}</span>` : '<span class="muted">Not recorded</span>';
+  return `<span class="row__asset">${platformLogo(meta ? p : null)}${name}${extra}</span>`;
+}
+
+/**
+ * By App: the tab's trades split by where they were run, in the shape of By
+ * currency. Borrowed is dollars only - one app holds loans in several coins,
+ * and their native sum would be a figure in no coin at all.
+ */
+function platformTable(rows) {
+  if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
+  return `<table class="table table--flush">
+    <thead>
+      <tr>
+        ${hintHead('App', TIPS.app.app)}${hintHead('Closed', TIPS.app.closed)}
+        ${hintHead('Open', TIPS.app.open)}${hintHead('Borrowed', TIPS.app.borrowed)}
+        ${hintHead('Net gain', TIPS.app.netGain)}${hintHead('Avg annualized', TIPS.app.avgPct)}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (r) => `<tr>
+        <td data-label="App">${appLabel(r.platform, r.missingFx ? ` ${RATE_MISSING}` : '')}</td>
+        <td data-label="Closed" class="num">${r.closed || dash}</td>
+        <td data-label="Open" class="num">${r.open || dash}</td>
+        <td data-label="Borrowed" class="num">${isNum(r.borrowed) ? usd(r.borrowed) : dash}</td>
+        <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain) || dash}</td>
+        <td data-label="Avg annualized" class="num ${pctClass(r.avgPct)}">${pct(r.avgPct) || dash}</td>
+      </tr>`,
+        )
+        .join('')}
+    </tbody>
+  </table>`;
 }
 
 function currencyTable(rows) {
@@ -2386,6 +2507,90 @@ function yearTabs(years, selected) {
   </div>`;
 }
 
+/**
+ * The Performance card's eight tiles, for any `summaryReport`: the whole tab,
+ * or the part of it run on one app, so every Performance card reads the same.
+ */
+function perfGrid(r, app = '') {
+  const valuedAny = r.valuedCount > 0;
+  // On an app's own card every tile counts that app's trades only, and the
+  // tooltips have to say so: they were the whole tab's, word for word, beside
+  // figures that covered a part of it.
+  const tip = (text) =>
+    app
+      ? text
+          .replace(/this tab's trades/g, `this tab's ${app} trades`)
+          .replace(/closed (trades|loans)/g, `closed ${app} $1`)
+      : text;
+  return `<div class="perf-grid">
+    ${perfTile('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', tip(TIPS.interestPaid))}
+    ${
+      // Not gated on a closed trade, unlike every other tile here. This one
+      // counts open trades too - the tooltip says so, and the Borrowed
+      // column below and the Open positions tile above both state the same
+      // money - so on a ledger with nothing repaid yet it was the only
+      // place on the screen calling that figure unknown. Shown whenever
+      // some trade contributed to it; zero means no trade has a rate.
+      perfTile(
+        'Total borrowed',
+        r.totalBorrowed > 0
+          ? `${usd(r.totalBorrowed)}${r.totalBorrowedMissingFx ? ` ${RATE_MISSING}` : ''}`
+          : r.totalBorrowedMissingFx
+            ? RATE_MISSING
+            : '',
+        '',
+        tip(TIPS.totalBorrowed),
+      )
+    }
+    ${perfTile(
+      'Average hold',
+      r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`,
+      '',
+      tip(TIPS.avgHold),
+    )}
+    ${perfTile(
+      'Total fees paid',
+      isNum(r.feesPaid) ? usd(r.feesPaid) : '',
+      '',
+      tip(TIPS.feesPaid),
+      r.feesUnrecorded > 0
+        ? `${r.feesUnrecorded} trade${r.feesUnrecorded === 1 ? '' : 's'} with fees not recorded`
+        : '',
+    )}
+    ${
+      // The four figures above stay together on the first row and these
+      // four take the second, reading gain, loss, gain, loss - so the
+      // dollar pair and the rate pair sit one above the other and the same
+      // trade can be found in both columns.
+      //
+      // Both pairs keep the label that flips: on a ledger that has lost
+      // money the second of each pair is a loss, and calling it the
+      // smallest gain would be the card lying about the worst thing on it.
+      perfExtreme(bestLabel(r.best, 'netGain', 'USD'), r.best, tip(TIPS.best), 'usd', 'perf--row-start')
+    }
+    ${perfExtreme(
+      worstLabel(r.worst, 'netGain', 'USD'),
+      r.worst,
+      tip(TIPS.worst),
+    )}
+    ${perfExtreme(bestLabel(r.bestPct, 'pct', '%'), r.bestPct, tip(TIPS.bestPct), 'pct')}
+    ${perfExtreme(
+      worstLabel(r.worstPct, 'pct', '%'),
+      r.worstPct,
+      tip(TIPS.worstPct),
+      'pct',
+    )}
+  </div>`;
+}
+
+// What the Performance card says beside its title.
+function perfNote(r) {
+  if (r.valuedCount > 0) return `${r.closedCount} closed of ${r.tradeCount}`;
+  return r.closedCount > 0
+    ? `${r.closedCount} closed of ${r.tradeCount}, none with a rate yet`
+    : 'no closed trades yet';
+}
+
 function renderStatsView() {
   const mount = document.getElementById('stats-mount');
 
@@ -2411,7 +2616,6 @@ function renderStatsView() {
   const trades = tradesForYear(year, asOf);
 
   const r = summaryReport(trades, asOf);
-  const valuedAny = r.valuedCount > 0;
 
   // The banner is about the ledger, not the year: its button fetches every
   // missing rate at once, and a count scoped to 2025 above a button that also
@@ -2456,6 +2660,28 @@ function renderStatsView() {
       : `<button class="btn btn--sm" type="button" data-statement data-tip="${esc(statementTip)}"
           aria-description="${esc(statementTip)}">${STATEMENT_SVG} Statement</button>`;
 
+  // One Performance card per app, over the same trades on the same day as the
+  // card for all of them. Collapsed until opened, and remembered.
+  // Trades from before the platform was asked for. While there are any, an
+  // app with none recorded cannot be said to have had none.
+  const unrecorded = trades.filter((t) => !PLATFORMS.includes(t.platform)).length;
+  const appCards = PLATFORMS.map((p) => {
+    const label = PLATFORM_META[p].label;
+    const mine = trades.filter((t) => t.platform === p);
+    const ra = summaryReport(mine, asOf);
+    return collapsibleCard({
+      key: p,
+      title: `<span class="card__title-app">${platformLogo(p)}Performance (${esc(label)})</span>`,
+      note: mine.length ? perfNote(ra) : unrecorded ? 'none recorded' : 'no trades',
+      body: mine.length
+        ? perfGrid(ra, label)
+        : `<p class="muted">${unrecorded ? 'No trades recorded' : 'No trades'} on ${esc(label)}${
+            year === 'all' ? '' : ` in ${year}`
+          }.${unrecorded ? ` ${unrecorded} ${unrecorded === 1 ? 'trade has' : 'trades have'} no platform yet.` : ''}</p>`,
+      open: state.statsOpen.has(p),
+    });
+  }).join('');
+
   mount.innerHTML = `
     ${fxBanner(whole.missingFx, year === 'all' ? null : { year, count: r.missingFx })}
     <div class="years-bar">
@@ -2468,75 +2694,11 @@ function renderStatsView() {
     </div>
     ${scope}
     ${overview}
-    ${summaryCard(
-      'Performance',
-      `<div class="perf-grid">
-        ${perfTile('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', TIPS.interestPaid)}
-        ${
-          // Not gated on a closed trade, unlike every other tile here. This one
-          // counts open trades too - the tooltip says so, and the Borrowed
-          // column below and the Open positions tile above both state the same
-          // money - so on a ledger with nothing repaid yet it was the only
-          // place on the screen calling that figure unknown. Shown whenever
-          // some trade contributed to it; zero means no trade has a rate.
-          perfTile(
-            'Total borrowed',
-            r.totalBorrowed > 0
-              ? `${usd(r.totalBorrowed)}${r.totalBorrowedMissingFx ? ` ${RATE_MISSING}` : ''}`
-              : r.totalBorrowedMissingFx
-                ? RATE_MISSING
-                : '',
-            '',
-            TIPS.totalBorrowed,
-          )
-        }
-        ${perfTile(
-          'Average hold',
-          r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`,
-          '',
-          TIPS.avgHold,
-        )}
-        ${perfTile(
-          'Total fees paid',
-          isNum(r.feesPaid) ? usd(r.feesPaid) : '',
-          '',
-          TIPS.feesPaid,
-          r.feesUnrecorded > 0
-            ? `${r.feesUnrecorded} trade${r.feesUnrecorded === 1 ? '' : 's'} with fees not recorded`
-            : '',
-        )}
-        ${
-          // The four figures above stay together on the first row and these
-          // four take the second, reading gain, loss, gain, loss - so the
-          // dollar pair and the rate pair sit one above the other and the same
-          // trade can be found in both columns.
-          //
-          // Both pairs keep the label that flips: on a ledger that has lost
-          // money the second of each pair is a loss, and calling it the
-          // smallest gain would be the card lying about the worst thing on it.
-          perfExtreme(bestLabel(r.best, 'netGain', 'USD'), r.best, TIPS.best, 'usd', 'perf--row-start')
-        }
-        ${perfExtreme(
-          worstLabel(r.worst, 'netGain', 'USD'),
-          r.worst,
-          TIPS.worst,
-        )}
-        ${perfExtreme(bestLabel(r.bestPct, 'pct', '%'), r.bestPct, TIPS.bestPct, 'pct')}
-        ${perfExtreme(
-          worstLabel(r.worstPct, 'pct', '%'),
-          r.worstPct,
-          TIPS.worstPct,
-          'pct',
-        )}
-      </div>`,
-      valuedAny
-        ? `${r.closedCount} closed of ${r.tradeCount}`
-        : r.closedCount > 0
-          ? `${r.closedCount} closed of ${r.tradeCount}, none with a rate yet`
-          : 'no closed trades yet',
-    )}
-    ${summaryCard('By currency', currencyTable(r.byCurrency))}
-    ${summaryCard('By month closed', monthTable(r.byMonth))}
+    ${summaryCard('Performance (All Apps)', perfGrid(r), perfNote(r))}
+    ${appCards}
+    ${summaryCard('By App', platformTable(r.byPlatform))}
+    ${summaryCard('By currency (All Apps)', currencyTable(r.byCurrency))}
+    ${summaryCard('By month closed (All Apps)', monthTable(r.byMonth))}
     ${SUMMARY_FOOT}
   `;
 }
@@ -3546,6 +3708,12 @@ function wire() {
 
     if (e.target.closest('[data-statement]')) {
       downloadStatement(state.statsYear);
+      return;
+    }
+
+    const fold = e.target.closest('[data-collapse]');
+    if (fold) {
+      toggleCollapse(fold);
       return;
     }
 

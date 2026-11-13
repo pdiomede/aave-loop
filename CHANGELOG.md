@@ -3,14 +3,16 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-11-13
 
 ### Added
 
-- **Each trade records where it was run, Aave or Ether.fi.** New trade picks it beside the heading ("New trade: **borrow** on …") and will not save without it; each row shows the platform's logo before the coin, with a tooltip, and the Borrowed card shows and edits it. The API requires `platform` on a new trade and the CSV gains a `platform` column. Trades from before stay unrecorded until `node scripts/set-platform.mjs --etherfi <id> --apply` sets the named ones to Ether.fi and the rest to Aave (a dry run without `--apply`).
+- **Each trade records where it was run, Aave or Ether.fi.** New trade picks it beside the heading ("New trade: **borrow** on …") and will not save without it; the expanded trade's Borrowed card shows it with the platform's logo and a tooltip, and edits it. The API requires `platform` on a new trade and the CSV gains a `platform` column. Trades from before stay unrecorded until `node scripts/set-platform.mjs --etherfi <id> --apply` sets the named ones to Ether.fi and the rest to Aave (a dry run without `--apply`).
+- **Stats splits by app.** A By App table before By currency gives each platform's closed and open trades, borrowed, net gain and blended rate, with a Not recorded row so the rows add up to the totals. Performance (Aave) and Performance (Ether.fi) cards, shaped like the main one, fold open and remember it in this browser.
 
 ### Changed
 
+- **Stats cards for the whole tab are named for it:** Performance, By currency and By month closed now read "(All Apps)".
 - **The site moved to ethroundtrip.com and is renamed ETH Roundtrip.** The registrar suspended aaveloop.com over the Aave name. The pages, the Statement's header and link, the Telegram help and the download names (`eth-roundtrip-trades-2026.csv`) carry the new name, and the social card is redrawn as `landing/og4.png`, a new filename because scrapers cache by URL.
 
 ## [1.5.1] - 2026-10-07
