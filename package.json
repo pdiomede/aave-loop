@@ -1,6 +1,6 @@
 {
   "name": "myaave",
-  "version": "3.0.0",
+  "version": "2.1.1",
   "description": "ETH Roundtrip: track stablecoin and EURC borrow, ETH buy and sell, and repay cycles.",
   "type": "module",
   "private": true,
