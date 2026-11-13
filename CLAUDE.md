@@ -13,6 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm start                    # node server.js, no port hunting
 npm run check                # scripts/check-calc.mjs, check-input.mjs, check-statement.mjs, then check-server.mjs
 node scripts/check-server.mjs  # one suite on its own; there is no per-check filter
+node scripts/set-platform.mjs --etherfi <id> [--apply]  # fill in old trades' platform; dry run without --apply
 ```
 
 **There is no test framework, no linter and no build step.** Nothing is transpiled;
@@ -30,9 +31,12 @@ out by hand, and that `lib/logo.js` still matches the app's logo; add a case the
 when you change what the statement prints.
 `scripts/check-server.mjs` starts the real server as a child on a free port, against a
 database in a temp directory with Telegram and the price service mocked on loopback,
-and checks the API's write rules, the alert message, every way the alert sweep handles
-a failed send, and the bot's reports; add a case there when you change any of those.
-It never touches the network or `data/myaave.db`, and takes about eight seconds.
+and checks the API's write rules, the alert message (its lines must add up to its
+Gain), every way the alert sweep handles a failed send, the bot's reports and where
+`/watch` sends them, and `scripts/set-platform.mjs`; add a case there when you change
+any of those. It never touches the network or `data/myaave.db`, and takes about ten
+seconds. A check is only worth adding if it fails on the old code: revert the fix
+for a moment and run it.
 Beyond that, verification means executing the thing you changed:
 
 ```bash
@@ -90,7 +94,12 @@ it is left behind. Then commit by hand.
 
 Since 1.0.0 the number means what SemVer says it means: `major` for a change to the
 API, the database or a stored figure, `minor` for a new feature or figure on screen,
-`patch` for fixes and cosmetic changes only — not `patch` out of habit.
+`patch` for fixes and cosmetic changes only — not `patch` out of habit. That is the
+default to propose; when the user names the number, use theirs (2.1.1 added a
+column as a patch, by their call).
+
+Work is committed straight to `main` and pushed: production deploys by pulling `main`
+on the VPS, and there are no pull requests.
 
 Every user-visible change gets its `CHANGELOG.md` line in the commit that makes it,
 under `## [Unreleased]`, which you rename to the new number by hand at release (the
@@ -178,6 +187,13 @@ copy; this is mostly a dev-machine state, but the code holds for both. This is w
   because the rate lookup in between can take seconds; three misses answer 503;
 - an alert's failed sends are counted in SQL (`attempts = attempts + 1`), never from
   the row the sweep read at its start;
+- "held" is one SQL predicate, `HOLDING` exported from `alerts.js`, used by the sweep,
+  `closeUnwatched`, `/holding` and `holdingCount()`; it must ask what `stages()` asks
+  (bought, sale incomplete, **not repaid**) or a trade `derive` calls CLOSED is
+  alerted on and listed as held;
+- Delete all alerts sends `?through=<newest id shown>` and the server deletes only up
+  to it, so a goal set from elsewhere since the page read its list is not deleted
+  unseen;
 - both copies run the hourly rate refresher (`startFxRefresher` in `fx.js`), which
   is harmless: the backfill re-reads each row and writes the same rate, in an
   immediate transaction so it waits on the busy timeout instead of failing at once;
@@ -191,12 +207,26 @@ copy; this is mostly a dev-machine state, but the code holds for both. This is w
 treats the three failures differently. **Retryable** (5xx, 429, a timeout) puts the
 alert back to armed and counts a try; three end in FAILED. **Setup** (401, 403, 404,
 or a 400 naming the chat or the bot's rights) puts it back without counting, because
-fixing `config.env` or the group cures it. Anything else is a refusal of the message
-itself and is final. An armed alert with `fired_at` set has already reached its goal
-and is sent on the next sweep whatever ETH costs; a goal saved afresh has none. The
-Alerts table's Fired at reads `firedAt`, not the status, so such a row shows when and
-where its goal was reached.
+fixing `config.env` or the group cures it. **notSent** (connection refused, no DNS, no
+route: the request never reached Telegram) also goes back uncounted; a timeout still
+counts, because that message may have arrived. Anything else is a refusal of the
+message itself and is final. An armed alert with `fired_at` set has already reached
+its goal and is sent on the next sweep whatever ETH costs; a goal saved afresh has
+none, and saving a new goal over it closes it as `failed` with its reason rather
+than deleting it. The Alerts table's Fired at reads `firedAt`, not the status, so
+such a row shows when and where its goal was reached.
+
+`ethPrice` falls back to the cache whatever its age when the service fails, so
+`freshPrice(quote)` (`alerts.js`) is the gate: a fresh goal fires only on a price
+under two refreshes old, and a goal saved meanwhile takes its direction from the
+purchase price. Goals are stored to the cent (`asPrinted`), the figure every view
+prints. Shutdown waits for a sweep in flight (`alertSweepDone`, up to 12 s) before
+closing the database, or a claimed alert stays `fired` though its send failed.
 `scripts/check-server.mjs` drives each path against a mock Telegram.
+
+`/watch` stores the chat that sent it (`bot_state.watch_chat`) and the timer reports
+there, falling back to the group if that chat is no longer in the config; a report
+is skipped, not stopped, while `holdingCount()` is 0.
 
 ### The frontend
 
@@ -208,6 +238,15 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
 - **Sequence guards.** `loadSeq`/`writeSeq` (and `alertLogSeq`/`alertWriteSeq`) drop a
   reply that a newer load overtook or a write superseded. Any new fetch that writes
   into `state` needs the same treatment.
+- **`state.loaded`** is false until the first `loadTrades` lands; until then `trades`
+  is empty because nothing was read, and views draw `LOADING`, never counts or an
+  empty-ledger message. A new view, or a function that redraws one directly, needs
+  the same guard.
+- **Field errors** go through `showFormError`/`clearFieldError`, which find the field
+  with `fieldWrap` and its control with `fieldControl`, set `aria-invalid`, and write
+  into the hint line `field()` ties to the control by `aria-describedby`.
+  `refreshHints` swaps any field marked invalid for its saved value, so no hint is
+  worked out from a rejected figure.
 - **`captureDraft`/`restoreDraft`** keep a half-typed stage form alive across
   re-renders. A change that re-renders the table must not discard it.
 - **Submit locks are per form**, keyed by what the form saves (`submitKey`), so a
@@ -255,7 +294,10 @@ start closed, and keep their open/closed state in localStorage (`myaave-stats-op
   net gain, and the CSV writes amounts and fees as printed too (`money` in
   `lib/csv.js`), so its columns add up across a row. Rounded only at the end, cards
   missed their result by a cent on a quarter of euro trades and totals their rows on
-  nearly half of random ledgers. New figures follow the same rule.
+  nearly half of random ledgers. The open-position estimate is built the same way,
+  term by term as the alert prints them (worth, cost with the currency move, interest,
+  fees; `unrealisedUsd`/`markedUsd` and the sold path), so an alert's lines add up to
+  its Gain. New figures follow the same rule.
 - **A figure and its label must describe the same thing.** A number that is
   arithmetically correct under a label describing something else is a bug here.
 - **Exchange rates are resolved server-side and never accepted from a request.** A
