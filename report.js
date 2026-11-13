@@ -11,7 +11,16 @@
  * value that reaches the text goes through `escHtml` first.
  */
 import { db, prepare } from './db.js';
-import { derive, derivedOn, summarize, estimatedGainUsd, isUsdPegged, todayISO, cents } from './lib/calc.js';
+import {
+  derive,
+  derivedOn,
+  summarize,
+  estimatedGainUsd,
+  isUsdPegged,
+  todayISO,
+  cents,
+  PLATFORM_META,
+} from './lib/calc.js';
 import { ethPrice, ethStatus } from './eth.js';
 import { resolveRate } from './fx.js';
 import { alertPollMs } from './alerts.js';
@@ -141,6 +150,9 @@ export function holdingText(rows, price, fxNow = {}) {
 
     return {
       id: `#${t.id}`,
+      // Where the trade runs. A trade from before it was asked for has none,
+      // and a dash says so rather than calling it Aave.
+      platform: PLATFORM_META[t.platform]?.label ?? MISSING,
       eth: n4(held),
       // A trade whose exchange rate has not been fetched has no dollar price
       // per ETH, and a dash is the honest answer rather than a euro figure
@@ -156,6 +168,7 @@ export function holdingText(rows, price, fxNow = {}) {
   // a figure nobody has.
   const w = (key) => Math.max(...cells.map((c) => c[key].length));
   const wId = w('id');
+  const wPlatform = w('platform');
   const wEth = w('eth');
   const wPaid = w('paid');
   const wGain = w('gain');
@@ -166,7 +179,7 @@ export function holdingText(rows, price, fxNow = {}) {
       // "paid" sits at a fixed column with the figure padded after it, so the
       // dollar amounts line up under each other and a missing one is a dash in
       // the same place rather than a word adrift.
-      `${padRight(c.id, wId)}  ${padLeft(c.eth, wEth)} ETH  paid ${padLeft(c.paid, wPaid)}  ` +
+      `${padRight(c.id, wId)}  ${padRight(c.platform, wPlatform)}  ${padLeft(c.eth, wEth)} ETH  paid ${padLeft(c.paid, wPaid)}  ` +
       // The bell goes last on purpose: an emoji is one character but takes
       // about two cells, so any column after it would sit crooked.
       `${padLeft(c.gain, wGain)}  ${padLeft(c.days, wDays)}${c.bell ? `  ${c.bell}` : ''}`,

@@ -232,8 +232,9 @@ asked for has none, which shows as not recorded, never as Aave.
 `scripts/set-platform.mjs` fills those in (dry run unless `--apply`). Stats splits by
 it through `summaryReport().byPlatform`, built by the same `groupBuckets` loop as
 `byCurrency`, with a not-recorded row so the rows still add up to the totals; the
-per-platform Performance cards are `summaryReport` over that platform's trades, and
-their open/closed state is kept in localStorage (`myaave-stats-open`).
+per-platform Performance cards are `summaryReport` over that platform's trades. They
+and the three breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
+start closed, and keep their open/closed state in localStorage (`myaave-stats-open`).
 
 ### Rules the code holds itself to
 

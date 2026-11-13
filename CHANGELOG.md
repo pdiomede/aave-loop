@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [2.1.0] - 2026-11-13
+
+### Added
+
+- **Telegram's /holding names each trade's platform** after its id, Aave or Ether.fi, or a dash on a trade from before it was recorded.
+
+### Changed
+
+- **Stats' By Platform, By currency and By month closed tables fold like the per-platform cards,** starting closed and remembered in this browser.
+
 ## [2.0.1] - 2026-11-13
 
 ### Changed

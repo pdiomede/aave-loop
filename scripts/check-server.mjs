@@ -487,6 +487,17 @@ await check('/holding: the Unrealised total is the sum of the rows as printed', 
   assert.match(text, /Unrealised \+\$290\.13 /);
 });
 
+await check('/holding names each trade\'s platform, and a dash where none was recorded', async () => {
+  const row = (id, platform) => ({ id, platform, borrow_date: today, borrow_amount: 1000, borrow_currency: 'USDT',
+    borrow_apr: 0, borrow_gas_usd: 0, buy_date: today, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 });
+  const lines = holdingText([row(1, 'aave'), row(22, 'etherfi'), row(3, null)], 1100, {})
+    .split('<pre>')[1].split('\n');
+  // Padded to the widest name, so the ETH column still lines up.
+  assert.match(lines[0], /^#1   Aave      1\.0000 ETH/);
+  assert.match(lines[1], /^#22  Ether\.fi  1\.0000 ETH/);
+  assert.match(lines[2], /^#3   -         1\.0000 ETH/);
+});
+
 await check('/help says what /holding lists: trades still holding ETH', async () => {
   // Not "open positions": /summary counts a sold, unrepaid trade as open, and
   // /holding does not list it.

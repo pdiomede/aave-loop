@@ -409,10 +409,14 @@ function loadSort() {
 
 const STATS_OPEN_KEY = 'myaave-stats-open';
 
+// Every Stats card that folds: one Performance card per platform, and the
+// three breakdown tables. A key no longer here is dropped on load.
+const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-currency', 'by-month'];
+
 function loadStatsOpen() {
   try {
     const saved = JSON.parse(localStorage.getItem(STATS_OPEN_KEY) || '[]');
-    if (Array.isArray(saved)) return new Set(saved.filter((k) => PLATFORMS.includes(k)));
+    if (Array.isArray(saved)) return new Set(saved.filter((k) => FOLDING_CARDS.includes(k)));
   } catch (e) {
     /* private browsing, or something else wrote nonsense to the key */
   }
@@ -615,8 +619,8 @@ const state = {
   // coming back to a ledger you have not looked at today and landing on page 4
   // of it is disorienting.
   sort: loadSort(),
-  // Which of the per-app Performance cards are open, remembered in this
-  // browser. They start collapsed.
+  // Which of the folding Stats cards are open (`FOLDING_CARDS`), remembered
+  // in this browser. They start collapsed.
   statsOpen: loadStatsOpen(),
   page: 1,
   // Price alerts, keyed by trade id, plus what the server knows about where an
@@ -2185,7 +2189,8 @@ function summaryCard(title, body, note = '') {
 }
 
 /**
- * A card whose body can be folded away, for the per-app Performance cards.
+ * A card whose body can be folded away: the per-platform Performance cards and
+ * the three breakdown tables on Stats.
  * The head is one button carrying `aria-expanded`, so the whole bar is the
  * target and a keyboard reaches it like any other button. Toggled in place by
  * `toggleCollapse`, not by a re-render, and remembered by `key`.
@@ -2690,6 +2695,16 @@ function renderStatsView() {
     });
   }).join('');
 
+  // The three breakdown tables fold too, closed until opened, so the page
+  // opens on the overview and Performance rather than a long scroll of tables.
+  const breakdownCards = [
+    ['by-platform', 'By Platform', platformTable(r.byPlatform)],
+    ['by-currency', 'By currency (All Platforms)', currencyTable(r.byCurrency)],
+    ['by-month', 'By month closed (All Platforms)', monthTable(r.byMonth)],
+  ]
+    .map(([key, title, body]) => collapsibleCard({ key, title, body, open: state.statsOpen.has(key) }))
+    .join('');
+
   mount.innerHTML = `
     ${fxBanner(whole.missingFx, year === 'all' ? null : { year, count: r.missingFx })}
     <div class="years-bar">
@@ -2704,9 +2719,7 @@ function renderStatsView() {
     ${overview}
     ${summaryCard('Performance (All Platforms)', perfGrid(r), perfNote(r))}
     ${platformCards}
-    ${summaryCard('By Platform', platformTable(r.byPlatform))}
-    ${summaryCard('By currency (All Platforms)', currencyTable(r.byCurrency))}
-    ${summaryCard('By month closed (All Platforms)', monthTable(r.byMonth))}
+    ${breakdownCards}
     ${SUMMARY_FOOT}
   `;
 }
