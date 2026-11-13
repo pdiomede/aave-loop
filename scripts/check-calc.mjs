@@ -564,7 +564,7 @@ check('Stats: a closed trade whose rate cannot be worked out is not ranked by ra
   assert.equal(r.worstPct.id, 1);
 });
 
-check('Stats: By App splits the tab by platform, unrecorded last, and its rows add up', () => {
+check('Stats: By Platform splits the tab by platform, unrecorded last, and its rows add up', () => {
   // Three closed 1,000 loans, each at 0% on 1 ETH: Aave +50 in 10 days,
   // Ether.fi +30 in 20, and one recorded nowhere +20 in 5; plus 2,000 still
   // open on Ether.fi and one naming a platform this ledger does not know,
@@ -588,6 +588,15 @@ check('Stats: By App splits the tab by platform, unrecorded last, and its rows a
   assert.equal(r.byPlatform.reduce((s, b) => s + b.netGain, 0), r.netGain);
   assert.equal(r.byPlatform.reduce((s, b) => s + b.borrowed, 0), r.totalBorrowed);
   assert.ok(!('borrowedNative' in aave), 'no native sum across coins');
+});
+
+check('Stats: the coin total under Borrowed adds the loans as printed', () => {
+  // Two EURC loans of 10,000.005 at 1.1 each print 10,000.01 and $11,000.01;
+  // the coin line must read 20,000.02 beside $22,000.02, not 20,000.01.
+  const e = (id) => ({ id, borrow_currency: 'EURC', borrow_date: '2026-09-01', borrow_amount: 10000.005, borrow_apr: 4, borrow_fx: 1.1 });
+  const [row] = summaryReport([e(1), e(2)], AS_OF).byCurrency;
+  assert.equal(row.borrowed, 22000.02);
+  assert.equal(row.borrowedNative, 20000.02);
 });
 
 check('Stats: open capital is what has not been repaid', () => {

@@ -33,9 +33,14 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--etherfi' || a.startsWith('--etherfi=')) {
     const value = a.includes('=') ? a.slice(a.indexOf('=') + 1) : args[++i];
     if (value === undefined) fail('--etherfi needs a trade id.');
-    for (const part of value.split(',').map((s) => s.trim()).filter(Boolean)) {
-      // Plain digits only, as the API reads an id: "25abc" is not trade 25.
-      if (!/^\d+$/.test(part)) fail(`"${part}" is not a trade id.`);
+    const parts = value.split(',').map((s) => s.trim()).filter(Boolean);
+    // An empty value is a mistake, not "none on Ether.fi": `--etherfi "$IDS"`
+    // with the variable unset set every trade to Aave, the Ether.fi ones too.
+    if (parts.length === 0) fail('--etherfi needs a trade id.');
+    for (const part of parts) {
+      // As the API reads an id (`idParam`): digits, no leading zero, so
+      // "25abc" is not trade 25 and "007" is not trade 7.
+      if (!/^[1-9]\d*$/.test(part)) fail(`"${part}" is not a trade id.`);
       etherfi.add(Number(part));
     }
   } else fail(`Unknown argument "${a}". Try --help.`);

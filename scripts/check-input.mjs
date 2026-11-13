@@ -181,6 +181,13 @@ check('a new trade is in the first coin until another is picked', () => {
   assert.equal(unitOf({ borrow_currency: 'EURC' }), 'EURC');
 });
 
+check('a repayment is judged against the loan as printed, to the cent', () => {
+  // 10,000.005 prints as 10,000.01, so 10,000.00 would be interest of -$0.01.
+  assert.notEqual(validateField('repay_amount', '10000', { borrow_amount: 10000.005 }), null);
+  assert.equal(validateField('repay_amount', '10000.01', { borrow_amount: 10000.005 }), null);
+  assert.notEqual(validateField('borrow_amount', '10000.005', { repay_amount: 10000 }), null);
+});
+
 check('the platform is required, one of Aave or Ether.fi, and kept as a word', () => {
   assert.equal(validateField('platform', ''), 'Platform is required.');
   assert.equal(validateField('platform', 'uniswap'), 'Pick a platform.');

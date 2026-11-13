@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [2.0.1] - 2026-11-13
+
+### Changed
+
+- **Stats says Platform, not App:** By Platform, and "(All Platforms)" on Performance, By currency and By month closed.
+
+### Fixed
+
+- **A failed reload after Create trade no longer invites a duplicate.** The trade was saved but the form stayed filled in with its error; pressing again wrote it twice. The card now closes and the row is drawn from the save.
+- **Create trade keeps another trade's open editor** and what was typed in it, as a stage save already did.
+- **Keyboard focus lands where the work is:** on the date when a stage editor opens (the Borrowed editor left it on the page), on the new trade's Bought ETH button after Create trade, and back on New trade after Cancel, which now says whether its card is open.
+- **"Platform is required." stays until a platform is picked,** rather than vanishing at the next keystroke while the picker stayed red.
+- **A repayment is checked against the loan to the cent as printed:** 10,000.00 against a loan of 10,000.005 was accepted and showed interest of -$0.01 and a flat trade as a win.
+- **By currency's coin total adds the loans as printed,** so two of 10,000.005 EURC read 20,000.02 beside $22,000.02, not 20,000.01.
+- **Two copies starting together on an old database no longer crash** adding its new columns.
+- **`set-platform.mjs` refuses an empty `--etherfi`,** which set every trade to Aave, and an id like `007`.
+
 ## [2.0.0] - 2026-11-13
 
 ### Added

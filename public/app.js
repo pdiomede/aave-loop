@@ -251,13 +251,13 @@ const TIPS = {
     netGain: 'Dollar result of closed trades in this currency, after gas.',
     avgPct: 'Closed trades in this currency, blended by loan size and days held.',
   },
-  app: {
-    app: 'Where the loop was run. A trade from before this was asked for is not recorded.',
-    closed: 'Repaid trades on this app.',
-    open: 'Trades on this app not yet repaid.',
-    borrowed: 'Everything borrowed on this app, open and closed, in dollars.',
-    netGain: 'Dollar result of closed trades on this app, after gas.',
-    avgPct: 'Closed trades on this app, blended by loan size and days held.',
+  platform: {
+    platform: 'Where the loop was run. A trade from before this was asked for is not recorded.',
+    closed: 'Repaid trades on this platform.',
+    open: 'Trades on this platform not yet repaid.',
+    borrowed: 'Everything borrowed on this platform, open and closed, in dollars.',
+    netGain: 'Dollar result of closed trades on this platform, after gas.',
+    avgPct: 'Closed trades on this platform, blended by loan size and days held.',
   },
   month: {
     month: 'The month the loan was repaid, which is when the gain became real.',
@@ -2073,7 +2073,15 @@ function renderTable() {
     // Asked of the restore rather than of `state.draft`: moving from one
     // stage's editor to another leaves the old form's draft behind, unused,
     // and the new form opened with focus on the body.
-    if (!restored) openForm.querySelector('input, select')?.focus();
+    // `[autofocus]` first, then the first control that can take focus: the
+    // Borrowed editor opens with the platform picker, whose input is hidden,
+    // and focusing that left focus on the body.
+    if (!restored) {
+      (
+        openForm.querySelector('[autofocus]') ??
+        openForm.querySelector('input:not([type="hidden"]), select, .coin-select__trigger')
+      )?.focus();
+    }
   }
   state.draft = null;
 }
@@ -2211,18 +2219,18 @@ function toggleCollapse(button) {
   if (body) body.hidden = !open;
 }
 
-// An app's logo and name, or a trade from before the platform was recorded.
+// A platform's logo and name, or a trade from before the platform was recorded.
 // `extra` goes inside the flex row, as By currency places its `no rate` chip:
 // after it, the chip fell to a line of its own, and on a phone it made the
 // cell three flex items and floated the name into the middle.
-function appLabel(p, extra = '') {
+function platformLabel(p, extra = '') {
   const meta = PLATFORM_META[p];
   const name = meta ? `<span>${esc(meta.label)}</span>` : '<span class="muted">Not recorded</span>';
   return `<span class="row__asset">${platformLogo(meta ? p : null)}${name}${extra}</span>`;
 }
 
 /**
- * By App: the tab's trades split by where they were run, in the shape of By
+ * By Platform: the tab's trades split by where they were run, in the shape of By
  * currency. Borrowed is dollars only - one app holds loans in several coins,
  * and their native sum would be a figure in no coin at all.
  */
@@ -2231,16 +2239,16 @@ function platformTable(rows) {
   return `<table class="table table--flush">
     <thead>
       <tr>
-        ${hintHead('App', TIPS.app.app)}${hintHead('Closed', TIPS.app.closed)}
-        ${hintHead('Open', TIPS.app.open)}${hintHead('Borrowed', TIPS.app.borrowed)}
-        ${hintHead('Net gain', TIPS.app.netGain)}${hintHead('Avg annualized', TIPS.app.avgPct)}
+        ${hintHead('Platform', TIPS.platform.platform)}${hintHead('Closed', TIPS.platform.closed)}
+        ${hintHead('Open', TIPS.platform.open)}${hintHead('Borrowed', TIPS.platform.borrowed)}
+        ${hintHead('Net gain', TIPS.platform.netGain)}${hintHead('Avg annualized', TIPS.platform.avgPct)}
       </tr>
     </thead>
     <tbody>
       ${rows
         .map(
           (r) => `<tr>
-        <td data-label="App">${appLabel(r.platform, r.missingFx ? ` ${RATE_MISSING}` : '')}</td>
+        <td data-label="Platform">${platformLabel(r.platform, r.missingFx ? ` ${RATE_MISSING}` : '')}</td>
         <td data-label="Closed" class="num">${r.closed || dash}</td>
         <td data-label="Open" class="num">${r.open || dash}</td>
         <td data-label="Borrowed" class="num">${isNum(r.borrowed) ? usd(r.borrowed) : dash}</td>
@@ -2665,7 +2673,7 @@ function renderStatsView() {
   // Trades from before the platform was asked for. While there are any, an
   // app with none recorded cannot be said to have had none.
   const unrecorded = trades.filter((t) => !PLATFORMS.includes(t.platform)).length;
-  const appCards = PLATFORMS.map((p) => {
+  const platformCards = PLATFORMS.map((p) => {
     const label = PLATFORM_META[p].label;
     const mine = trades.filter((t) => t.platform === p);
     const ra = summaryReport(mine, asOf);
@@ -2694,11 +2702,11 @@ function renderStatsView() {
     </div>
     ${scope}
     ${overview}
-    ${summaryCard('Performance (All Apps)', perfGrid(r), perfNote(r))}
-    ${appCards}
-    ${summaryCard('By App', platformTable(r.byPlatform))}
-    ${summaryCard('By currency (All Apps)', currencyTable(r.byCurrency))}
-    ${summaryCard('By month closed (All Apps)', monthTable(r.byMonth))}
+    ${summaryCard('Performance (All Platforms)', perfGrid(r), perfNote(r))}
+    ${platformCards}
+    ${summaryCard('By Platform', platformTable(r.byPlatform))}
+    ${summaryCard('By currency (All Platforms)', currencyTable(r.byCurrency))}
+    ${summaryCard('By month closed (All Platforms)', monthTable(r.byMonth))}
     ${SUMMARY_FOOT}
   `;
 }
@@ -3121,26 +3129,64 @@ async function submitBorrow(form) {
   if (!validateForm(form)) return;
   const done = beginSubmit(form);
   if (!done) return;
+  let created;
   try {
-    const created = await api('/api/trades', {
+    created = await api('/api/trades', {
       method: 'POST',
       body: JSON.stringify(payloadOf(form)),
     });
-    await loadTrades();
-    state.creating = false;
-    state.openIds.add(created.id);
-    state.editing = null;
-    // Go to wherever the new trade landed, so the row that just opened is on
-    // screen whatever the table is sorted by.
-    state.page = pageOfTrade(created.id);
-    document.getElementById('new-trade-card').hidden = true;
-    render();
-    toast('Trade created. Add the ETH purchase next.');
   } catch (err) {
     showFormError(form, err.message, err.field);
-  } finally {
     done();
+    return;
   }
+  // Saved, whatever happens to the reload. The POST and the reload used to
+  // share one try, so a reload that failed showed its error on a form still
+  // filled in, Create trade pressed again, and the trade was written twice.
+  // A reload overtaken by another write answers false the same way; either
+  // way the new row goes in from the POST's own answer until the next load.
+  let reloaded = false;
+  try {
+    reloaded = await loadTrades();
+  } catch (err) {
+    /* said in the toast below */
+  }
+  if (!state.trades.some((t) => t.id === created.id)) {
+    state.trades = [...state.trades, withoutDerived(created)];
+  }
+  state.creating = false;
+  state.openIds.add(created.id);
+  // Go to wherever the new trade landed, so the row that just opened is on
+  // screen whatever the table is sorted by.
+  state.page = pageOfTrade(created.id);
+  // Another trade's open editor stays open, as a stage save leaves it: this
+  // used to close it, and the sale typed into it went too. Only when its row
+  // is not on the page being turned to is it let go.
+  if (state.editing && pageOfTrade(state.editing.id) !== state.page) {
+    state.editing = null;
+    state.draft = null;
+  }
+  document.getElementById('new-trade-card').hidden = true;
+  syncNewTradeButton();
+  render();
+  // Focus to the next thing to do, rather than the body: the card it was in
+  // has gone, and the next Tab went to the top of the table. A browser may
+  // still report the hidden Create trade button as focused, which
+  // `focusStageButton` would take for a choice the user made, so let it go.
+  const newCard = document.getElementById('new-trade-card');
+  if (newCard.contains(document.activeElement)) document.activeElement.blur();
+  focusStageButton(created.id, 'buy');
+  done();
+  toast(
+    reloaded
+      ? 'Trade created. Add the ETH purchase next.'
+      : 'Trade created. The ledger could not be reloaded; it will catch up on the next change.',
+  );
+}
+
+// The New trade button says whether its card is open, for a screen reader.
+function syncNewTradeButton() {
+  document.getElementById('new-trade')?.setAttribute('aria-expanded', String(state.creating));
 }
 
 /* ----------------------------------------------------------- alert window */
@@ -3629,6 +3675,7 @@ function wire() {
   document.getElementById('new-trade').addEventListener('click', () => {
     state.creating = !state.creating;
     card.hidden = !state.creating;
+    syncNewTradeButton();
     if (state.creating) {
       document.getElementById('new-trade-platform').innerHTML = platformHeadPicker();
       borrowForm.innerHTML = borrowFields() + actions('Create trade', 'data-close-new');
@@ -3684,6 +3731,9 @@ function wire() {
     if (e.target.closest('[data-close-new]')) {
       state.creating = false;
       card.hidden = true;
+      syncNewTradeButton();
+      // Back to the button that opened it, not left on a hidden Cancel.
+      document.getElementById('new-trade').focus();
       return;
     }
 
@@ -3970,7 +4020,12 @@ function wire() {
     // has to happen before the hints are recomputed, because clearing an error
     // empties the same slot the hint is written into.
     if (input.name) clearFieldError(form, input.name);
-    form.querySelector('[data-form-error]').textContent = '';
+    // Not while a field outside the form is still wrong: the New trade
+    // heading's platform has no hint line, so its message lives here, and a
+    // keystroke in the APR emptied it while the picker stayed red.
+    if (!(form.id && document.querySelector(`[data-field-of="${form.id}"].is-invalid`))) {
+      form.querySelector('[data-form-error]').textContent = '';
+    }
 
     if (input.name === 'borrow_currency') {
       const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');

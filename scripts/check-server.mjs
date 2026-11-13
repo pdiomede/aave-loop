@@ -524,6 +524,8 @@ await check('set-platform: a dry run writes nothing, --apply sets Aave on the re
   assert.deepEqual(platforms(), [null, null, 'etherfi']);
 
   assert.throws(() => runIt('--etherfi', '999', '--apply'), /No trade #999/);
+  assert.throws(() => runIt('--etherfi', '', '--apply'), /needs a trade id/, 'an empty value is not "none"');
+  assert.throws(() => runIt('--etherfi', '007', '--apply'), /not a trade id/);
   assert.deepEqual(platforms(), [null, null, 'etherfi']);
 
   runIt('--etherfi', String(b), '--apply');

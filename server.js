@@ -15,6 +15,7 @@ import {
   gasKey,
   todayISO,
   intervalMs,
+  cents,
   CURRENCIES,
   PLATFORMS,
   FX_STAGES,
@@ -383,7 +384,11 @@ function checkChronology(row) {
     // Repaying less than the principal made the implied interest negative,
     // which the net gain then counted as profit. A $20,000 repayment on a
     // $32,000 loan reported a $12,000 gain out of nowhere.
-    if (row.repay_amount < row.borrow_amount - 0.005) {
+    // Compared as printed, in whole cents, because that is how `derive` takes
+    // them: a raw 0.005 of slack let 10,000.00 repay a 10,000.005 loan, which
+    // the cards print as 10,000.01 - interest of -$0.01 and a flat trade
+    // scored a win.
+    if (cents(row.repay_amount) < cents(row.borrow_amount)) {
       throw new BadRequest(
         `A repayment cannot be less than the ${row.borrow_amount.toLocaleString('en-US')} borrowed.`,
         'repay_amount',

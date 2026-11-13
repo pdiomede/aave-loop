@@ -343,12 +343,17 @@ function addMissingColumns(table, columns) {
   return missing.length;
 }
 
+// Immediate, as the alerts rebuild is: the write lock is taken before the
+// shape is read. Deferred, two copies booting together on a file that needed
+// columns both read it, and the one left waiting to write held a stale read
+// and got SQLITE_BUSY at once - the busy timeout does not cover that - and
+// exited.
 db.transaction(() => {
   addMissingColumns('trades', FX_COLUMN_TYPES);
   addMissingColumns('trades', GAS_COLUMN_TYPES);
   addMissingColumns('trades', PLATFORM_COLUMNS);
   addMissingColumns('eth_price', ETH_MARKET_COLUMNS);
-})();
+}).immediate();
 
 export const FIELDS = [
   'borrow_date',
