@@ -632,6 +632,21 @@ check('Stats: the coin total under Borrowed adds the loans as printed', () => {
   assert.equal(row.borrowedNative, 20000.02);
 });
 
+check('Stats: a trade repaid with no full sale is not open, and has no estimate', () => {
+  // A legacy row: bought, repaid, never sold. CLOSED to `derive`, without a
+  // result - so not an open position, in any count or on the hero.
+  const t = { id: 8, borrow_currency: 'USDC', borrow_date: '2025-08-01', borrow_amount: 10000, borrow_apr: 4,
+    buy_date: '2025-08-02', buy_amount: 10000, buy_eth: 4, buy_gas_usd: 1, repay_date: '2025-08-30',
+    repay_amount: 10031, platform: 'aave' };
+  const d = derive(t, AS_OF);
+  assert.equal(d.status, 'CLOSED');
+  const r = summaryReport([t], AS_OF);
+  assert.equal(r.openCount, 0);
+  assert.equal(r.byPlatform[0].open, 0);
+  assert.equal(r.byCurrency[0].open, 0);
+  assert.equal(estimatedGainUsd(t, d, 3450), null);
+});
+
 check('Stats: open capital is what has not been repaid', () => {
   // Repaid without a sale - the server refuses it, the maths must not count
   // it as capital still out either way.

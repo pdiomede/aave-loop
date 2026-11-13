@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [2.1.3] - 2026-11-13
+
+### Fixed
+
+Stats:
+
+- **The "no rate" tooltip is readable in a tile:** it hung from the chip and grew left off the screen ("…ates on Stats."); in the hero, year and Performance tiles and a trade's date cell it now hangs from the tile.
+- **While the ledger loads, the page says so,** rather than "Nothing to summarize yet" and Closed trades 0 over a full ledger.
+- **The active year tab shows keyboard focus,** which its own highlight used to hide.
+- **A trade repaid with no full sale is not counted open** (an older row the API now refuses): it read as an open position in a past year, and the hero valued it at today's price.
+- **The footnote no longer says every figure is in dollars** above By currency's own coin totals, on the page and the Statement.
+
+Trades:
+
+- **A hint is never worked out from a value the form has rejected:** a repayment of 1 left the date's hint reading "interest -17,999.00 USDT".
+- **A "?" tooltip no longer takes the click meant for the field under it.**
+- **The Platform tooltip on the Borrowed card stays on a phone screen,** without a sideways scroll.
+- **Every figure on a stage card ends at the card's edge,** "Total fees paid" over "2 stages not recorded" included.
+- **Deleting the only trade on the last page puts focus on the last row of the page before,** not its first.
+- **Rows say whether they are expanded** to a screen reader, **the phone's sort button says which way it sorts,** and **a field's error is tied to the field** and announced.
+- **The empty ledger no longer says Aave only.**
+
 ## [2.1.2] - 2026-11-13
 
 ### Changed

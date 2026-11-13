@@ -1127,11 +1127,24 @@ a.brand {
   white-space: nowrap;
 }
 
-/* The Borrowed card's Platform row: logo, then the name. */
+/* The Borrowed card's Platform row: logo, then the name. The row is right
+   aligned, so the logo's bubble hangs from the name's right edge and grows
+   left: from the logo it ran off a phone, "This trade happene...", and gave
+   the page a sideways scroll while it showed. */
 .platform-name {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.platform-name .platform-mark[data-tip] {
+  position: static;
+}
+
+.platform-name .platform-mark[data-tip]::after {
+  left: auto;
+  right: 0;
 }
 
 .platform-art {
@@ -1529,6 +1542,13 @@ th[aria-sort="ascending"] .th-sort__caret {
   box-shadow: var(--ring);
 }
 
+/* After the active rule, which otherwise replaced the focus ring with its own
+   shadow - on the very tab the year switch and Fetch rates put focus on. */
+.years__tab:focus-visible,
+.years__tab.is-active:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 /* The hero's four tiles, inside a year's overview card. The hero pushes them to
    the right edge with `margin-left: auto`; inside a card they start where the
    card's own content does. */
@@ -1831,6 +1851,10 @@ th[aria-sort="ascending"] .th-sort__caret {
   margin: 0;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  /* Every figure ends at the card's edge, a line under it too: "$8.00" over
+     "2 stages not recorded", and a euro amount over its dollar line, sat
+     left in their cell, short of the figures above and below them. */
+  text-align: right;
 }
 
 /* The two parts a loan cost splits into. They qualify the row above rather
@@ -1977,6 +2001,9 @@ th[aria-sort="ascending"] .th-sort__caret {
    no caret: a caret would have nothing to point at. */
 [data-tip]::after {
   content: attr(data-tip);
+  /* Never in the way: a bubble over the input below its "?" took the click
+     meant for the input, and focus stayed on the "?". */
+  pointer-events: none;
   position: absolute;
   top: calc(100% + 6px);
   z-index: 40;
@@ -2073,6 +2100,37 @@ th[aria-sort="ascending"] .th-sort__caret {
 .chip--warn[data-tip]::after {
   right: 0;
   max-width: min(260px, calc(100vw - 48px));
+}
+
+/* Where the chip sits on the left instead - beside a figure in a hero, year
+   or Performance tile, and in a trade's date cell - a bubble growing left
+   from it ran off the screen: "...ates on Stats." at 375px, and its start at
+   -95px on a desktop. There it hangs from the tile, or the cell's content,
+   and grows right, no wider than the tile it explains. */
+.stat {
+  position: relative;
+}
+
+.stat .chip--warn[data-tip],
+.perf .chip--warn[data-tip],
+.row td:first-child .chip--warn[data-tip] {
+  position: static;
+}
+
+.row td:first-child .row__asset {
+  position: relative;
+}
+
+.stat .chip--warn[data-tip]::after,
+.perf .chip--warn[data-tip]::after {
+  left: 0;
+  right: auto;
+  max-width: 100%;
+}
+
+.row td:first-child .chip--warn[data-tip]::after {
+  left: 0;
+  right: auto;
 }
 
 /* The exception is the currency name in the summary table, which is left

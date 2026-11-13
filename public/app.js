@@ -579,7 +579,8 @@ function sortControl() {
   return `<div class="sortbar">
     <label class="sortbar__label" for="sort-by">Sort by</label>
     <div class="control control--select"><select id="sort-by" data-sort-select>${opts}</select></div>
-    <button class="btn btn--sm" type="button" data-sort-dir aria-label="Reverse sort order">
+    <button class="btn btn--sm" type="button" data-sort-dir
+      aria-label="${state.sort.dir === 'asc' ? 'Ascending' : 'Descending'} - reverse the sort order">
       ${state.sort.dir === 'asc' ? '&uarr; Ascending' : '&darr; Descending'}
     </button>
   </div>`;
@@ -609,6 +610,10 @@ const state = {
   loadFailed: false,
   draft: null,
   trades: [],
+  // False until the first load lands. Until then `trades` is empty because
+  // nothing has been read, not because nothing is there, and the views said
+  // "Nothing to summarize yet" and Closed trades 0 over a full ledger.
+  loaded: false,
   // Every trade whose stages are showing. A set rather than one id: opening a
   // trade used to collapse whichever was open, so two could never be compared
   // side by side.
@@ -705,6 +710,7 @@ async function loadTrades() {
   const rows = (await api('/api/trades')).map(withoutDerived);
   if (seq !== loadSeq || wroteAt !== writeSeq) return false;
   state.trades = rows;
+  state.loaded = true;
   // A load that works ends a failed one. Left set, a trade created after a
   // failed boot was saved, toasted, and never drawn: every render still
   // returned early with "Could not load the ledger".
@@ -1231,7 +1237,10 @@ function field({
   required = true,
 }) {
   const id = `f-${name}-${Math.random().toString(36).slice(2, 7)}`;
-  const req = required ? ' aria-required="true"' : '';
+  // The hint line under the control carries its errors too, so the control
+  // names it: an error was shown and focused with nothing to tie it to the
+  // field, and a screen reader read the label and not the reason.
+  const req = `${required ? ' aria-required="true"' : ''} aria-describedby="${id}-hint"`;
   let control;
 
   if (options && name === 'borrow_currency') {
@@ -1277,13 +1286,13 @@ function field({
       }${hintMark(tip)}
     </div>
     ${control}
-    <div class="field__hint" data-hint="${name}">${hint}</div>
+    <div class="field__hint" id="${id}-hint" data-hint="${name}">${hint}</div>
   </div>`;
 }
 
 const actions = (submitLabel, cancelAttr) => `
   <div class="form__actions">
-    <span class="form__error" data-form-error></span>
+    <span class="form__error" data-form-error role="alert"></span>
     <button class="btn btn--ghost btn--sm" type="button" ${cancelAttr}>Cancel</button>
     <button class="btn btn--primary btn--sm" type="submit">${esc(submitLabel)}</button>
   </div>`;
@@ -1398,6 +1407,14 @@ function refreshHints(form, trade, stage) {
   // edit, and it makes the preview fall back to the coin with "(converted on
   // save)" underneath, which is the honest answer.
   const saved = trade || {};
+  // A value the form has rejected feeds no hint, not even a neighbour's: only
+  // the field's own slot was protected, so a repayment of 1 left the date's
+  // hint reading "interest -17,999.00 USDT", and 100 ETH sold priced the sale
+  // at $410.00. The saved value stands in until the field is put right.
+  for (const wrap of form.querySelectorAll('.field.is-invalid[data-field]')) {
+    const k = wrap.dataset.field;
+    if (k in merged) merged[k] = saved[k] ?? null;
+  }
   for (const s of FX_STAGES) {
     if (merged[`${s}_date`] !== saved[`${s}_date`]) {
       merged[`${s}_fx`] = null;
@@ -1943,7 +1960,7 @@ function tradeRow(t, index, total) {
   const gainCell = gainCellHtml(t, d);
 
   return `
-  <tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0">
+  <tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0" aria-expanded="${isOpen}">
     <td data-label="Trade date">
       <div class="row__asset">
         <span class="caret"></span>
@@ -2036,11 +2053,15 @@ function restoreDraft(draft) {
 
 function renderTable() {
   const mount = document.getElementById('table-mount');
+  if (!state.loaded) {
+    mount.innerHTML = LOADING;
+    return;
+  }
 
   if (state.trades.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No trades yet</h3>
-      <p>Start with the stablecoin you borrowed on Aave, then add each stage as it happens.</p>
+      <p>Start with the stablecoin you borrowed, on Aave or Ether.fi, then add each stage as it happens.</p>
     </div>`;
     return;
   }
@@ -2430,8 +2451,9 @@ const ECB_RATES_URL =
  * app the way the theme toggle says what it does.
  */
 const SUMMARY_FOOT = `<p class="summary__foot muted">
-    Every figure is in US dollars. Amounts in a currency other than the dollar
-    are converted at the
+    Every figure is in US dollars, apart from each coin's own total under By
+    currency's Borrowed. Amounts in a currency other than the dollar are
+    converted at the
     <a href="${ECB_RATES_URL}" target="_blank" rel="noopener noreferrer">European
     Central Bank reference rate<span class="sr-only"> (opens in a new tab)</span></a>
     for the day of each transaction, or for the last business day before it.
@@ -2623,6 +2645,11 @@ function perfNote(r) {
 
 function renderStatsView() {
   const mount = document.getElementById('stats-mount');
+  // Redrawn directly too, not only through `render`.
+  if (!state.loaded) {
+    mount.innerHTML = LOADING;
+    return;
+  }
 
   if (state.trades.length === 0) {
     mount.innerHTML = `<section class="card"><div class="empty">
@@ -2833,7 +2860,7 @@ function openGainLines() {
 }
 
 function renderHeroStats() {
-  if (state.loadFailed) return;
+  if (state.loadFailed || !state.loaded) return;
   document.getElementById('hero-stats').innerHTML = statTiles(summarize(state.trades), { estimate: true });
 }
 
@@ -2965,6 +2992,11 @@ function renderAlerts() {
  * Counts nobody measured. And not "could not reach": a server that answered
  * 500 was reached.
  */
+const LOADING = `<div class="empty">
+  <h3>Loading the ledger</h3>
+  <p>Reading your trades.</p>
+</div>`;
+
 const LOAD_FAILED = `<div class="empty">
   <h3>Could not load the ledger</h3>
   <p>The server did not answer, or could not read the ledger. Check that it is running, then reload this page.</p>
@@ -2975,6 +3007,12 @@ function render() {
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
     else document.getElementById(state.view === 'stats' ? 'stats-mount' : 'table-mount').innerHTML = LOAD_FAILED;
+    return;
+  }
+  if (!state.loaded) {
+    document.getElementById('hero-stats').innerHTML = '';
+    if (state.view === 'alerts') renderAlerts();
+    else document.getElementById(state.view === 'stats' ? 'stats-mount' : 'table-mount').innerHTML = LOADING;
     return;
   }
   state.draft = captureDraft();
@@ -2994,10 +3032,15 @@ const fieldWrap = (form, name) =>
   form.querySelector(`[data-field="${name}"]`) ??
   (form.id ? document.querySelector(`[data-field-of="${form.id}"][data-field="${name}"]`) : null);
 
+// The control a field's error belongs to: a picker's input is hidden, so its
+// button stands in.
+const fieldControl = (wrap) => wrap?.querySelector('input:not([type="hidden"]), select, .coin-select__trigger');
+
 function clearFieldError(form, fieldName) {
   const wrap = fieldWrap(form, fieldName);
   if (wrap && wrap.classList.contains('is-invalid')) {
     wrap.classList.remove('is-invalid');
+    fieldControl(wrap)?.removeAttribute('aria-invalid');
     const hint = wrap.querySelector('[data-hint]');
     if (hint) hint.textContent = '';
   }
@@ -3007,12 +3050,14 @@ function showFormError(form, message, fieldName, { focus = true } = {}) {
   const outside = form.id ? [...document.querySelectorAll(`[data-field-of="${form.id}"]`)] : [];
   [...form.querySelectorAll('.field.is-invalid'), ...outside].forEach((f) => {
     f.classList.remove('is-invalid');
+    fieldControl(f)?.removeAttribute('aria-invalid');
     const hint = f.querySelector('[data-hint]');
     if (hint) hint.textContent = '';
   });
   const target = fieldName && fieldWrap(form, fieldName);
   if (target) {
     target.classList.add('is-invalid');
+    fieldControl(target)?.setAttribute('aria-invalid', 'true');
     // A field in the card's heading has no hint line of its own, so its
     // message goes where the form's own errors do.
     const hint = target.querySelector('[data-hint]');
@@ -3021,7 +3066,7 @@ function showFormError(form, message, fieldName, { focus = true } = {}) {
     // Not when the error came from leaving the field: refocusing what the user
     // just tabbed out of traps them there until the value is acceptable. A
     // picker's input is hidden, so its button takes the focus.
-    if (focus) target.querySelector('input:not([type="hidden"]), select, .coin-select__trigger')?.focus();
+    if (focus) fieldControl(target)?.focus();
   } else {
     form.querySelector('[data-form-error]').textContent = message;
   }
@@ -3294,7 +3339,7 @@ function alertDialogBody(t, d, a) {
         <p class="modal__preview" data-alert-preview hidden></p>
         <div class="form__actions">
           ${remove}
-          <span class="form__error" data-form-error></span>
+          <span class="form__error" data-form-error role="alert"></span>
           <button class="btn btn--ghost btn--sm" type="button" data-close-alert>Cancel</button>
           <button class="btn btn--primary btn--sm" type="submit">Save alert</button>
         </div>
@@ -3978,13 +4023,18 @@ function wire() {
         );
         if (state.alertLog) state.alertLog = state.alertLog.filter((a) => a.tradeId !== id);
         alertWriteSeq += 1;
+        const pageBefore = state.page;
         render();
         // The next row, the last one if this was last, or New trade when the
-        // table is empty - and only if focus has nowhere better to be.
+        // table is empty - and only if focus has nowhere better to be. When
+        // the delete emptied the last page, the table moved to the page before
+        // and `at` counted rows on the old one: focus went to that page's
+        // first row instead of its last.
         const active = document.activeElement;
         if (!active || active === document.body) {
           const rows = document.querySelectorAll('.row[data-trade]');
-          const next = rows.length ? rows[Math.min(Math.max(at, 0), rows.length - 1)] : null;
+          const i = state.page !== pageBefore ? rows.length - 1 : Math.min(Math.max(at, 0), rows.length - 1);
+          const next = rows.length ? rows[i] : null;
           (next ?? document.getElementById('new-trade'))?.focus();
         }
         toast('Trade deleted.');
