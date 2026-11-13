@@ -16,6 +16,7 @@ import {
   todayISO,
   intervalMs,
   CURRENCIES,
+  PLATFORMS,
   FX_STAGES,
   STATUS,
 } from './lib/calc.js';
@@ -188,6 +189,7 @@ const REQUIRED_BORROW = [
   ['borrow_amount', 'Borrow amount'],
   ['borrow_currency', 'Currency'],
   ['borrow_apr', 'Borrow APR'],
+  ['platform', 'Platform'],
 ];
 
 function toNumber(value, field, label, { allowZero = false } = {}) {
@@ -267,6 +269,16 @@ function normalise(body, { requireBorrow }) {
     const c = typeof body.borrow_currency === 'string' ? body.borrow_currency.toUpperCase() : '';
     if (!CURRENCIES.includes(c)) throw new BadRequest('Pick a supported currency.', 'borrow_currency');
     out.borrow_currency = c;
+  }
+  // Blank falls through to the required check below, which names the field;
+  // anything else has to be one of the platforms, by id, in any case.
+  if (has('platform')) {
+    if (isBlank(body.platform)) out.platform = null;
+    else {
+      const p = typeof body.platform === 'string' ? body.platform.trim().toLowerCase() : '';
+      if (!PLATFORMS.includes(p)) throw new BadRequest('Pick a platform.', 'platform');
+      out.platform = p;
+    }
   }
 
   dateField('buy_date', 'Purchase date');

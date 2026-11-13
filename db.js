@@ -66,6 +66,7 @@ db.exec(`
     repay_fx        REAL,
     repay_fx_date   TEXT,
     fx_source       TEXT,
+    platform        TEXT,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT    NOT NULL
   );
@@ -326,6 +327,13 @@ const GAS_COLUMN_TYPES = [
   ['sell_unstake_gas_usd', 'REAL'],
 ];
 
+// Where the loop was run, Aave or Ether.fi (PLATFORMS in lib/calc.js). Nullable
+// for the same reason as the fees: a trade recorded before it was asked for
+// has none, and a default of 'aave' would state something nobody recorded.
+// The API requires it on a new trade; scripts/set-platform.mjs fills in the
+// old ones. Same pairing again - the DDL and this list both carry it.
+const PLATFORM_COLUMNS = [['platform', 'TEXT']];
+
 function addMissingColumns(table, columns) {
   const present = new Set(db.pragma(`table_info(${table})`).map((c) => c.name));
   const missing = columns.filter(([name]) => !present.has(name));
@@ -338,6 +346,7 @@ function addMissingColumns(table, columns) {
 db.transaction(() => {
   addMissingColumns('trades', FX_COLUMN_TYPES);
   addMissingColumns('trades', GAS_COLUMN_TYPES);
+  addMissingColumns('trades', PLATFORM_COLUMNS);
   addMissingColumns('eth_price', ETH_MARKET_COLUMNS);
 })();
 
@@ -360,6 +369,7 @@ export const FIELDS = [
   'repay_gas_usd',
   'buy_lend_gas_usd',
   'sell_unstake_gas_usd',
+  'platform',
   'notes',
 ];
 

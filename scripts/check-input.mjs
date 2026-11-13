@@ -181,5 +181,13 @@ check('a new trade is in the first coin until another is picked', () => {
   assert.equal(unitOf({ borrow_currency: 'EURC' }), 'EURC');
 });
 
+check('the platform is required, one of Aave or Ether.fi, and kept as a word', () => {
+  assert.equal(validateField('platform', ''), 'Platform is required.');
+  assert.equal(validateField('platform', 'uniswap'), 'Pick a platform.');
+  assert.equal(validateField('platform', 'aave'), null);
+  assert.equal(validateField('platform', 'EtherFi'), null);
+  assert.equal(contextFrom({}, { platform: 'etherfi' }).platform, 'etherfi');
+});
+
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);
 else console.log(`ok - ${passed} input checks`);

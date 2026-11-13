@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **Each trade records where it was run, Aave or Ether.fi.** New trade picks it beside the heading ("New trade: **borrow** on …") and will not save without it; each row shows the platform's logo before the coin, with a tooltip, and the Borrowed card shows and edits it. The API requires `platform` on a new trade and the CSV gains a `platform` column. Trades from before stay unrecorded until `node scripts/set-platform.mjs --etherfi <id> --apply` sets the named ones to Ether.fi and the rest to Aave (a dry run without `--apply`).
+
 ### Changed
 
 - **The site moved to ethroundtrip.com and is renamed ETH Roundtrip.** The registrar suspended aaveloop.com over the Aave name. The pages, the Statement's header and link, the Telegram help and the download names (`eth-roundtrip-trades-2026.csv`) carry the new name, and the social card is redrawn as `landing/og4.png`, a new filename because scrapers cache by URL.

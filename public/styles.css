@@ -764,6 +764,48 @@ a.brand {
   font-weight: 600;
 }
 
+.coin-select__placeholder {
+  color: var(--text-muted);
+}
+
+/* An invalid picker: the button stands in for the input the rule above
+   colours. */
+.field.is-invalid .coin-select__trigger {
+  border-color: var(--negative);
+  box-shadow: 0 0 0 3px var(--negative-soft);
+}
+
+/* The new trade's heading: "New trade: borrow on [platform]". The title keeps
+   its weight off so the stage name can carry the bold. */
+.new-trade__head {
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.new-trade__head .card__title {
+  margin-right: 0;
+  font-weight: 500;
+}
+
+.new-trade__head .card__title strong {
+  font-weight: 700;
+}
+
+.new-trade__on {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.new-trade__platform {
+  width: 190px;
+  max-width: 100%;
+}
+
+.new-trade__platform .coin-select__trigger {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
 .coin-select__name {
   min-width: 0;
   overflow: hidden;
@@ -959,6 +1001,67 @@ a.brand {
 .coin--art {
   object-fit: cover;
   background: none;
+}
+
+/* Where a trade was run: a small logo before the coin, with the sentence in
+   the tooltip. Positioned itself, so the bubble anchors here; it is wider than
+   the 18px mark, so the cap is the window rather than the mark. */
+.platform-mark {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  cursor: help;
+}
+
+/* The ring keeps Ether.fi's near-black logo from vanishing in dark mode. */
+.platform-mark img,
+.platform-art {
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+}
+
+.platform-mark img {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.platform-mark__none {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--hairline-strong);
+}
+
+.platform-mark[data-tip]::after {
+  left: 0;
+  width: max-content;
+  max-width: calc(100vw - 48px);
+  white-space: nowrap;
+}
+
+/* The platform and the coin read as one pair, so they sit closer together
+   than the row's other parts. It is also what keeps the Trade cell inside a
+   375px phone: the logo added 28px to a cell that had 17 to spare. */
+.row__venue {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The Borrowed card's Platform row: logo, then the name. */
+.platform-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.platform-art {
+  border-radius: 50%;
 }
 
 .eth-cell {
@@ -2271,6 +2374,13 @@ th[aria-sort="ascending"] .th-sort__caret {
      its label floating in the middle of it. Everything else stays centred. */
   .row td:first-child {
     align-items: flex-start;
+    /* Less room between the label and the trade than in the other cells:
+       the platform logo made this the one cell that ran past the gutter. */
+    gap: 10px;
+  }
+
+  .row td:first-child .row__asset {
+    gap: 8px;
   }
 
   .row td::before {

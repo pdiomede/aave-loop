@@ -10,6 +10,8 @@ import {
   parseAmount,
   CURRENCIES,
   CURRENCY_META,
+  PLATFORMS,
+  PLATFORM_META,
   FX_STAGES,
   isUsdPegged,
   gasKey,
@@ -28,6 +30,7 @@ import {
   validateField,
   contextFrom,
   unitOf,
+  TEXT_FIELDS,
 } from '/lib/input.js';
 
 /* ------------------------------------------------------------- formatters */
@@ -309,6 +312,20 @@ function fxNote(usdValue, leg) {
     leg.date ? ` on ${fmtDate(leg.date)}` : ''
   }</span>` : '';
   return `<span class="fx-note__usd">${usd(usdValue)}</span>${at}`;
+}
+
+/**
+ * Where a trade was run, as a small logo with the sentence in the CSS tooltip.
+ * A trade from before the field existed has none, and gets an empty dashed
+ * circle saying so rather than an Aave logo nobody recorded.
+ */
+function platformMark(p) {
+  const meta = PLATFORM_META[p];
+  const tip = meta ? `This trade happened on ${meta.label}` : 'Platform not recorded';
+  const img = meta
+    ? `<img src="${meta.art}" alt="${esc(meta.label)}" width="18" height="18" />`
+    : '<span class="platform-mark__none" aria-hidden="true"></span>';
+  return `<span class="platform-mark" data-tip="${esc(tip)}" aria-label="${esc(tip)}">${img}</span>`;
 }
 
 const RATE_MISSING = `<span class="chip chip--warn" data-tip="${esc(TIPS.noRate)}">no rate</span>`;
@@ -985,21 +1002,42 @@ const coinFace = (c) => {
   );
 };
 
+// A platform: its logo and its name, or the prompt on a new trade, whose
+// picker starts empty so that Create trade cannot guess one.
+const platformFace = (p) => {
+  const meta = PLATFORM_META[p];
+  return meta
+    ? `<img class="coin coin--art coin--sm platform-art" src="${meta.art}" alt="" width="20" height="20" />` +
+        `<span class="coin-select__ticker">${esc(meta.label)}</span>`
+    : '<span class="coin-select__placeholder">Pick a platform</span>';
+};
+
+// What each kind of picker draws on its button and in its list.
+const FACES = { coin: coinFace, platform: platformFace };
+const faceOf = (box) => FACES[box.dataset.kind] ?? coinFace;
+
 const CHECK_SVG = `<svg class="coin-select__check" width="16" height="16" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <path d="M5 12.5l4.5 4.5L19 7.5" /></svg>`;
 
-function coinSelect({ id, name, value, options, req }) {
+/*
+ * The platform picker is this same control with another face (`kind`), so the
+ * keys, the placement and the closing rules are written once. `form` ties the
+ * hidden input to a form it does not sit inside: the new trade's platform is
+ * picked in the card's heading, above the form.
+ */
+function coinSelect({ id, name, value, options, req, kind = 'coin', form = '', label = '' }) {
+  const face = FACES[kind];
   const items = options
     .map(
       (c, i) => `<li class="coin-select__option" role="option" id="${id}-opt-${i}" data-value="${esc(c)}"
-        aria-selected="${c === value}">${coinFace(c)}${CHECK_SVG}</li>`,
+        aria-selected="${c === value}">${face(c)}${CHECK_SVG}</li>`,
     )
     .join('');
-  return `<div class="control control--select coin-select" data-coin-select>
-    <input type="hidden" name="${name}" value="${esc(value)}" />
+  return `<div class="control control--select coin-select" data-coin-select data-kind="${kind}">
+    <input type="hidden" name="${name}" value="${esc(value)}"${form ? ` form="${form}"` : ''} />
     <button class="coin-select__trigger" type="button" id="${id}" role="combobox" aria-haspopup="listbox"
-      aria-expanded="false" aria-controls="${id}-list"${req}>${coinFace(value)}</button>
+      aria-expanded="false" aria-controls="${id}-list"${label ? ` aria-label="${esc(label)}"` : ''}${req}>${face(value)}</button>
     <ul class="coin-select__list" id="${id}-list" role="listbox" hidden>${items}</ul>
   </div>`;
 }
@@ -1074,7 +1112,7 @@ function closeCoinSelect(box) {
 /** Draw the button and the ticks from the hidden input's value. */
 function syncCoinSelect(box) {
   const { input, trigger, options } = coinParts(box);
-  trigger.innerHTML = coinFace(input.value);
+  trigger.innerHTML = faceOf(box)(input.value);
   for (const o of options) o.setAttribute('aria-selected', String(o.dataset.value === input.value));
 }
 
@@ -1120,7 +1158,7 @@ function coinKeydown(e, box) {
     // A letter on its own; with Cmd, Ctrl or Alt it is the browser's shortcut.
     const letter = e.key.toUpperCase();
     const order = [...options.slice(active + 1), ...options.slice(0, active + 1)];
-    const hit = order.find((o) => o.dataset.value.startsWith(letter));
+    const hit = order.find((o) => o.dataset.value.toUpperCase().startsWith(letter));
     if (hit) setCoinActive(box, hit);
   } else {
     return;
@@ -1150,6 +1188,8 @@ function field({
 
   if (options && name === 'borrow_currency') {
     control = coinSelect({ id, name, value, options, req });
+  } else if (options && name === 'platform') {
+    control = coinSelect({ id, name, value, options, req, kind: 'platform' });
   } else if (options) {
     const opts = options
       .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`)
@@ -1211,8 +1251,25 @@ const actions = (submitLabel, cancelAttr) => `
 const gasField = (t, name, label, tip, required = false) =>
   field({ name, label, tip, required, type: 'number', value: t[name] ?? '', prefix: '$', placeholder: '3.20' });
 
-function borrowFields(t = {}) {
-  return `<div class="grid">
+/**
+ * The new trade's platform, for the card's heading. Its input belongs to the
+ * borrow form through `form=`, so the form's FormData, its validation and its
+ * input handler all see it although it sits above the form.
+ */
+function platformHeadPicker() {
+  return `<div class="field new-trade__platform" data-field="platform" data-field-of="borrow-form">
+    ${coinSelect({ id: 'f-platform-new', name: 'platform', value: '', options: PLATFORMS, req: ' aria-required="true"', kind: 'platform', form: 'borrow-form', label: 'Platform' })}
+  </div>`;
+}
+
+// `platform` is for the Borrowed stage's editor. A new trade picks it in the
+// heading instead (`platformHeadPicker`).
+function borrowFields(t = {}, { platform = false } = {}) {
+  return `<div class="grid">${
+    platform
+      ? field({ name: 'platform', label: 'Platform', tip: 'Where the loop was run: Aave or Ether.fi.', value: t.platform ?? '', options: PLATFORMS })
+      : ''
+  }
     ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened on Aave.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
     ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The stablecoin you borrowed.', value: unitOf(t), options: CURRENCIES })}
     ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed from Aave.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
@@ -1281,7 +1338,7 @@ function refreshHints(form, trade, stage) {
     ...Object.fromEntries(
       Object.entries(data).map(([k, v]) => [
         k,
-        k.endsWith('_date') || k === 'borrow_currency' ? v || null : parseAmount(v),
+        k.endsWith('_date') || TEXT_FIELDS.has(k) ? v || null : parseAmount(v),
       ]),
     ),
   };
@@ -1475,7 +1532,7 @@ function alertBell(t, d) {
 /* ------------------------------------------------------------ stage cards */
 
 const STAGES = [
-  { key: 'borrow', name: 'Borrowed', done: (s) => s.borrowed, fields: borrowFields },
+  { key: 'borrow', name: 'Borrowed', done: (s) => s.borrowed, fields: (t) => borrowFields(t, { platform: true }) },
   { key: 'buy', name: 'Bought ETH', done: (s) => s.bought, fields: buyFields },
   { key: 'sell', name: 'Sold ETH', done: (s) => s.sold, fields: sellFields },
   { key: 'repay', name: 'Repaid', done: (s) => s.repaid, fields: repayFields },
@@ -1556,6 +1613,9 @@ function stageSummary(stage, t, d) {
   switch (stage) {
     case 'borrow':
       return (
+        row('Platform', PLATFORM_META[t.platform]
+          ? `<span class="platform-name">${platformMark(t.platform)}${esc(PLATFORM_META[t.platform].label)}</span>`
+          : '<span class="muted">-</span>') +
         row('Date', fmtDate(t.borrow_date)) +
         row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow)) +
         row('APR', pct(t.borrow_apr), '', 'stage__row--gap') +
@@ -1839,7 +1899,7 @@ function tradeRow(t, index, total) {
     <td data-label="Trade date">
       <div class="row__asset">
         <span class="caret"></span>
-        ${coin(t.borrow_currency)}
+        <span class="row__venue">${platformMark(t.platform)}${coin(t.borrow_currency)}</span>
         <span class="row__stack">
           <span>${isNum(d.borrowUsd) ? usd(d.borrowUsd) : RATE_MISSING}</span>
           ${
@@ -2726,27 +2786,42 @@ function render() {
 
 /* ------------------------------------------------------------- form submit */
 
+/**
+ * A field's wrapper: inside the form, or tied to it from outside with
+ * `data-field-of`, as the new trade's platform is from the card's heading.
+ */
+const fieldWrap = (form, name) =>
+  form.querySelector(`[data-field="${name}"]`) ??
+  (form.id ? document.querySelector(`[data-field-of="${form.id}"][data-field="${name}"]`) : null);
+
 function clearFieldError(form, fieldName) {
-  const wrap = form.querySelector(`[data-field="${fieldName}"]`);
+  const wrap = fieldWrap(form, fieldName);
   if (wrap && wrap.classList.contains('is-invalid')) {
     wrap.classList.remove('is-invalid');
-    wrap.querySelector('[data-hint]').textContent = '';
+    const hint = wrap.querySelector('[data-hint]');
+    if (hint) hint.textContent = '';
   }
 }
 
 function showFormError(form, message, fieldName, { focus = true } = {}) {
-  form.querySelectorAll('.field.is-invalid').forEach((f) => {
+  const outside = form.id ? [...document.querySelectorAll(`[data-field-of="${form.id}"]`)] : [];
+  [...form.querySelectorAll('.field.is-invalid'), ...outside].forEach((f) => {
     f.classList.remove('is-invalid');
-    f.querySelector('[data-hint]').textContent = '';
+    const hint = f.querySelector('[data-hint]');
+    if (hint) hint.textContent = '';
   });
-  const target = fieldName && form.querySelector(`[data-field="${fieldName}"]`);
+  const target = fieldName && fieldWrap(form, fieldName);
   if (target) {
     target.classList.add('is-invalid');
-    target.querySelector('[data-hint]').textContent = message;
-    form.querySelector('[data-form-error]').textContent = '';
+    // A field in the card's heading has no hint line of its own, so its
+    // message goes where the form's own errors do.
+    const hint = target.querySelector('[data-hint]');
+    if (hint) hint.textContent = message;
+    form.querySelector('[data-form-error]').textContent = hint ? '' : message;
     // Not when the error came from leaving the field: refocusing what the user
-    // just tabbed out of traps them there until the value is acceptable.
-    if (focus) target.querySelector('input, select')?.focus();
+    // just tabbed out of traps them there until the value is acceptable. A
+    // picker's input is hidden, so its button takes the focus.
+    if (focus) target.querySelector('input:not([type="hidden"]), select, .coin-select__trigger')?.focus();
   } else {
     form.querySelector('[data-form-error]').textContent = message;
   }
@@ -3393,6 +3468,7 @@ function wire() {
     state.creating = !state.creating;
     card.hidden = !state.creating;
     if (state.creating) {
+      document.getElementById('new-trade-platform').innerHTML = platformHeadPicker();
       borrowForm.innerHTML = borrowFields() + actions('Create trade', 'data-close-new');
       refreshHints(borrowForm, {}, 'borrow');
       borrowForm.querySelector('input')?.focus();
@@ -3717,7 +3793,9 @@ function wire() {
       }
     }
 
-    const form = input.closest('form');
+    // `input.form` first: the new trade's platform sits in the card's heading,
+    // outside its form, and is tied to it by `form=`.
+    const form = input.form ?? input.closest('form');
     if (!form) return;
 
     // An error that has been addressed should stop shouting immediately. This

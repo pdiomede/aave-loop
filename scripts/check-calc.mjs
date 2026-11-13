@@ -353,6 +353,13 @@ check('the CSV leaves an unknown figure and an unreached stage empty, never 0', 
   assert.equal(at(rows[0], 'borrow_gas_usd'), '0', 'a recorded 0 is a 0');
 });
 
+check('the CSV writes the platform after the currency, empty when not recorded', () => {
+  const { head, rows, at } = csvRows([{ ...flat(1), id: 1, platform: 'etherfi' }, { ...flat(1), id: 2, platform: null }]);
+  assert.equal(head.indexOf('platform'), head.indexOf('currency') + 1);
+  assert.equal(at(rows[0], 'platform'), 'etherfi');
+  assert.equal(at(rows[1], 'platform'), '');
+});
+
 check('the CSV quotes a note holding a semicolon or a quote', () => {
   const { text } = csvRows([{ ...flat(1), notes: 'a; "b"' }]);
   assert.ok(text.includes(';"a; ""b"""\r\n'));

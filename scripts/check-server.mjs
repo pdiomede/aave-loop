@@ -20,7 +20,8 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -147,6 +148,7 @@ const borrow = (over = {}) => ({
   borrow_amount: '30000',
   borrow_currency: 'USDC',
   borrow_apr: '4',
+  platform: 'aave',
   ...over,
 });
 const buy = { buy_date: '2026-09-01', buy_amount: '30000', buy_eth: '10', buy_gas_usd: '3' };
@@ -162,6 +164,42 @@ await check('a borrow with no gas fee is saved, its fee not recorded', async () 
   assert.equal(typeof t1.id, 'number');
   assert.equal(t1.borrow_gas_usd, null);
   assert.deepEqual(t1.derived.feesMissing, ['borrow']);
+});
+
+await check('a new trade must say where it was run, Aave or Ether.fi, by id in any case', async () => {
+  const { platform, ...none } = borrow();
+  const missing = await api('POST', '/api/trades', none);
+  assert.equal(missing.status, 400);
+  assert.equal(missing.data.field, 'platform');
+  const other = await api('POST', '/api/trades', borrow({ platform: 'uniswap' }));
+  assert.equal(other.status, 400);
+  assert.equal(other.data.field, 'platform');
+  assert.equal(t1.platform, 'aave');
+  const upper = await api('POST', '/api/trades', borrow({ platform: ' ETHERFI ' }));
+  assert.equal(upper.status, 201);
+  assert.equal(upper.data.platform, 'etherfi');
+  await api('DELETE', `/api/trades/${upper.data.id}`);
+});
+
+await check('a platform can be changed but not cleared, and a trade without one still edits', async () => {
+  const cleared = await api('PATCH', `/api/trades/${t1.id}`, { platform: '' });
+  assert.equal(cleared.status, 400);
+  assert.equal(cleared.data.field, 'platform');
+  const moved = await api('PATCH', `/api/trades/${t1.id}`, { platform: 'etherfi' });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.data.platform, 'etherfi');
+  assert.equal((await api('PATCH', `/api/trades/${t1.id}`, { platform: 'aave' })).data.platform, 'aave');
+
+  // A trade from before the field existed, written straight to the file.
+  const db = new Database(path.join(tmp, 'api.db'));
+  const now = new Date().toISOString();
+  const old = db.prepare(`INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr,
+    created_at, updated_at) VALUES ('2026-08-01', 1000, 'USDC', 4, ?, ?)`).run(now, now).lastInsertRowid;
+  db.close();
+  const edited = await api('PATCH', `/api/trades/${old}`, { borrow_apr: '5' });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.data.platform, null);
+  await api('DELETE', `/api/trades/${old}`);
 });
 
 await check('a purchase must say what its swap cost, and 0 is a cost', async () => {
@@ -459,6 +497,39 @@ await check('/help says what /holding lists: trades still holding ETH', async ()
 await check('/help names the watch interval it is given', async () => {
   assert.match(helpText(), /every 20 minutes/);
   assert.match(helpText('90 seconds'), /every 90 seconds/);
+});
+
+/* --------------------------------------------------------- set-platform */
+
+await check('set-platform: a dry run writes nothing, --apply sets Aave on the rest and keeps a set one', async () => {
+  const file = path.join(tmp, 'platform.db');
+  const runIt = (...args) =>
+    execFileSync(process.execPath, ['scripts/set-platform.mjs', ...args], {
+      cwd: root,
+      env: { ...process.env, ...isolated, MYAAVE_DB: file },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  // Opened once through the script so the table exists, then three trades:
+  // two with no platform, one already on Ether.fi.
+  runIt();
+  const db = new Database(file);
+  const now = new Date().toISOString();
+  const add = db.prepare(`INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr,
+    platform, created_at, updated_at) VALUES ('2026-08-01', 1000, 'USDC', 4, ?, ?, ?)`);
+  const [a, b, c] = [null, null, 'etherfi'].map((p) => Number(add.run(p, now, now).lastInsertRowid));
+  const platforms = () => db.prepare('SELECT platform FROM trades ORDER BY id').all().map((r) => r.platform);
+
+  assert.match(runIt('--etherfi', String(b)), /Dry run: 2 trades would change/);
+  assert.deepEqual(platforms(), [null, null, 'etherfi']);
+
+  assert.throws(() => runIt('--etherfi', '999', '--apply'), /No trade #999/);
+  assert.deepEqual(platforms(), [null, null, 'etherfi']);
+
+  runIt('--etherfi', String(b), '--apply');
+  assert.deepEqual(platforms(), ['aave', 'etherfi', 'etherfi'], `#${a} Aave, #${b} and #${c} Ether.fi`);
+  assert.match(runIt('--apply'), /Nothing to change/);
+  db.close();
 });
 
 /* ------------------------------------------------------------------ the end */
