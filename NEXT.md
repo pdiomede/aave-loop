@@ -82,6 +82,9 @@ help - what this bot can do
 - A new trade offers Aave, Ether.fi and Morpho.
 - The Bought card offers ETH and cbBTC.
 - `/price` in Telegram answers with both prices.
+- The link preview shows the new card (`landing/og5.png`, with the three platforms
+  and cbBTC). X, LinkedIn and Telegram may keep the old one for a while; LinkedIn's
+  Post Inspector and Telegram's @WebpageBot refetch it on request.
 - The logo shows in the app's header and on the landing page. The files were renamed
   from `AaveLoop_logo*` to `ETHRoundtrip_logo*`; if it is missing, look for the old
   name in nginx's config: `sudo grep -rn AaveLoop /etc/nginx/`.
@@ -90,9 +93,6 @@ help - what this bot can do
 
 Ideas that came up on 20 Nov and were left for later, not bugs:
 
-- **Social preview images:** `landing/og4.png` still shows the
-  ETH-only story. Remake it to mention cbBTC and the three platforms, keeping
-  1200x630.
 - **Back and Forward between views:** the app's nav uses `history.replaceState`, so
   Back leaves the app instead of returning to the previous view. Switch to
   `pushState` if that is wanted.

@@ -1,0 +1,128 @@
+<!doctype html>
+<!--
+  The landing page's social preview, landing/og5.png (1200x630), drawn from this
+  file. It is the source, not a page: nothing serves it. Render it with
+  headless Chrome from the repository root:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+      --hide-scrollbars --force-device-scale-factor=1 --window-size=1200,630 \
+      --virtual-time-budget=8000 --screenshot=landing/og6.png "file://$PWD/scripts/og.html"
+
+  Give the result a new name (og6.png, og7.png...) and point both og:image and
+  twitter:image in landing/index.html at it: X, LinkedIn and Telegram cache a
+  preview by its URL, so an image changed in place keeps showing the old one.
+  The logos are the copies in landing/, and Inter comes from Google Fonts, so
+  render it online or the type falls back to the system face.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=block" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    font-family: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #37373c;
+    background:
+      radial-gradient(620px 460px at 1120px 620px, #dcdafd 0%, rgba(220, 218, 253, 0) 70%),
+      linear-gradient(135deg, #ffffff 0%, #ffffff 45%, #f6f5fe 100%);
+    position: relative;
+  }
+
+  .left { position: absolute; left: 80px; top: 72px; width: 560px; }
+  .brand { display: flex; align-items: center; gap: 19px; }
+  .brand img { width: 62px; height: 62px; border-radius: 14px; }
+  .brand span { font-size: 27px; font-weight: 700; color: #37373c; letter-spacing: -0.01em; }
+
+  h1 {
+    margin: 22px 0 0;
+    font-size: 92px; line-height: 0.98; font-weight: 800;
+    letter-spacing: -0.045em; color: #37373c;
+  }
+  .lede { margin: 34px 0 0; font-size: 27px; line-height: 1.55; color: #6a6a72; }
+  .lede b { font-weight: 600; color: #37373c; }
+
+  .pills { display: flex; gap: 10px; margin-top: 30px; }
+  .pill {
+    padding: 11px 20px; border-radius: 999px; background: #edecfe;
+    color: #584fe6; font-size: 20px; font-weight: 700;
+  }
+
+  /* The right-hand card: where the loop runs, what it buys, what it borrows. */
+  .card {
+    position: absolute; right: 72px; top: 112px; width: 480px;
+    padding: 30px 32px 32px;
+    background: rgba(255, 255, 255, 0.86);
+    border-radius: 22px;
+    box-shadow: 0 10px 30px rgba(88, 79, 230, 0.10), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  }
+  .row + .row { margin-top: 26px; padding-top: 24px; border-top: 1px solid rgba(0, 0, 0, 0.08); }
+  .label {
+    font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #584fe6; margin-bottom: 14px;
+  }
+  .marks { display: flex; gap: 16px; }
+  .mark { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 600; color: #37373c; }
+  .disc {
+    width: 44px; height: 44px; border-radius: 50%; padding: 3px;
+    background: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14);
+    object-fit: contain; flex: none;
+  }
+  .stack { display: flex; }
+  .stack img {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: #ffffff; box-shadow: 0 0 0 3px #ffffff;
+  }
+  .stack img + img { margin-left: -8px; }
+  .stack-note { margin-left: 16px; align-self: center; font-size: 20px; font-weight: 600; color: #37373c; }
+</style>
+</head>
+<body>
+  <div class="left">
+    <div class="brand">
+      <img src="../landing/ETHRoundtrip_logo_96.png" alt="" />
+      <span>ETH Roundtrip</span>
+    </div>
+    <h1>Every loop,<br />measured.</h1>
+    <p class="lede">
+      Borrow, buy <b>ETH or cbBTC</b>, sell, repay.<br />
+      What the round trip actually earned,<br />
+      after what it cost.
+    </p>
+    <div class="pills">
+      <span class="pill">Net of interest &amp; fees</span>
+      <span class="pill">ECB rates</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="label">Runs on</div>
+      <div class="marks">
+        <span class="mark"><img class="disc" src="../landing/aave.png" alt="" />Aave</span>
+        <span class="mark"><img class="disc" src="../landing/etherfi.jpg" alt="" />Ether.fi</span>
+        <span class="mark"><img class="disc" src="../landing/morpho.jpg" alt="" />Morpho</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">Buys</div>
+      <div class="marks">
+        <span class="mark"><img class="disc" src="../landing/eth.png" alt="" />ETH</span>
+        <span class="mark"><img class="disc" src="../landing/cbbtc.png" alt="" />cbBTC</span>
+      </div>
+    </div>
+    <div class="row">
+      <div class="label">Borrows</div>
+      <div class="stack">
+        <img src="../landing/usdc.svg" alt="" />
+        <img src="../landing/usdt.svg" alt="" />
+        <img src="../landing/dai.svg" alt="" />
+        <img src="../landing/gho.svg" alt="" />
+        <img src="../landing/eurc.svg" alt="" />
+        <span class="stack-note">USD &amp; EURC</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

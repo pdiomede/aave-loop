@@ -144,7 +144,7 @@ config.js      reads config.env
 lib/           shared with the browser: calc.js (every formula), input.js (form rules),
                csv.js (the export), statement.js and logo.js (the PDF)
 public/        interface
-scripts/       release tooling and npm run check
+scripts/       release tooling, npm run check, and og.html (the social card's source)
 *.sh           runETHRoundTrip.sh (start), backupDatabase.sh, resetDatabase.sh
 data/          SQLite file, not committed
 NEXT.md        what is left to do on the VPS, and what to build next
