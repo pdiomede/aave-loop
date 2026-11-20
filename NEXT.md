@@ -123,9 +123,6 @@ Ideas that came up on 20 Nov and were left for later, not bugs:
   storage keys and the `myaave` package name still carry the old brand (the logo
   files and the checks' temp folder were renamed on 20 Nov). Renaming them needs the old names kept as a fallback, and the VPS
   service file updated.
-- **Backfill tool for Morpho:** `scripts/set-platform.mjs` only knows `--etherfi`
-  (everything else becomes Aave). A `--morpho <id>` flag would let old trades be
-  marked as Morpho the same way.
 - **A check for the `/landing/` rule:** CLAUDE.md says `npm run check` enforces that
   the public pages load only from `/landing/`, but only the CSP-hash rule has a check.
   Add one that fails when `landing/*.html` references an image, script or stylesheet
