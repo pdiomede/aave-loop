@@ -56,11 +56,13 @@ In its `script-src`, the hashes must be:
 
 ```
 'sha256-idlxi/vmZQzRC4UbiGOUSbMaK2QEuIqX4WVbMpag3Bk='
-'sha256-dzz2SlaFkPbn1IgItsnpY44ZeCgGSoyVsQVpQEPQtPk='
+'sha256-kcXx8jXteMac68iTMfAVKtZtTinxIOw7WtqSERKYMCY='
 ```
 
 - The first is already there; leave it.
-- Add the second.
+- Add the second. It changed again on 20 Nov, when the toggle learned to follow
+  the system theme live: if you had already added
+  `'sha256-dzz2SlaFkPbn1IgItsnpY44ZeCgGSoyVsQVpQEPQtPk='`, replace it with this one.
 - Remove these two old ones (or leave them; they do no harm):
   - `'sha256-4gctYiGTReoQs9WljWvM7zE5fYNvf1ArhhVsTPQedWU='`
   - `'sha256-0khB/vQfDtt4wssJcCymFCpQnpQAFWWDyDOe2sacm6I='`
@@ -73,6 +75,8 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Check it: open the landing page and click the sun/moon button. It should switch
 theme, and the browser console should show no "Refused to execute inline script".
+In a private window (no theme saved), switch the Mac between Light and Dark in
+System Settings: the open landing page and the app should follow.
 
 The hashes nginx must list are pinned in `scripts/check-calc.mjs` (`CSP_PINNED`).
 `npm run check` fails if a page's inline script stops matching them.
@@ -125,8 +129,6 @@ help - what this bot can do
 
 Ideas that came up on 20 Nov and were left for later, not bugs:
 
-- **Follow the system theme live:** neither the ledger nor the landing page reacts
-  when the system theme changes while the page is open.
 - **320px phones:** in the app, the BTC ticker row wraps at 320px and the header
   (195px) is taller than the 180px scroll offset; the table's first 15px sit under it
   after a page turn.
@@ -137,9 +139,6 @@ Ideas that came up on 20 Nov and were left for later, not bugs:
 - **Statement PDF and assets:** the Statement has no By asset table, because its
   fullest year already fills the A4 page to within a few points. Adding one means
   making room first (a narrower By month, or a second page).
-- **Tiny cbBTC quantities in the CSV:** quantities are written raw, and JavaScript
-  prints anything under 0.000001 in exponent form (`1e-7`). No real trade is that
-  small, but a fixed-decimal writer would rule it out.
 
 ## Known limits and loose ends
 

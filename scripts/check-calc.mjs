@@ -412,6 +412,16 @@ check('the CSV writes the platform after the currency, empty when not recorded',
   assert.equal(at(rows[1], 'platform'), '');
 });
 
+check('the CSV writes a tiny cbBTC quantity in digits, never in exponent form', () => {
+  // 0.00000015 cbBTC was "1.5e-7" in the file, text to a spreadsheet; the
+  // digits are the same, the point moved.
+  const tiny = { ...flat(0), asset: 'cbbtc', buy_amount: 0.02, buy_eth: 0.00000015, sell_amount: 0.02, sell_eth: 0.00000015 };
+  const { rows, at, text } = csvRows([tiny]);
+  assert.equal(at(rows[0], 'buy_qty'), '0,00000015');
+  assert.equal(at(rows[0], 'sell_qty'), '0,00000015');
+  assert.ok(!/\de-\d/.test(text), 'no exponent anywhere in the file');
+});
+
 check('the CSV quotes a note holding a semicolon or a quote', () => {
   const { text } = csvRows([{ ...flat(1), notes: 'a; "b"' }]);
   assert.ok(text.includes(';"a; ""b"""\r\n'));
@@ -513,9 +523,10 @@ check('a trade dated after today is derived on its own day', () => {
 const CSP_PINNED = [
   // The theme read before first paint, on both pages.
   'sha256-idlxi/vmZQzRC4UbiGOUSbMaK2QEuIqX4WVbMpag3Bk=',
-  // The theme toggle, the same on both pages since storage and the system
-  // theme got a try each (a dark system with storage blocked turned light).
-  'sha256-dzz2SlaFkPbn1IgItsnpY44ZeCgGSoyVsQVpQEPQtPk=',
+  // The theme toggle, the same on both pages: storage and the system theme
+  // get a try each (a dark system with storage blocked turned light), and it
+  // follows the system live while nobody has chosen.
+  'sha256-kcXx8jXteMac68iTMfAVKtZtTinxIOw7WtqSERKYMCY=',
 ];
 
 const inlineScriptHashes = (file) => {

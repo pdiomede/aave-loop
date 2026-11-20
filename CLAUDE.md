@@ -373,7 +373,8 @@ worst case fills the A4 page to within a few points.
   `summarize`, `summaryReport`, `openGainsUsd` and `/holding` (`report.js`) then adds
   `cents(v)`, never raw floats, so By month closed and By currency add up to Realized
   net gain, and the CSV writes amounts and fees as printed too (`money` in
-  `lib/csv.js`), so its columns add up across a row. Rounded only at the end, cards
+  `lib/csv.js`), so its columns add up across a row; every number there is written in
+  plain digits (`plain`), never in exponent form. Rounded only at the end, cards
   missed their result by a cent on a quarter of euro trades and totals their rows on
   nearly half of random ledgers. The open-position estimate is built the same way,
   term by term as the alert prints them (worth, cost with the currency move, interest,

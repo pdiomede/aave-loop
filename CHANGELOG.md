@@ -16,6 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Morpho is a platform,** beside Aave and Ether.fi: in the New trade and Borrowed pickers, with its logo, and on Stats as Performance (Morpho) and a row in By Platform.
 - **/holding gives a line per platform** under its totals, with the trades, what each holds and its share of Unrealised; the lines add up to it. Shown when the holdings span two platforms or more.
 - **Back and Forward move between Trades, Stats and Alerts,** with a half-typed form kept; Back used to leave the app.
+- **The ledger and the landing page follow the system theme live** while no theme has been picked: an open page goes dark with the Mac. The landing toggle script changed again, so nginx's CSP needs its newest hash.
 
 ### Changed
 
@@ -92,6 +93,7 @@ API and forms:
 - **An unreadable config.env is reported with its error code,** not its full path on disk.
 - **An unreadable config file is reported even with one Telegram value exported,** not as "TELEGRAM_CHAT_ID is missing"; the messages name the file `MYAAVE_CONFIG` points at.
 - **A sale that keeps less than its asset prints is a full exit:** 0.29996 of 0.3 ETH read "Still held 0.0000 ETH".
+- **The CSV writes every number in digits:** 0.00000015 cbBTC went out as "1.5e-7", text to a spreadsheet.
 
 Exchange rates:
 

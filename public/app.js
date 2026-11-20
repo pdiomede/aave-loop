@@ -4080,6 +4080,12 @@ const SUN = `<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M4.2 4
 const MOON = `<path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>`;
 
 /**
+ * Set once the toggle is used in this tab: with storage blocked the choice is
+ * not saved, and following the system would undo a click made a moment ago.
+ */
+let themePicked = false;
+
+/**
  * `persist` is off at boot, where this runs only to draw the toggle's glyph:
  * the head script has already set the theme, and nobody has chosen anything.
  *
@@ -4092,11 +4098,36 @@ function applyTheme(theme, { persist = true } = {}) {
   document.documentElement.dataset.theme = theme;
   document.getElementById('theme-icon').innerHTML = theme === 'dark' ? SUN : MOON;
   if (!persist) return;
+  themePicked = true;
   try {
     localStorage.setItem('myaave-theme', theme);
   } catch (e) {
     /* private browsing, the toggle simply will not persist */
   }
+}
+
+/**
+ * Follow the system while nobody has chosen. The head script reads it once and
+ * writes it into `data-theme`, which the stylesheet then obeys over its own
+ * media query, so a Mac going dark at sunset left an open ledger light until
+ * the next reload. A saved choice, here or on the landing page, still wins.
+ */
+function followSystemTheme() {
+  let query;
+  try {
+    query = window.matchMedia('(prefers-color-scheme: dark)');
+  } catch (e) {
+    return;
+  }
+  query.addEventListener?.('change', (e) => {
+    if (themePicked) return;
+    try {
+      if (localStorage.getItem('myaave-theme')) return;
+    } catch (err) {
+      /* unreadable storage holds no choice */
+    }
+    applyTheme(e.matches ? 'dark' : 'light', { persist: false });
+  });
 }
 
 /* ------------------------------------------------------------------ events */
@@ -4656,6 +4687,7 @@ function wire() {
 
 async function boot() {
   applyTheme(document.documentElement.dataset.theme || 'light', { persist: false });
+  followSystemTheme();
   wire();
   // Not awaited, for the same reason the ticker below is not: the number in
   // the markup is stamped at release and is already right, so this only ever
