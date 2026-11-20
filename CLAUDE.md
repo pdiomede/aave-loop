@@ -98,6 +98,14 @@ API, the database or a stored figure, `minor` for a new feature or figure on scr
 default to propose; when the user names the number, use theirs (2.1.1 added a
 column as a patch, by their call).
 
+**At most one bump per calendar day**, patch or minor alike. Before any `npm version`,
+look at the date on the newest `CHANGELOG.md` heading: if it is today, a release
+already went out, so the new entries go under that heading and the number stays as
+it is — even when asked for the next one; say so instead. A second bump made the
+same day is undone with `npm version <that day's number> --no-git-tag-version` and
+its notes merged into that day's section. (cbBTC went out as 2.1.8 and Morpho as
+2.1.9 on 2026-11-20; the user had them folded into one 2.1.8.)
+
 Work is committed straight to `main` and pushed: production deploys by pulling `main`
 on the VPS, and there are no pull requests.
 
