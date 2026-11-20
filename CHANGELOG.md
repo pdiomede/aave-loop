@@ -22,6 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The CSV has an `asset` column after `platform`,** and `buy_eth` / `sell_eth` are now `buy_qty` / `sell_qty`.
 - **`/api/eth` is now `/api/prices`**, answering `{ pollMs, prices: { ETH, BTC } }`. `MYAAVE_BTC_PRICE` fixes BTC as `MYAAVE_ETH_PRICE` fixes ETH.
 - **The landing page names Aave, Ether.fi and Morpho and ETH and cbBTC**, with their logos, and says cbBTC is valued at BTC's price; each platform's logo opens its home page in a new tab.
+- **Ether.fi has a new logo, `etherfi.png`**, replacing `etherfi.jpg` in the app, the landing page and the social card. Platform logos sit on a white disc, so its transparent outline reads in the dark theme.
 - **The social card is redrawn as `landing/og5.png`**, naming the three platforms, ETH and cbBTC; a new filename because scrapers cache by URL. Its source is `scripts/og.html`, rendered with headless Chrome.
 - **The launcher is `runETHRoundTrip.sh`** (was `run_myAave.sh`), and says ETH Roundtrip throughout; the logo files are `ETHRoundtrip_logo*.png` (were `AaveLoop_logo*`).
 

@@ -1177,9 +1177,12 @@ a.brand {
   cursor: help;
 }
 
-/* The ring keeps Ether.fi's near-black logo from vanishing in dark mode. */
+/* On a white disc with a ring, as the asset marks are: Ether.fi's logo is a
+   violet outline on transparent and blurred into the dark surface. Aave's and
+   Morpho's are round and opaque, so they cover the white entirely. */
 .platform-mark img,
 .platform-art {
+  background: #fff;
   box-shadow: 0 0 0 1px var(--hairline-strong);
 }
 

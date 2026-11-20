@@ -414,7 +414,7 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
   without a password, besides `/` itself. An image at the root goes to the app, behind
   auth, and the browser shows a login prompt on the public page — the landing logo did
   exactly that, in every browser without saved credentials. Keep a copy in `landing/`:
-  the coin, platform (`aave.png`, `etherfi.jpg`, `morpho.jpg`) and asset (`eth.png`,
+  the coin, platform (`aave.png`, `etherfi.png`, `morpho.jpg`) and asset (`eth.png`,
   `cbbtc.png`) marks are all copies, so a new platform or asset needs its logo copied
   there and named on the landing page.
 - **Text can change freely; inline scripts cannot.** The landing page describes what
