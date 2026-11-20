@@ -89,12 +89,20 @@
           }
         }
 
+        // With no stored choice the stylesheet is already following the system,
+        // so read that back rather than asserting light and fighting it. Two
+        // tries: in one, blocked storage threw before the system was asked, and
+        // a dark system got the light theme.
         let current = document.documentElement.getAttribute('data-theme');
+        let stored = null;
         try {
-          if (!localStorage.getItem('myaave-theme')) {
-            current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-          }
+          stored = localStorage.getItem('myaave-theme');
         } catch (e) {}
+        if (!stored) {
+          try {
+            current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          } catch (e) {}
+        }
 
         document.documentElement.dataset.theme = current || 'light';
         document.getElementById('theme-icon').innerHTML = current === 'dark' ? SUN : MOON;

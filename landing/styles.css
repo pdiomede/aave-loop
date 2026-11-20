@@ -476,10 +476,25 @@ p {
   object-fit: contain;
 }
 
-.mark figcaption {
+.mark__name {
   color: var(--text);
   font-size: 12.5px;
   font-weight: 500;
+}
+
+/* The platforms link to their own home pages. */
+a.mark {
+  text-decoration: none;
+  border-radius: var(--radius-btn);
+}
+
+a.mark:hover .mark__name {
+  text-decoration: underline;
+}
+
+a.mark:focus-visible {
+  outline: 2px solid var(--violet-ink);
+  outline-offset: 4px;
 }
 
 .coins__note {

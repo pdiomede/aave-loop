@@ -163,15 +163,16 @@
                app's own sit behind the password. -->
           <div class="coins coins--named">
             <span class="coins__label">Run the loop on</span>
-            <figure class="mark"><img src="/landing/aave.png" alt="" width="30" height="30" /><figcaption>Aave</figcaption></figure>
-            <figure class="mark"><img src="/landing/etherfi.jpg" alt="" width="30" height="30" /><figcaption>Ether.fi</figcaption></figure>
-            <figure class="mark"><img src="/landing/morpho.jpg" alt="" width="30" height="30" /><figcaption>Morpho</figcaption></figure>
+            <!-- Each platform's own home page, in a new tab. -->
+            <a class="mark" href="https://aave.com" target="_blank" rel="noopener noreferrer"><img src="/landing/aave.png" alt="" width="30" height="30" /><span class="mark__name">Aave</span><span class="sr-only"> (opens in a new tab)</span></a>
+            <a class="mark" href="https://www.ether.fi" target="_blank" rel="noopener noreferrer"><img src="/landing/etherfi.jpg" alt="" width="30" height="30" /><span class="mark__name">Ether.fi</span><span class="sr-only"> (opens in a new tab)</span></a>
+            <a class="mark" href="https://morpho.org" target="_blank" rel="noopener noreferrer"><img src="/landing/morpho.jpg" alt="" width="30" height="30" /><span class="mark__name">Morpho</span><span class="sr-only"> (opens in a new tab)</span></a>
           </div>
 
           <div class="coins coins--named">
             <span class="coins__label">Buy and sell</span>
-            <figure class="mark"><img src="/landing/eth.png" alt="" width="30" height="30" /><figcaption>ETH</figcaption></figure>
-            <figure class="mark"><img src="/landing/cbbtc.png" alt="" width="30" height="30" /><figcaption>cbBTC</figcaption></figure>
+            <figure class="mark"><img src="/landing/eth.png" alt="" width="30" height="30" /><figcaption class="mark__name">ETH</figcaption></figure>
+            <figure class="mark"><img src="/landing/cbbtc.png" alt="" width="30" height="30" /><figcaption class="mark__name">cbBTC</figcaption></figure>
             <span class="coins__note">cbBTC, Coinbase's wrapped bitcoin, is valued at BTC's price.</span>
           </div>
         </div>
@@ -281,13 +282,19 @@
         }
 
         // With no stored choice the stylesheet is already following the system,
-        // so read that back rather than asserting light and fighting it.
+        // so read that back rather than asserting light and fighting it. Two
+        // tries: in one, blocked storage threw before the system was asked, and
+        // a dark system got the light theme.
         let current = document.documentElement.getAttribute('data-theme');
+        let stored = null;
         try {
-          if (!localStorage.getItem('myaave-theme')) {
-            current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-          }
+          stored = localStorage.getItem('myaave-theme');
         } catch (e) {}
+        if (!stored) {
+          try {
+            current = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          } catch (e) {}
+        }
 
         document.documentElement.dataset.theme = current || 'light';
         document.getElementById('theme-icon').innerHTML = current === 'dark' ? SUN : MOON;
