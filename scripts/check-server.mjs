@@ -338,6 +338,29 @@ await check('a config.env that cannot be read is named without its path', async 
   assert.ok(!out.includes(tmp), out);
 });
 
+await check('a config file that cannot be read is said so even with one value exported, and named as it is', async () => {
+  const reasonFor = (env) =>
+    execFileSync(
+      process.execPath,
+      ['--input-type=module', '-e', "const { telegramConfig } = await import('./config.js'); console.log(telegramConfig().reason)"],
+      { cwd: root, env: { ...process.env, ...isolated, ...env }, stdio: ['ignore', 'pipe', 'ignore'] },
+    ).toString().trim();
+  // Unreadable, with the token exported: this read "TELEGRAM_CHAT_ID is
+  // missing from config.env" though the file held it.
+  const locked = path.join(tmp, 'locked.env');
+  fs.writeFileSync(locked, 'TELEGRAM_CHAT_ID=-100\n');
+  fs.chmodSync(locked, 0o000);
+  try {
+    assert.match(reasonFor({ MYAAVE_CONFIG: locked, TELEGRAM_BOT_TOKEN: '123456:FAKE' }), /locked\.env exists but this process cannot read it/);
+  } finally {
+    fs.chmodSync(locked, 0o600);
+  }
+  // Named as MYAAVE_CONFIG names it, not "config.env".
+  const other = path.join(tmp, 'alerts.env');
+  fs.writeFileSync(other, 'TELEGRAM_BOT_TOKEN=123456:FAKE\n');
+  assert.equal(reasonFor({ MYAAVE_CONFIG: other }), 'TELEGRAM_CHAT_ID is missing from alerts.env.');
+});
+
 await check('amounts typed with a decimal comma read as written', async () => {
   const r = await api('POST', '/api/trades', borrow({ borrow_amount: '32.000,00', borrow_gas_usd: '3,20' }));
   assert.equal(r.status, 201);

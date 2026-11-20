@@ -43,7 +43,10 @@ const DAY_MS = 86400000;
  */
 const MAX_RATE_LAG_DAYS = 6;
 
-const FX_URL = (process.env.MYAAVE_FX_URL || 'https://api.frankfurter.app').replace(/\/+$/, '');
+// Frankfurter's current address. The old one, api.frankfurter.app, answers
+// every request with a 301 to this, which fetch follows - but at the cost of a
+// second connection inside the 2.5 s timeout, on every lookup.
+const FX_URL = (process.env.MYAAVE_FX_URL || 'https://api.frankfurter.dev/v1').replace(/\/+$/, '');
 const OFFLINE = process.env.MYAAVE_FX_OFFLINE === '1';
 const QUOTE = 'USD';
 

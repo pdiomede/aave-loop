@@ -5,6 +5,12 @@
 #
 set -euo pipefail
 
+# Private, as backupDatabase.sh makes its copies: under the usual umask of 022
+# the backup came out -rw-r--r-- in a data/backups made 755, so any account on
+# the host could read the whole ledger from it. The empty ledger made at the
+# end gets the same.
+umask 077
+
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 BOLD=$'\033[1m'; DIM=$'\033[2m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; RED=$'\033[31m'; OFF=$'\033[0m'

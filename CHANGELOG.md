@@ -89,12 +89,15 @@ API and forms:
 - **An amount that prints as 0.00 is refused,** and the implied price is worked out from the amount as printed: 0.004 USDC for 0.000002 ETH saved as ETH bought at $0.00.
 - **Notes are cut at 2000 characters, never inside one;** an emoji split at the cut read back as three replacement marks.
 - **An unreadable config.env is reported with its error code,** not its full path on disk.
+- **An unreadable config file is reported even with one Telegram value exported,** not as "TELEGRAM_CHAT_ID is missing"; the messages name the file `MYAAVE_CONFIG` points at.
+- **A sale that keeps less than its asset prints is a full exit:** 0.29996 of 0.3 ETH read "Still held 0.0000 ETH".
 
 Exchange rates:
 
 - **A stand-in rate is replaced once the real one can be had,** however long that takes; after four days without a refresh it stayed for good, unmarked.
 - **A rate more than six days older than its day is not used:** a lagging mirror's two-week-old rate was stored as final, for every day in between.
 - **A rate service answering with a web page is reported in words,** not with the start of the page.
+- **Rates are read from Frankfurter's current address,** api.frankfurter.dev/v1; the old one redirected every lookup, a second connection inside the 2.5 s timeout.
 
 cbBTC:
 
@@ -107,6 +110,7 @@ Scripts:
 - **The launcher's "native binding did not load" check works:** it imported the package without loading the addon, so a Node upgrade crashed the server after "Dependencies present".
 - **A relaunch replaces an earlier copy on the port it moved to**, and one started through a symlinked path such as /tmp; each had started one more copy beside it.
 - **`resetDatabase.sh` asks `fuser` when `lsof` is missing, and refuses with neither:** it deleted the ledger under a running server.
+- **`resetDatabase.sh` keeps its backup and the new ledger private** (600 in a 700 folder), as `backupDatabase.sh` does; they were readable by any account.
 
 Phones:
 

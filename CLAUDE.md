@@ -328,7 +328,9 @@ their names and hold units of the trade's asset; the CSV heads them `buy_qty` /
 `sell_qty`, and the swaps' "Costs & Fees" (`buy_gas_usd` / `sell_gas_usd`, gas plus
 the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC), and
 every "as printed" sum of quantities (`/holding`, `/summary`) uses it per asset and
-never adds two assets together.
+never adds two assets together. A sale is partial only if what it keeps prints as more
+than zero to those places (`qtyPrintsZero` in `derive`'s `isPartialSale`): 0.00004 ETH
+kept is a full exit, 0.00004 cbBTC a holding.
 
 Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC']`, and cbBTC's
 `market` is BTC. `prices.js` (was `eth.js`) fetches both in one CoinGecko request,
@@ -428,7 +430,9 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
   exactly that, in every browser without saved credentials. Keep a copy in `landing/`:
   the coin, platform (`aave.png`, `etherfi.png`, `morpho.jpg`) and asset (`eth.png`,
   `cbbtc.png`) marks are all copies, so a new platform or asset needs its logo copied
-  there and named on the landing page.
+  there and named on the landing page. `scripts/check-calc.mjs` reads every `src`,
+  `srcset`, loading `<link>`, `og:image`/`twitter:image` and CSS `url()` of the public
+  pages and fails on one outside `/landing/` (Google Fonts excepted) or not on disk.
 - **Text can change freely; inline scripts cannot.** The landing page describes what
   `lib/calc.js` computes (net gain after interest *and fees*, partial exits, weekend
   rates), so a formula change may mean a copy change there too.

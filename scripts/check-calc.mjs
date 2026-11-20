@@ -10,7 +10,7 @@
  * own formula agrees with any bug in it.
  */
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import {
   derive,
@@ -34,6 +34,7 @@ import {
   summarize,
   assetOf,
   priceFor,
+  ethHeldNow,
 } from '../lib/calc.js';
 import { tradesCsv, csvFileName } from '../lib/csv.js';
 
@@ -182,6 +183,22 @@ check('partial sale counts the ETH still held at today\'s price', () => {
   // price less the 12,000 they cost.
   const t = sold({ sell_amount: 21000, sell_eth: 6 });
   near(est(t), 21000 - 18000 - c2(INTEREST) - 12 + (4 * PRICE - 12000), 'estimate'); // interest as printed
+});
+
+check('a sale that keeps less than prints is a full exit, in the asset\'s own places', () => {
+  // 0.29996 of 0.3 sold keeps 0.00004: "0.0000" to ETH's four places, which
+  // read "Still held 0.0000 ETH" on the card. To cbBTC's eight it is a holding.
+  const t = { borrow_date: '2026-09-01', borrow_amount: 900, borrow_currency: 'USDC', borrow_apr: 0,
+    buy_date: '2026-09-01', buy_amount: 900, buy_eth: 0.3, buy_gas_usd: 0,
+    sell_date: '2026-09-10', sell_amount: 1000, sell_eth: 0.29996, sell_gas_usd: 0 };
+  const eth = derive({ ...t, asset: 'eth' }, AS_OF);
+  assert.equal(eth.isPartialSale, false);
+  assert.equal(eth.grossGain, 100); // 1,000 received less the 900 spent
+  assert.equal(ethHeldNow(eth), 0);
+  const btc = derive({ ...t, asset: 'cbbtc' }, AS_OF);
+  assert.equal(btc.isPartialSale, true);
+  assert.equal(btc.grossGain, 100.12); // 1,000 less 900 x 0.29996 / 0.3 = 899.88
+  assert.ok(Math.abs(ethHeldNow(btc) - 0.00004) < 1e-12);
 });
 
 check('partial sale needs the ETH price, a full one does not', () => {
@@ -516,6 +533,51 @@ check('the landing pages\' inline scripts are the ones nginx admits', () => {
 
 check('the ledger page has no inline script for the CSP to block', () => {
   assert.deepEqual(inlineScriptHashes('public/index.html'), []);
+});
+
+// What the public pages load. Production's nginx serves `/landing/` (and `/`)
+// without its password and everything else behind it, so a resource outside
+// `/landing/` makes the browser ask a visitor to log in on the public page -
+// the landing logo did that, from the root, in every browser without saved
+// credentials. Links a visitor follows (`<a href>`, canonical, preconnect) are
+// not loads and are left out; Google Fonts is the one outside host.
+const LANDING_SITE = 'https://ethroundtrip.com';
+const FONT_HOSTS = ['https://fonts.googleapis.com/', 'https://fonts.gstatic.com/'];
+const LOADING_RELS = /\b(stylesheet|icon|apple-touch-icon|manifest|preload|modulepreload|mask-icon)\b/i;
+
+function landingLoads(file) {
+  const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+  if (file.endsWith('.css')) return [...text.matchAll(/url\(\s*['"]?([^'")]+)/g)].map((m) => m[1]);
+  const urls = [];
+  for (const m of text.matchAll(/<(?:img|script|source|video|audio|iframe)\b[^>]*?\ssrc="([^"]+)"/gi)) urls.push(m[1]);
+  for (const m of text.matchAll(/\ssrcset="([^"]+)"/gi)) {
+    for (const part of m[1].split(',')) urls.push(part.trim().split(/\s+/)[0]);
+  }
+  for (const m of text.matchAll(/<link\b[^>]*>/gi)) {
+    const rel = m[0].match(/\srel="([^"]+)"/i)?.[1] ?? '';
+    const href = m[0].match(/\shref="([^"]+)"/i)?.[1];
+    if (href && LOADING_RELS.test(rel)) urls.push(href);
+  }
+  // The preview image a scraper fetches without the password, too.
+  for (const m of text.matchAll(/<meta\b[^>]*(?:property|name)="(?:og:image|twitter:image)"[^>]*>/gi)) {
+    const content = m[0].match(/\scontent="([^"]+)"/i)?.[1];
+    if (content) urls.push(content);
+  }
+  return urls;
+}
+
+check('the public pages load only from /landing/, and every file they name is there', () => {
+  for (const file of ['landing/index.html', 'landing/404.html', 'landing/styles.css']) {
+    const loads = landingLoads(file);
+    assert.ok(loads.length > 0 || file.endsWith('.css'), `${file}: found nothing it loads`);
+    for (const raw of loads) {
+      if (raw.startsWith('data:') || FONT_HOSTS.some((h) => raw.startsWith(h))) continue;
+      const local = raw.startsWith(LANDING_SITE) ? raw.slice(LANDING_SITE.length) : raw;
+      assert.ok(local.startsWith('/landing/'), `${file} loads ${raw}, outside /landing/: nginx asks for the password there`);
+      const onDisk = new URL(`..${local.split(/[?#]/)[0]}`, import.meta.url);
+      assert.ok(existsSync(onDisk), `${file} loads ${raw}, which is not in landing/`);
+    }
+  }
 });
 
 /* ----------------------------------------------- dates, spans and stages */

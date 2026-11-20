@@ -66,7 +66,7 @@ Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage 
 
 A loan cost can be negative: if the euro fell, the loan was cheaper in dollars than its interest.
 
-- **Rates are the ECB's**, through a public mirror of its daily file (`MYAAVE_FX_URL` points elsewhere). It publishes on business days, so a Sunday trade takes Friday's rate; the publication date is shown beside each figure so it can be checked against [the ECB's tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
+- **Rates are the ECB's**, through Frankfurter, a public mirror of its daily file at `api.frankfurter.dev/v1` (`MYAAVE_FX_URL` points elsewhere). It publishes on business days, so a Sunday trade takes Friday's rate; the publication date is shown beside each figure so it can be checked against [the ECB's tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
 - **EURC is valued as one euro**, the honest approximation with no free feed for the coin itself.
 - **Rates fill themselves in.** A trade always saves. One without a rate is marked, left out of the totals, and looked up every hour; **Fetch rates** on Stats asks at once.
 - **A day not yet published takes the day before's rate, marked provisional,** and the real rate replaces it once the ECB publishes, however long the app was off in between. A rate more than six days older than its day is never used: the stage waits for a real one.

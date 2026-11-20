@@ -149,19 +149,25 @@ export function telegramConfig() {
   // who is the only reader, so the name of the setting does not say group.
   const chatName = get('TELEGRAM_CHAT_NAME') || FALLBACK_NAME;
 
+  // The file by the name it has: `MYAAVE_CONFIG` can call it anything, and
+  // "missing from config.env" sent the reader to a file the app never read.
+  const name = path.basename(FILE);
   let reason = null;
-  if (fileProblem && !token && !chatId) {
+  if (fileProblem && !(token && chatId)) {
     // Said before anything else: a file that cannot be opened is not a file
-    // that is missing, and the advice for the two is not the same.
+    // that is missing, and the advice for the two is not the same. Whenever
+    // something is missing, not only when everything is: with the token
+    // exported in the shell and the file unreadable, this said the chat id was
+    // missing from a file that in fact held it.
     reason = fileProblem;
   } else if (!token && !chatId) {
     reason = fileFound
-      ? 'config.env has no Telegram bot token or chat id yet.'
-      : 'No config.env yet, so there is nowhere to send an alert.';
+      ? `${name} has no Telegram bot token or chat id yet.`
+      : `No ${name} yet, so there is nowhere to send an alert.`;
   } else if (!token) {
-    reason = 'TELEGRAM_BOT_TOKEN is missing from config.env.';
+    reason = `TELEGRAM_BOT_TOKEN is missing from ${name}.`;
   } else if (!chatId) {
-    reason = 'TELEGRAM_CHAT_ID is missing from config.env.';
+    reason = `TELEGRAM_CHAT_ID is missing from ${name}.`;
   }
 
   return { configured: Boolean(token && chatId), token, chatId, ownerId, chatName, reason };
