@@ -3,9 +3,35 @@
 What is left to do on the VPS, and what to build next. Written 20 Nov 2026, after
 the day's bug hunt was pushed to `main`.
 
+## Where it stands (20 Nov, evening)
+
+Done on the VPS on 20 Nov:
+
+- **Deployed** `main` at `1d2c88b`: the service runs 2.1.8, Telegram is connected,
+  and the app, Stats, the Statement and the bot were checked.
+- **Settings renamed** in `/etc/systemd/system/aaveloop.service`: `ETHROUNDTRIP_DB`
+  and `ETHROUNDTRIP_ALLOWED_HOSTS`, `Description=ETH Round Trip`. The startup log no
+  longer lists old names.
+- **BotFather** command list pasted.
+- **Backups:** the 03:00 cron line (`cd /var/www/aave && ./backupDatabase.sh --dest
+  /home/paolo/backup/aaveloop --keep 14`, in paolo's crontab) uses no `MYAAVE_*`
+  setting, so it needs no change.
+
+Left:
+
+- **Monday 23 Nov, 19:00 CET: step 2, the nginx hashes** (a reminder is scheduled in
+  the Claude app). Until then only the landing page's theme button is blocked; the
+  app is unaffected.
+- **21 Nov:** check that the night's backup ran: `ls -lt /home/paolo/backup/aaveloop`
+  should show a `myaave-...db` from about 03:00 UTC, and its log no error.
+
+Work over SSH from the Mac's Terminal, not the Hetzner web console: the console drops
+the Shift key, so `&`, `|`, `*`, `"`, `+` and capital letters come out wrong (`&&`
+arrived as `77`).
+
 ## On the VPS
 
-Do these in order. Production still runs the code from before 20 Nov.
+Steps 1, 3 and 4 were done on 20 Nov; step 2 is left (see above).
 
 ### 1. Deploy `main`
 
@@ -51,13 +77,9 @@ system live, and is saved under the new `ethroundtrip-theme` key), so both their
 hashes changed. Until nginx lists the new ones, browsers block the theme on `/` and
 on the 404 page; the rest of those pages still works.
 
-Find the line:
-
-```bash
-sudo grep -rn "Content-Security-Policy" /etc/nginx/
-```
-
-In its `script-src`, the hashes must be exactly these two:
+The line is the `add_header Content-Security-Policy` in
+`/etc/nginx/sites-available/all-sites.conf`. In its `script-src`, the hashes must be
+exactly these two:
 
 ```
 'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs='
@@ -68,11 +90,36 @@ Remove any other `sha256-` hash in that list. They are all older versions of
 these two scripts and no longer match anything (they do no harm if left, but
 nothing needs them): `idlxi...`, `dzz2...`, `kcXx...`, `ncgL...`, `4gct...`, `0khB...`.
 
-Then:
+The quickest way, keeping `'self'` and the rest of the line, with a backup first:
 
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
+sudo grep -o "script-src[^;]*" /etc/nginx/sites-available/all-sites.conf
 ```
+
+(it should show only `'self'` and `'sha256-...'` values; if anything else is there,
+edit by hand instead)
+
+```bash
+sudo cp /etc/nginx/sites-available/all-sites.conf /etc/nginx/sites-available/all-sites.conf.bak
+```
+
+```bash
+sudo sed -i -E "s#script-src 'self'[^;]*;#script-src 'self' 'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs=' 'sha256-W9be3A+UEXvbL09tjpkkWtuJt36Q7WGeXBruE3mVoH0=';#" /etc/nginx/sites-available/all-sites.conf
+```
+
+Run the `grep` again to see the two hashes, then:
+
+```bash
+sudo nginx -t
+```
+
+```bash
+sudo systemctl reload nginx
+```
+
+Reload only if the test says ok; otherwise copy the `.bak` back and look at the
+error. The comment above that line in the file still speaks of four hashes and
+`public/index.html`; it is out of date (two scripts, both on the landing pages).
 
 Check it: open the landing page and click the sun/moon button. It should switch
 theme, and the browser console should show no "Refused to execute inline script".
