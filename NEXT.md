@@ -26,6 +26,10 @@ On its first start the database updates itself:
 
 The version shown is 2.1.8.
 
+Make sure no 2.1.7 copy is still running against the same database (the restart
+replaces the service's own): an older copy knows only ETH, and would judge a cbBTC
+trade's BTC goal against the ETH price and send it at once.
+
 Then reload any browser tab that had the app open from before the deploy. Such a
 tab still saves trades and alerts correctly, but its ETH price stops updating:
 it asks `/api/eth`, which became `/api/prices`. Tested on 20 Nov against a
@@ -162,9 +166,6 @@ Accepted for now, worth knowing:
 - **Not demonstrated, so not fixed:**
   - On the very first visit to Alerts, a stage save landing during the list's first
     request might leave it on "Loading alerts" until the next visit.
-  - The alert goal form checks the bounds ($1 to $1,000,000) on the raw figure while
-    the server rounds to the cent first, so a goal of 0.996 previews but the form
-    refuses it.
   - Two copies of the app refreshing rates at once: one could write an older
     stand-in over a real rate the other had just written. The next refresh corrects
     it, so at worst it lasts an hour.

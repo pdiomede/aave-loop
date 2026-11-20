@@ -289,6 +289,11 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   (`setView`), and Back and Forward arrive as `hashchange`, drawn by the same
   listener as a typed hash; an old `#summary` is rewritten in place. A new way to
   change view should go through `setView`, not write the hash itself.
+- **Focus survives a redraw.** A container redrawn under the user's hands - the hero
+  and the Net gain cells on every price - goes through `setKeepingFocus`, which puts
+  focus back on the same control in the new markup; a control focused on purpose goes
+  through `focusInView`, which keeps it clear of the sticky header
+  (`scroll-padding-top` on the page, from the measured `--header-h`).
 - **Sequence guards.** `loadSeq`/`writeSeq` (and `alertLogSeq`/`alertWriteSeq`) drop a
   reply that a newer load overtook or a write superseded. Any new fetch that writes
   into `state` needs the same treatment.

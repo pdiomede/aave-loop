@@ -10,6 +10,7 @@ import {
   parseAmount,
   priceInRange,
   FIGURE_MAX,
+  qtyAsPrinted,
   SELL_OVER_BUY,
   stages,
   reachedStages,
@@ -38,7 +39,7 @@ import {
   startFxRefresher,
   stopFxRefresher,
 } from './fx.js';
-import { telegramConfig, reportConfig } from './config.js';
+import { telegramConfig, reportConfig, configPath } from './config.js';
 import { marketPrices, marketPrice, cachedMarketPrice, cachedMarketPrices, priceStatus } from './prices.js';
 import { sendTelegramMessage } from './telegram.js';
 import {
@@ -262,6 +263,8 @@ function toDate(value, field, label) {
  * Only keys actually present are returned, so PATCH can send one stage.
  * A key sent as null or '' clears that column, which is how a stage is undone.
  */
+const GRAPHEMES = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
 function normalise(body, { requireBorrow, asset = null }) {
   const out = {};
   const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
@@ -324,6 +327,18 @@ function normalise(body, { requireBorrow, asset = null }) {
   numericField('sell_gas_usd', SWAP_FEE, { allowZero: true });
   numericField('sell_unstake_gas_usd', 'Unstaking gas fee', { allowZero: true });
 
+  // A quantity prints to its asset's places, so one that prints 0.0000 is no
+  // quantity on its card: 0.00004 ETH for 0.12 USDC was saved, and read
+  // "Bought 0.0000 ETH" at $3,000.00 - the quantity's side of the amounts
+  // refused above for printing 0.00.
+  const assetKey = out.asset ?? (ASSETS.includes(asset) ? asset : ASSETS[0]);
+  const dp = ASSET_META[assetKey].dp;
+  for (const [key, verb] of [['buy_eth', 'purchased'], ['sell_eth', 'sold']]) {
+    if (typeof out[key] === 'number' && qtyAsPrinted(out[key], assetKey) === 0) {
+      throw new BadRequest(`${ticker} ${verb} must be at least ${(10 ** -dp).toFixed(dp)}.`, key);
+    }
+  }
+
   dateField('repay_date', 'Repayment date');
   numericField('repay_amount', 'Repaid amount', { money: true });
   numericField('repay_gas_usd', 'Repayment gas fee', { allowZero: true });
@@ -334,9 +349,13 @@ function normalise(body, { requireBorrow, asset = null }) {
     if (!isBlank(body.notes) && typeof body.notes !== 'string') {
       throw new BadRequest('Notes must be text.', 'notes');
     }
-    // Cut by character, not by UTF-16 unit: `slice` split an emoji at the
-    // 2000th unit and stored half of it, which read back as three U+FFFD.
-    out.notes = isBlank(body.notes) ? null : Array.from(body.notes).slice(0, 2000).join('');
+    // Cut by visible character, not by UTF-16 unit or code point: `slice`
+    // split an emoji at the 2000th unit and stored half of it, which read back
+    // as three U+FFFD, and a cut by code point still split a flag or a
+    // skin-toned emoji into a stray letter.
+    out.notes = isBlank(body.notes)
+      ? null
+      : [...GRAPHEMES.segment(body.notes)].slice(0, 2000).map((g) => g.segment).join('');
   }
 
   // Exchange rates are resolved here from a published source, never accepted
@@ -783,7 +802,9 @@ app.get('/api/alerts', async (req, res, next) => {
 
     const { configured, chatName, reason } = telegramConfig();
     res.json({
-      config: { configured, chatName, reason },
+      // The file's own name, for the window's "once ... is filled in": it named
+      // config.env whatever ETHROUNDTRIP_CONFIG pointed at. Not the path.
+      config: { configured, chatName, reason, file: path.basename(configPath) },
       // The change windows ride along, so this answer can feed the header
       // ticker as well as the window. Without them the page had two sources
       // for one price: opening the bell refreshes at a tighter freshness than

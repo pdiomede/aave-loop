@@ -13,9 +13,24 @@ const dbFile = setting('DB') || path.join(root, 'data', 'myaave.db');
 // The directory of whichever file was chosen, not `data/`. ETHROUNDTRIP_DB can point
 // anywhere, and creating `data/` while writing somewhere else left an empty
 // directory behind on every install that used it.
-fs.mkdirSync(path.dirname(dbFile), { recursive: true });
+//
+// Private when this makes them: the ledger is every trade, and a fresh
+// install made data/ 755 and the file 644, readable by any account on the
+// host, while backupDatabase.sh describes data/ as 700. A folder or file that
+// already exists keeps the mode it has.
+fs.mkdirSync(path.dirname(dbFile), { recursive: true, mode: 0o700 });
+const created = !fs.existsSync(dbFile);
 
 export const db = new Database(dbFile);
+// Before WAL mode: SQLite gives the -wal and -shm files the mode of the
+// database file, so they come out 600 as well.
+if (created) {
+  try {
+    fs.chmodSync(dbFile, 0o600);
+  } catch {
+    /* a filesystem without modes; nothing to tighten */
+  }
+}
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 // The launcher will happily start a second instance on the next free port,

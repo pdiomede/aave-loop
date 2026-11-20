@@ -31,7 +31,7 @@ import {
 } from './lib/calc.js';
 import { marketPrices, priceStatus } from './prices.js';
 import { resolveRate } from './fx.js';
-import { alertPollMs } from './alerts.js';
+import { priceFreshMs } from './alerts.js';
 import { units, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
 /**
@@ -50,6 +50,8 @@ const visibleLength = (html) => html.replace(/<[^>]+>/g, '').replace(/&(?:lt|gt|
 /** "12 minutes" - only ever said about a figure old enough to be worth doubting. */
 function ageWords(ms) {
   const mins = Math.round(ms / 60_000);
+  // Not "0 minutes", which a short poll could print, as the page never does.
+  if (mins < 1) return 'less than a minute';
   if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'}`;
   const hours = Math.round(mins / 60);
   return `${hours} hour${hours === 1 ? '' : 's'}`;
@@ -62,7 +64,12 @@ function ageWords(ms) {
  * from a machine ahead - which is "unknown", not "fresh", and was printed as
  * fresh, with no line under it. Undefined is "not given" and says nothing.
  */
-const worthSaying = (age) => age === Infinity || (Number.isFinite(age) && age > alertPollMs);
+//
+// The same age the window calls stale: `freshPrice`'s, two refreshes at most.
+// Measured against one alert poll instead, a price 10 to 15 minutes old was
+// "not recent" in the alert window and printed as current by /price, /holding
+// and /summary in the same minute.
+const worthSaying = (age) => age === Infinity || (Number.isFinite(age) && age > priceFreshMs);
 
 /** "3 hours ago", or "at an unknown time" for an age nobody can tell. */
 const fetchedWhen = (age) => (age === Infinity ? 'at an unknown time' : `${ageWords(age)} ago`);
@@ -318,7 +325,7 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   // Each absence named for what it is, in both branches below.
   const left = [
     ...(noRate ? [`${noRate} without an exchange rate`] : []),
-    ...[...noPrice].map(([m, n]) => `${n} without a ${m} price`),
+    ...[...noPrice].map(([m, n]) => `${n} without ${m === 'ETH' ? 'an' : 'a'} ${m} price`),
   ];
   if (gainKnown > 0) {
     // Never a total over a subset without saying so. A gain missing a term is

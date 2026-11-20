@@ -16,7 +16,7 @@ Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script i
 
 - `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open (it asks `lsof`, or `fuser`, and will not run with neither), and keeps a backup under `data/backups`.
 - `./backupDatabase.sh` takes a backup that is safe while the server runs, by default into `~/aaveloop-backups` (the old name, kept so existing backups and cron lines stay valid); `--help` gives the cron line.
-- `node scripts/set-platform.mjs --etherfi <id> --apply` fills in the platform on trades recorded before it was asked for: the ids named go to Ether.fi, the rest to Aave. Without `--apply` it only lists what would change; it honours `ETHROUNDTRIP_DB`.
+- `node scripts/set-platform.mjs --etherfi <id> --apply` fills in the platform on trades recorded before it was asked for: the ids named go to Ether.fi, the rest to Aave. Without `--apply` it only lists what would change; it honours `ETHROUNDTRIP_DB`, and refuses a path where there is no ledger rather than create one.
 - `npm run check` runs four offline suites: the formulas in `lib/calc.js` against hand-worked figures, the forms' input rules, the Statement PDF, and the server itself against a throwaway database with Telegram and the price service mocked.
 
 ## How a trade works

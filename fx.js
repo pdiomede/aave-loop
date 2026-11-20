@@ -44,6 +44,13 @@ const DAY_MS = 86400000;
  */
 const MAX_RATE_LAG_DAYS = 6;
 
+/** A rate published longer than that before the day it is held for. */
+const lagging = (date, rateDate) => {
+  const day = parseDate(date);
+  const published = parseDate(rateDate);
+  return day !== null && published !== null && day - published > MAX_RATE_LAG_DAYS * DAY_MS;
+};
+
 // Frankfurter's current address. The old one, api.frankfurter.app, answers
 // every request with a 301 to this, which fetch follows - but at the cost of a
 // second connection inside the 2.5 s timeout, on every lookup.
@@ -147,9 +154,11 @@ function cacheGet(base, date) {
   if (!db.open) return null;
   try {
     const row = selectRate().get(base, QUOTE, date);
-    return row
-      ? { rate: row.rate, rateDate: row.rate_date, source: row.source, fetchedAt: row.fetched_at }
-      : null;
+    // Read as a miss, so the service is asked: a row cached before the lag
+    // limit existed (2.1.7 kept a lagging mirror's answers) was served as
+    // the day's rate for good, and a refresh never asked again.
+    if (!row || lagging(date, row.rate_date)) return null;
+    return { rate: row.rate, rateDate: row.rate_date, source: row.source, fetchedAt: row.fetched_at };
   } catch (err) {
     console.error('Could not read the rate cache:', err.message);
     return null;
@@ -482,6 +491,9 @@ function standInOpen(row, stage) {
   const fx = row[`${stage}_fx`];
   const fxDate = row[`${stage}_fx_date`];
   if (fx == null || typeof date !== 'string' || typeof fxDate !== 'string' || !(fxDate < date)) return false;
+  // Held at a rate no lookup would accept now: asked about until a real one
+  // comes. The cache treats it as a miss, so it could not settle it.
+  if (lagging(date, fxDate)) return true;
   if (isProvisionalFx(date, fxDate)) return true;
   const cached = cachedRate(row.borrow_currency, date);
   return cached !== null && (unconfirmed(date, cached) || cached.rateDate !== fxDate || cached.rate !== fx);

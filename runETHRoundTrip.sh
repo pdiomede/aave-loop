@@ -112,7 +112,8 @@ fi
 
 # ------------------------------------------------------------------ data dir
 
-mkdir -p data
+# Private when created, as db.js makes it: the ledger is every trade.
+mkdir -p -m 700 data
 ok "Database directory ready (./data)"
 
 # ---------------------------------------------------------------------- port
@@ -154,6 +155,23 @@ holder_is_ours() {
   [ "${cwd#n}" = "$(pwd -P)" ]
 }
 
+# An earlier copy from this folder on a port it moved to last time is stopped
+# first, whatever then happens on $PORT. Looked for only while $PORT was busy,
+# it was missed once $PORT came free again: a relaunch started on $PORT and the
+# old code went on serving, and sweeping alerts, on the port above.
+for offset in $(seq 1 "$PORT_SCAN_LIMIT"); do
+  CANDIDATE=$((PORT + offset))
+  [ "$CANDIDATE" -le 65535 ] || break
+  # `|| true`: lsof exits 1 on a free port, and under pipefail and -e that
+  # would end the script here.
+  CANDIDATE_PID="$(port_holder_pid "$CANDIDATE" || true)"
+  if holder_is_ours "$CANDIDATE_PID"; then
+    warn "Port $CANDIDATE has an older ETH Roundtrip instance (pid $CANDIDATE_PID), stopping it"
+    stop_pid "$CANDIDATE_PID"
+    port_is_free "$CANDIDATE" || die "Could not free port $CANDIDATE."
+  fi
+done
+
 if ! port_is_free "$PORT"; then
   HOLDER_PID="$(port_holder_pid "$PORT")"
   HOLDER_CMD="$(ps -o command= -p "$HOLDER_PID" 2>/dev/null | head -n 1)"
@@ -172,31 +190,13 @@ if ! port_is_free "$PORT"; then
   else
     START="$PORT"
     FOUND=""
-    # An earlier copy from this folder that moved up last time is replaced
-    # where it is, before any free port is taken: looking only at $PORT, each
-    # launch while something else held it started one more copy beside the
-    # last, and the old code kept serving on the old port.
+    # Earlier copies of ours in this range were stopped above, so the first
+    # free port is the one they held, or the next one free.
     for offset in $(seq 1 "$PORT_SCAN_LIMIT"); do
       CANDIDATE=$((START + offset))
       [ "$CANDIDATE" -le 65535 ] || break
-      # `|| true`: lsof exits 1 on a free port, and under pipefail and -e
-      # that would end the script here.
-      CANDIDATE_PID="$(port_holder_pid "$CANDIDATE" || true)"
-      if holder_is_ours "$CANDIDATE_PID"; then
-        warn "Port $CANDIDATE has an older ETH Roundtrip instance (pid $CANDIDATE_PID), stopping it"
-        stop_pid "$CANDIDATE_PID"
-        port_is_free "$CANDIDATE" || die "Could not free port $CANDIDATE."
-        FOUND="$CANDIDATE"
-        break
-      fi
+      if port_is_free "$CANDIDATE"; then FOUND="$CANDIDATE"; break; fi
     done
-    if [ -z "$FOUND" ]; then
-      for offset in $(seq 1 "$PORT_SCAN_LIMIT"); do
-        CANDIDATE=$((START + offset))
-        [ "$CANDIDATE" -le 65535 ] || break
-        if port_is_free "$CANDIDATE"; then FOUND="$CANDIDATE"; break; fi
-      done
-    fi
     [ -n "$FOUND" ] || die "No free port between $((START + 1)) and $((START + PORT_SCAN_LIMIT)). Use --kill or --port N."
     PORT="$FOUND"
     warn "Using port $PORT instead. Pass --kill to take $START back."

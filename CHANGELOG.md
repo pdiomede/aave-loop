@@ -128,6 +128,17 @@ Navigation, theme and settings:
 - **Back or Forward while typing leaves focus on the nav**, not on the page, so the next Tab does not start from the top.
 - **A theme chosen in another tab is shown when the system theme changes**; the open page kept the theme it was drawn with, matching neither. The landing toggle script changed again: nginx's CSP needs its newest hash.
 - **The startup note says when an old `MYAAVE_*` setting is ignored** because its new name is set, instead of calling it "still read".
+- **A price update no longer drops keyboard focus** from a "no rate" or "est" chip in the header tiles or the Net gain column, and Enter on such a chip no longer opens its row.
+- **On a phone, a field flagged by Save and the Edit button after it are focused below the sticky header,** not under it.
+- **The alert window reloads the trade before drawing,** so one switched to the other asset elsewhere is drawn in its new market; reopening it used to draw the old one, and every save was refused.
+- **/price, /holding and /summary say a price's age from the age the alert window calls stale** (ten minutes by default, was fifteen), say "less than a minute" rather than "0 minutes", and write "an ETH price".
+- **An alert goal is judged to the cent in the form as on the server:** 0.999 is a $1.00 goal, previewed and saved, and the form no longer refuses it.
+- **A quantity that prints as 0.0000 is refused,** as an amount that prints as 0.00 is; and notes are cut by visible character, so a flag emoji is never split.
+- **The alert window names the config file `ETHROUNDTRIP_CONFIG` points at**, not always config.env.
+- **Rates more than six days older than their day, cached before the limit existed, are asked about again** instead of being served for good.
+- **`set-platform.mjs` refuses a ledger path that does not exist** instead of creating an empty ledger there and reporting "Nothing to change".
+- **A new ledger is created private**, its folder 700 and its file 600; it was readable by every account on the host.
+- **A relaunch stops an earlier copy on a fallback port even once the port it wanted is free**, instead of starting beside it.
 - **The price banner keeps to one row per coin at 320px**, a six-figure BTC with two-digit moves included, and a page turn lands below the header however tall it is: a wrapped row hid the table's first lines.
 
 ## [2.1.7] - 2026-11-13

@@ -16,8 +16,11 @@
  * backup first (./backupDatabase.sh); it writes in one transaction, and an
  * unknown id writes nothing at all.
  */
-import { db } from '../db.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PLATFORMS, PLATFORM_META } from '../lib/calc.js';
+import { setting } from '../env.js';
 
 const args = process.argv.slice(2);
 if (args.includes('--help') || args.includes('-h')) {
@@ -50,6 +53,15 @@ function fail(message) {
   console.error(message);
   process.exit(1);
 }
+
+// The ledger has to exist before db.js is loaded, because loading it creates
+// one: run without the service's ETHROUNDTRIP_DB, or with a typo in it, this
+// made an empty ledger at that path and answered "Nothing to change.", and
+// --help left -wal and -shm files behind. db.js's own default, for the same
+// file it would open.
+const dbFile = setting('DB') || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'myaave.db');
+if (!fs.existsSync(dbFile)) fail(`No database at ${dbFile}. Set ETHROUNDTRIP_DB to the ledger's path.`);
+const { db } = await import('../db.js');
 
 const label = (p) => PLATFORM_META[p]?.label ?? '-';
 

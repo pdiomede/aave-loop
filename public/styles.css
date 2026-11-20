@@ -598,20 +598,20 @@ a.brand {
    the sticky header: the header row, and on a phone the sort bar and the
    first trade, sat hidden behind it. The header is taller on a phone, where
    the nav and the ticker take rows of their own. */
-#table-mount,
-#alerts-mount {
-  scroll-margin-top: 72px;
+/* On the page, so it holds for every scroll the browser makes for us - the
+   pagers' scroll to their table, and `focusInView` bringing a focused field
+   out from under the header. The header's own height, measured (`--header-h`,
+   kept by app.js): it is taller on a phone, where the nav and the two ticker
+   rows take lines of their own, and taller again when a row wraps. A fixed
+   180px left the table's first 15px under a 195px header after a page turn,
+   and a field flagged by Save on a phone took focus under the header. */
+html {
+  scroll-padding-top: calc(var(--header-h, 64px) + 8px);
 }
 
 @media (max-width: 760px) {
-  #table-mount,
-  #alerts-mount {
-    /* Taller again for the second ticker row, BTC under ETH - and taller
-       still when a row wraps, so it is the header's own height, measured
-       (`--header-h`, kept by app.js), with 180px until the page has run: a
-       fixed 180 left the table's first 15px under a 195px header after a
-       page turn. */
-    scroll-margin-top: calc(var(--header-h, 172px) + 8px);
+  html {
+    scroll-padding-top: calc(var(--header-h, 172px) + 8px);
   }
 }
 

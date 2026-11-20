@@ -250,5 +250,16 @@ check('a figure past a trillion, or an amount that prints as 0.00, is refused as
   assert.match(validateField('buy_eth', '0.014', { buy_amount: 0.014, borrow_currency: 'USDC' }), /^That is 0\.7143 USDC per ETH/);
 });
 
+check('a goal is judged to the cent, and a quantity that prints as zero is refused, as the server does', () => {
+  // 0.999 is a $1.00 goal to the server; the form refused it on the raw figure.
+  assert.equal(validateField('goal_price', '0.999', {}), null);
+  assert.equal(validateField('goal_price', '1000000.004', {}), null);
+  assert.match(validateField('goal_price', '0.994', {}), /slipped digit/);
+  assert.match(validateField('goal_price', '1000000.005', {}), /slipped digit/);
+  assert.equal(validateField('buy_eth', '0.00004', { buy_amount: 0.12 }), 'ETH purchased must be at least 0.0001.');
+  assert.equal(validateField('sell_eth', '0.00004', {}), 'ETH sold must be at least 0.0001.');
+  assert.equal(validateField('buy_eth', '0.00000001', { asset: 'cbbtc', buy_amount: 0.01 }), null);
+});
+
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);
 else console.log(`ok - ${passed} input checks`);

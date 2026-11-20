@@ -327,7 +327,27 @@ await check('notes are cut at 2000 characters, never inside one', async () => {
   const chars = Array.from(r.data.notes);
   assert.equal(chars.length, 2000);
   assert.equal(chars.at(-1), '\u{1F600}');
+  // A flag is two code points that read as one character: cut by code point,
+  // 1999 letters and a flag kept only its first half, a stray letter.
+  const flag = await api('PATCH', `/api/trades/${t1.id}`, { notes: `${'a'.repeat(1999)}\u{1F1EE}\u{1F1F9}x` });
+  assert.ok(flag.data.notes.endsWith('\u{1F1EE}\u{1F1F9}'), JSON.stringify(flag.data.notes.slice(-4)));
   await api('PATCH', `/api/trades/${t1.id}`, { notes: '' });
+});
+
+await check('a quantity that prints as 0.0000 is refused, in its asset\'s places', async () => {
+  // 0.00004 ETH for 0.12 USDC saved, and read "Bought 0.0000 ETH".
+  const r = await api('POST', '/api/trades', {
+    ...borrow(), buy_date: '2026-09-01', buy_amount: '0.12', buy_eth: '0.00004', buy_gas_usd: '0',
+  });
+  assert.equal(r.status, 400);
+  assert.equal(r.data.field, 'buy_eth');
+  assert.match(r.data.error, /at least 0\.0001/);
+  // One satoshi is a quantity of cbBTC.
+  const sat = await api('POST', '/api/trades', {
+    ...borrow(), asset: 'cbbtc', buy_date: '2026-09-01', buy_amount: '0.01', buy_eth: '0.00000001', buy_gas_usd: '0',
+  });
+  assert.equal(sat.status, 201);
+  await api('DELETE', `/api/trades/${sat.data.id}`);
 });
 
 await check('a config.env that cannot be read is named without its path', async () => {
@@ -378,6 +398,13 @@ await check('the settings read ETHROUNDTRIP_*, and the old MYAAVE_* names when a
     { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_CONFIG: '', MYAAVE_CONFIG: file }, stdio: ['ignore', 'pipe', 'ignore'] },
   ).toString().trim();
   assert.equal(reason, 'TELEGRAM_CHAT_ID is missing from old-name.env.');
+});
+
+await check('the alert window is told the config file by its own name', async () => {
+  // Its "will be sent once ... is filled in" said config.env whatever file
+  // ETHROUNDTRIP_CONFIG named. The name only, never the path.
+  const r = await api('GET', '/api/alerts');
+  assert.equal(r.data.config.file, 'none.env');
 });
 
 await check('a config file that cannot be read is said so even with one value exported, and named as it is', async () => {
@@ -990,6 +1017,22 @@ await check('/holding says when it is valued at an old price, as /price does', a
     borrow_apr: 0, borrow_gas_usd: 0, buy_date: today, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 };
   assert.match(holdingText([row], { ETH: 1100 }, {}, { ages: { ETH: 2 * 3_600_000 } }), /At the price last fetched .+ ago\./);
   assert.doesNotMatch(holdingText([row], { ETH: 1100 }, {}, { ages: { ETH: 1000 } }), /last fetched/);
+  // At the age the alert window calls stale (`freshPrice`: two refreshes,
+  // ten minutes with the default poll, two seconds with this process's one),
+  // not one alert poll: a price between the two was "not recent" in the
+  // window and printed as current by /holding. And under a minute it says so,
+  // not "0 minutes ago".
+  assert.doesNotMatch(holdingText([row], { ETH: 1100 }, {}, { ages: { ETH: 1500 } }), /last fetched/);
+  assert.match(holdingText([row], { ETH: 1100 }, {}, { ages: { ETH: 2500 } }), /At the price last fetched less than a minute ago\./);
+});
+
+await check('/holding names a missing ETH price as "an ETH price"', async () => {
+  const row = { id: 1, platform: 'aave', borrow_date: today, borrow_amount: 1000, borrow_currency: 'USDT',
+    borrow_apr: 0, borrow_gas_usd: 0, buy_date: today, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 };
+  const btc = { ...row, id: 2, asset: 'cbbtc', buy_eth: 0.01, buy_amount: 1000 };
+  const text = holdingText([row, btc], { BTC: 100000 }, {});
+  assert.match(text, /1 without an ETH price/);
+  assert.doesNotMatch(text, /without a ETH/);
 });
 
 await check('/help says what /holding lists: trades still holding ETH', async () => {
@@ -1058,6 +1101,26 @@ await check('a stand-in rate is replaced past four days old, once the real one c
   assert.equal(r.again, null);
 });
 
+await check('a rate cached more than six days before its day is asked about again', async () => {
+  // 2.1.7 kept a lagging mirror's answers: a rate from two weeks before the
+  // day, cached and stored as final, was served for good after the upgrade.
+  mock.fx = { rate: 1.1 };
+  const r = await fxChild(`
+    const now = new Date().toISOString();
+    const old = '${isoShift(fxDay, -13)}';
+    prepare("INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr, platform, borrow_fx, borrow_fx_date, fx_source, created_at, updated_at) VALUES (?, 1000, 'EURC', 4, 'aave', 1.05, ?, 'ecb', ?, ?)")
+      .run('${fxDay}', old, now, now);
+    // Fetched ten days after its day, as 2.1.7 would have settled it.
+    prepare("INSERT INTO fx_rates (base, quote, date, rate, rate_date, source, fetched_at) VALUES ('EUR', 'USD', ?, 1.05, ?, 'ecb', ?)")
+      .run('${fxDay}', old, '${isoShift(fxDay, 10)}T12:00:00.000Z');
+    const filled = (await fx.refreshRatesNow())?.filled ?? null;
+    const row = prepare('SELECT borrow_fx, borrow_fx_date FROM trades').get();
+    console.log(JSON.stringify({ filled, row }));
+  `);
+  assert.equal(r.filled, 1);
+  assert.deepEqual(r.row, { borrow_fx: 1.1, borrow_fx_date: fxDay });
+});
+
 await check('a holiday stand-in is asked about once past the window, then settles', async () => {
   mock.fx = { rate: 1.1, holiday: fxDay };
   const r = await fxChild(`
@@ -1110,6 +1173,43 @@ await check('a rate service answering with a web page is reported in words, not 
   mock.fx = { rate: 1.1 };
 });
 
+await check('set-platform refuses a ledger that does not exist, and creates none', async () => {
+  // Run without the service's ETHROUNDTRIP_DB, or with a typo in it, it made
+  // an empty ledger there and said "Nothing to change.".
+  const missing = path.join(tmp, 'nope', 'ledgr.db');
+  const runIt = (...args) =>
+    execFileSync(process.execPath, ['scripts/set-platform.mjs', ...args], {
+      cwd: root,
+      env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: missing },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  // --help answers, and opens nothing.
+  assert.match(runIt('--help'), /Usage/);
+  let failed = null;
+  try {
+    runIt();
+  } catch (err) {
+    failed = err;
+  }
+  assert.ok(failed, 'a dry run on a missing ledger should exit non-zero');
+  assert.match(String(failed.stderr), /No database at .*ledgr\.db/);
+  assert.equal(fs.existsSync(path.dirname(missing)), false);
+});
+
+await check('a new ledger is private: its folder 700, its file 600', async () => {
+  // A fresh install made data/ 755 and the ledger 644, readable by any
+  // account on the host.
+  const file = path.join(tmp, 'fresh', 'data', 'ledger.db');
+  execFileSync(process.execPath, ['--input-type=module', '-e', "const { closeDb } = await import('./db.js'); closeDb();"], {
+    cwd: root,
+    env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file },
+    stdio: 'ignore',
+  });
+  assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+});
+
 await check('set-platform: a dry run writes nothing, --apply sets Aave on the rest and keeps a set one', async () => {
   const file = path.join(tmp, 'platform.db');
   const runIt = (...args) =>
@@ -1119,9 +1219,14 @@ await check('set-platform: a dry run writes nothing, --apply sets Aave on the re
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-  // Opened once through the script so the table exists, then three trades:
-  // two with no platform, one already on Ether.fi.
-  runIt();
+  // Made through db.js, as the server makes one, then three trades: two with
+  // no platform, one already on Ether.fi. (The script itself opens only a
+  // ledger that exists.)
+  execFileSync(process.execPath, ['--input-type=module', '-e', "const { closeDb } = await import('./db.js'); closeDb();"], {
+    cwd: root,
+    env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file },
+    stdio: 'ignore',
+  });
   const db = new Database(file);
   const now = new Date().toISOString();
   const add = db.prepare(`INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr,

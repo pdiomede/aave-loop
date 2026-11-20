@@ -2074,6 +2074,35 @@ function estChip(t, d) {
  * and redrawing the table would take focus out of a stage form being typed
  * into. The rows keep their order until the next render, which re-sorts.
  */
+/**
+ * A container's markup rewritten, keeping keyboard focus on the same control
+ * in the new markup. The "no rate" and "est" chips are focusable for their
+ * tooltips, and a price landing every five minutes rewrote the hero and the
+ * Net gain cells under them: a keyboard or screen-reader user reading one was
+ * dropped to the page, the next Tab starting from the top.
+ */
+const FOCUSABLE = '[tabindex], button, a[href], input, select, textarea';
+function setKeepingFocus(el, html) {
+  if (!el) return;
+  const active = document.activeElement;
+  const index = el.contains(active) && active !== el ? [...el.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
+  el.innerHTML = html;
+  if (index >= 0) el.querySelectorAll(FOCUSABLE)[index]?.focus({ preventScroll: true });
+}
+
+/**
+ * Focus a control and bring it out from under the sticky header: a plain
+ * `focus()` does not scroll an element already in the viewport, and on a phone
+ * the header covers the top 160px of it - a field flagged by Save, or the
+ * Edit button after it, took focus there unseen. `scroll-padding-top` on the
+ * page (styles.css) is what `nearest` keeps it clear of.
+ */
+function focusInView(el) {
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: 'nearest' });
+}
+
 function refreshEstimateCells() {
   if (resortByEstimate()) return;
   for (const tr of document.querySelectorAll('#table-mount tr.row[data-trade]')) {
@@ -2082,7 +2111,7 @@ function refreshEstimateCells() {
     const d = derive(t);
     if (!hasEstimate(d)) continue;
     const cell = tr.querySelector(':scope > td[data-label="Net gain"]');
-    if (cell) cell.innerHTML = gainCellHtml(t, d);
+    if (cell) setKeepingFocus(cell, gainCellHtml(t, d));
   }
 }
 
@@ -3110,7 +3139,7 @@ function openGainLines() {
 
 function renderHeroStats() {
   if (state.loadFailed || !state.loaded) return;
-  document.getElementById('hero-stats').innerHTML = statTiles(summarize(state.trades), { estimate: true });
+  setKeepingFocus(document.getElementById('hero-stats'), statTiles(summarize(state.trades), { estimate: true }));
 }
 
 /* ------------------------------------------------------------ alerts view */
@@ -3328,7 +3357,7 @@ function showFormError(form, message, fieldName, { focus = true } = {}) {
     // Not when the error came from leaving the field: refocusing what the user
     // just tabbed out of traps them there until the value is acceptable. A
     // picker's input is hidden, so its button takes the focus.
-    if (focus) fieldControl(target)?.focus();
+    if (focus) focusInView(fieldControl(target));
   } else {
     form.querySelector('[data-form-error]').textContent = message;
   }
@@ -3494,7 +3523,7 @@ async function submitStage(form) {
 function focusStageButton(id, stage) {
   const active = document.activeElement;
   if (active && active !== document.body) return;
-  document.querySelector(`[data-edit-stage="${stage}"][data-trade="${id}"]`)?.focus();
+  focusInView(document.querySelector(`[data-edit-stage="${stage}"][data-trade="${id}"]`));
 }
 
 async function submitBorrow(form) {
@@ -3630,7 +3659,7 @@ function alertDialogBody(t, d, a) {
         It will read:</p>`
     : `<p class="modal__note"><span class="chip chip--warn">not connected</span>
         ${esc(cfg?.reason || 'Nothing is configured to send an alert.')}
-        The goal is still saved, and will be sent once config.env is filled in.</p>`;
+        The goal is still saved, and will be sent once ${esc(cfg?.file || 'config.env')} is filled in.</p>`;
 
   const remove = a
     ? `<button class="btn btn--sm btn--danger modal__remove" type="button"
@@ -3683,7 +3712,10 @@ function alertDialogBody(t, d, a) {
 let alertDialogTrade = null;
 
 async function openAlertDialog(id) {
-  await loadAlerts({ refresh: true }).catch(() => {});
+  // The trades too: the window is drawn in the trade's market, and a trade
+  // switched to the other asset elsewhere was drawn from this tab's old copy -
+  // every save refused as "the trade changed", and reopening drew it the same.
+  await Promise.all([loadAlerts({ refresh: true }).catch(() => {}), loadTrades().catch(() => {})]);
   const t = state.trades.find((x) => x.id === id);
   if (!t) return;
   alertDialogTrade = id;
@@ -4493,8 +4525,11 @@ function wire() {
   }
 
   document.body.addEventListener('keydown', (e) => {
+    // The row itself, not a chip inside it: Enter on a "no rate" chip opened
+    // the row and dropped focus, the click handler refocusing only a row that
+    // had it.
     const row = e.target.closest('.row');
-    if (row && (e.key === 'Enter' || e.key === ' ')) {
+    if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       row.click();
     }

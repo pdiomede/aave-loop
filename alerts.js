@@ -792,6 +792,8 @@ export function startAlertPoller() {
 
 /** How often the sweep runs, so nothing else has to guess at it. */
 export const alertPollMs = POLL_MS;
+/** The age past which a price is not fresh (`freshPrice`), for the bot's age lines. */
+export const priceFreshMs = PRICE_FRESH_MS;
 
 export function stopAlertPoller() {
   stopping = true;
