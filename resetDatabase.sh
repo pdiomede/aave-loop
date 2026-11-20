@@ -70,9 +70,18 @@ printf '  Trades   : %s%s%s\n\n' "$BOLD" "$COUNT" "$OFF"
 
 # A server holding the file open would keep writing to a database that no
 # longer exists, so it has to stop before the file goes.
+#
+# Without a tool to ask, the check used to be skipped in silence: on a system
+# with no lsof the ledger was deleted under a running server, which went on
+# writing to the deleted file and lost it all at its next restart. So fuser is
+# asked instead, and with neither there is no reset.
 HOLDER=""
 if command -v lsof >/dev/null 2>&1; then
   HOLDER="$(lsof -t "$DB" 2>/dev/null | head -n 1 || true)"
+elif command -v fuser >/dev/null 2>&1; then
+  HOLDER="$(fuser "$DB" 2>/dev/null | grep -oE '[0-9]+' | head -n 1 || true)"
+else
+  die "Neither lsof nor fuser is installed, so nothing can check that no server has the ledger open. Install lsof, or stop the server and run this again once it is installed."
 fi
 if [ -n "$HOLDER" ]; then
   warn "The ledger is open in a running server (pid $HOLDER)."

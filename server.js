@@ -24,6 +24,7 @@ import {
   ASSET_META,
   MARKETS,
   assetMeta,
+  assetOf,
   marketOf,
   FX_STAGES,
   STATUS,
@@ -470,11 +471,15 @@ function checkSwapFee(patch, row) {
  * an unrelated edit - and to a change of asset, which changes what the price
  * is a price of.
  */
-function checkUnitPrice(patch, row) {
+function checkUnitPrice(patch, row, current = null) {
   const ticker = assetMeta(row).ticker;
+  // A change of asset, not its mere presence: the Bought form always sends the
+  // asset it shows, so editing a purchase's fee re-checked the sale's price,
+  // and an old row's refused the edit with an error about a field not in it.
+  const assetChanged = 'asset' in patch && (current === null || patch.asset !== assetOf(current));
   for (const stage of ['buy', 'sell']) {
     const [amountKey, ethKey] = [`${stage}_amount`, `${stage}_eth`];
-    if (!(amountKey in patch || ethKey in patch || 'asset' in patch)) continue;
+    if (!(amountKey in patch || ethKey in patch || assetChanged)) continue;
     if (row[amountKey] == null || row[ethKey] == null) continue;
     // From the amount as printed, as `derive` works out the price the card shows.
     const price = asPrinted(row[amountKey]) / row[ethKey];
@@ -595,7 +600,7 @@ app.patch('/api/trades/:id', async (req, res, next) => {
         const merged = { ...current, ...patch };
         checkChronology(merged);
         checkSwapFee(patch, merged);
-        checkUnitPrice(patch, merged);
+        checkUnitPrice(patch, merged, current);
 
         // An edit can invalidate a rate that was right when it was stored. Clear
         // those first, then look up replacements, so the write carries the change
@@ -868,6 +873,13 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     // from below, so the goal on screen was not the goal being watched.
     // A goal is a price in the trade's market: BTC's for a cbBTC trade.
     const market = marketOf(trade);
+    // The window sends the market it was drawn in. One opened while the trade
+    // held ETH and saved after its asset became cbBTC elsewhere stored the
+    // $3,500 typed as an ETH goal as a BTC one, which fired at once. Optional,
+    // so a caller that names no market is held to the trade's, as before.
+    if (req.body?.market != null && req.body.market !== market) {
+      throw new BadRequest('The trade changed since this window opened. Close it and open it again.', 'goal_price');
+    }
     const goal = asPrinted(toNumber(req.body?.goal_price, 'goal_price', `${market} goal price`));
     if (!goalInRange(goal)) {
       throw new BadRequest('That looks like a slipped digit. The price is in dollars.', 'goal_price');
@@ -986,7 +998,14 @@ app.get('/api/trades/:id/alert/preview', (req, res) => {
   // - the trade's as well as the goal's. Without the status test a trade sold
   // while the window was open went on previewing a message the save then
   // refused, and one with no purchase read "Bought: - ETH".
-  if (goal === null || !goalInRange(goal) || derive(trade).status !== STATUS.HOLDING) {
+  // Nor a goal typed in another market than the trade's now (see the save).
+  const asked = req.query.market;
+  if (
+    goal === null ||
+    !goalInRange(goal) ||
+    derive(trade).status !== STATUS.HOLDING ||
+    (asked != null && asked !== '' && asked !== marketOf(trade))
+  ) {
     return res.json({ text: null });
   }
 

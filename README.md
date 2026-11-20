@@ -12,9 +12,9 @@ A local web app on SQLite, with no account and no wallet connection. Borrow in U
 ./runETHRoundTrip.sh
 ```
 
-Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script installs dependencies when the lockfile's packages change, and replaces an earlier ETH Roundtrip from this folder on the port. Another program there moves it to the next free port (`--kill` stops that program instead, `--port N` picks one).
+Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script installs dependencies when the lockfile's packages change, and replaces an earlier ETH Roundtrip from this folder, on the port or on one it moved to, giving it up to 14 seconds to finish an alert it is sending. Another program on the port moves it to the next free port (`--kill` stops that program instead, `--port N` picks one).
 
-- `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open, and keeps a backup under `data/backups`.
+- `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open (it asks `lsof`, or `fuser`, and will not run with neither), and keeps a backup under `data/backups`.
 - `./backupDatabase.sh` takes a backup that is safe while the server runs, by default into `~/aaveloop-backups` (the old name, kept so existing backups and cron lines stay valid); `--help` gives the cron line.
 - `node scripts/set-platform.mjs --etherfi <id> --apply` fills in the platform on trades recorded before it was asked for: the ids named go to Ether.fi, the rest to Aave. Without `--apply` it only lists what would change; it honours `MYAAVE_DB`.
 - `npm run check` runs four offline suites: the formulas in `lib/calc.js` against hand-worked figures, the forms' input rules, the Statement PDF, and the server itself against a throwaway database with Telegram and the price service mocked.

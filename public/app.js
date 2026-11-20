@@ -3630,7 +3630,7 @@ function alertDialogBody(t, d, a) {
     </div>
     <div class="modal__body">
       <dl class="stage__rows modal__rows">${rows}</dl>
-      <form data-alert-form="${t.id}" novalidate>
+      <form data-alert-form="${t.id}" data-market="${esc(market)}" novalidate>
         ${field({
           name: 'goal_price',
           label: `${market} goal price`,
@@ -3740,7 +3740,12 @@ function refreshAlertPreview(id, { delay = 0 } = {}) {
       return;
     }
     try {
-      const { text } = await api(`/api/trades/${id}/alert/preview?goal=${encodeURIComponent(goal)}`);
+      // With the market the window was drawn in, so a trade switched to the
+      // other asset since is not previewed in words this window does not show.
+      const market = dlg.querySelector('[data-alert-form]')?.dataset.market ?? '';
+      const { text } = await api(
+        `/api/trades/${id}/alert/preview?goal=${encodeURIComponent(goal)}&market=${encodeURIComponent(market)}`,
+      );
       if (seq !== previewSeq || !dlg.open) return;
       // Re-read the slot: the window may have been rebuilt while this was away.
       const live = dlg.querySelector('[data-alert-preview]');
@@ -3762,7 +3767,12 @@ async function submitAlert(form) {
   try {
     const alert = await api(`/api/trades/${id}/alert`, {
       method: 'PUT',
-      body: JSON.stringify({ goal_price: form.querySelector('input[name="goal_price"]').value }),
+      // The market the window was drawn in, for the server to hold the goal to
+      // (see the route): typed as an ETH price, it is not to be saved as BTC's.
+      body: JSON.stringify({
+        goal_price: form.querySelector('input[name="goal_price"]').value,
+        market: form.dataset.market,
+      }),
     });
     state.alerts = { ...state.alerts, [id]: alert };
     // The save replaces whatever armed alert was on this trade and adds this

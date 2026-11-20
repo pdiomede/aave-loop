@@ -441,6 +441,38 @@ await check('/api/prices gives ETH and BTC, a quote each', async () => {
   assert.equal((await api('GET', '/api/alerts')).data.prices.BTC.price, 90000);
 });
 
+await check('an alert window drawn for ETH cannot save its goal once the trade is cbBTC', async () => {
+  // Opened while the trade held ETH, saved after its asset changed elsewhere:
+  // the $3,500 typed as an ETH goal was stored as a BTC one and fired at once.
+  const t = (await api('POST', '/api/trades', { ...borrow(), ...buy })).data;
+  await api('PATCH', `/api/trades/${t.id}`, { asset: 'cbbtc', buy_eth: '0.3' });
+  const stale = await api('PUT', `/api/trades/${t.id}/alert`, { goal_price: '3500', market: 'ETH' });
+  assert.equal(stale.status, 400);
+  assert.equal(stale.data.field, 'goal_price');
+  const preview = await api('GET', `/api/trades/${t.id}/alert/preview?goal=3500&market=ETH`);
+  assert.equal(preview.data.text, null);
+  const fresh = await api('PUT', `/api/trades/${t.id}/alert`, { goal_price: '120000', market: 'BTC' });
+  assert.equal(fresh.status, 200);
+  assert.equal(fresh.data.market, 'BTC');
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('editing a purchase does not re-check an old sale when the asset stays', async () => {
+  // The Bought form always sends its asset, so a fee edit re-checked a sale
+  // saved before the price check existed, and refused with its error.
+  const t = (await api('POST', '/api/trades', { ...borrow(), ...buy })).data;
+  const db = new Database(path.join(tmp, 'api.db'));
+  db.prepare("UPDATE trades SET sell_date = '2026-09-10', sell_amount = 5, sell_eth = 10, sell_gas_usd = 1 WHERE id = ?").run(t.id);
+  db.close();
+  const fee = await api('PATCH', `/api/trades/${t.id}`, { ...buy, asset: 'eth', buy_gas_usd: '6' });
+  assert.equal(fee.status, 200);
+  // A change of asset still re-checks it.
+  const moved = await api('PATCH', `/api/trades/${t.id}`, { asset: 'cbbtc' });
+  assert.equal(moved.status, 400);
+  assert.equal(moved.data.field, 'sell_eth');
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 await check('a trade can buy cbBTC, and its errors and its alert speak cbBTC and BTC', async () => {
   const t = (await api('POST', '/api/trades', borrow({ borrow_date: today, borrow_amount: '10000' }))).data;
   assert.equal(t.asset, 'eth', 'a new trade starts on ETH');

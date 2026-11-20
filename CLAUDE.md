@@ -188,8 +188,10 @@ be wrong in a Telegram message.
 
 ### Two instances can share one database
 
-`runETHRoundTrip.sh` replaces an earlier copy started from the same folder, but moves to
-the next free port when anything else holds it, and a copy started by hand (`PORT=3011
+`runETHRoundTrip.sh` replaces an earlier copy started from the same folder (matched by
+its physical working directory, on the port asked for or one it moved to, with 14 s to
+shut down: the server waits up to 12 s for an alert send), but moves to the next free
+port when anything else holds it, and a copy started by hand (`PORT=3011
 npm start`, a second checkout pointed at the same `MYAAVE_DB`) runs beside it. So
 concurrent access is a supported state, not an edge case. Production runs one
 copy; this is mostly a dev-machine state, but the code holds for both. This is why:
@@ -340,7 +342,9 @@ quote stamped ahead of it cannot freeze the banner. Callers pass a `{ ETH, BTC }
 trade's price with `priceFor(t, prices)`. An alert's goal is a price of its market,
 stored on the alert (`alerts.market`, NULL = ETH); a PATCH that changes the asset
 closes the armed alert in the same transaction, and the sweep skips any goal whose
-market is not the trade's. The asset picker sits in the Bought card's heading and
+market is not the trade's. The alert window sends the market it was drawn in
+(`data-market`), and the save and preview refuse a goal in another market than the
+trade's now, so a window left open across a change of asset cannot arm one. The asset picker sits in the Bought card's heading and
 joins the stage form by `form=`, as the new trade's platform does; `applyAsset`
 redraws the form's fields for a pick. Stats' By asset is `summaryReport().byAsset`,
 with a row for loans that bought nothing yet. The Statement PDF has no By asset: its

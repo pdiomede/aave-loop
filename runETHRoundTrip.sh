@@ -90,7 +90,11 @@ if [ ! -d node_modules ]; then
   needs_install=1; reason="node_modules is missing"
 elif [ -f package-lock.json ] && lock_differs; then
   needs_install=1; reason="package-lock.json changed"
-elif ! node -e 'import("better-sqlite3").then(()=>{},()=>process.exit(1))' 2>/dev/null; then
+# Opening a database, not importing the package: better-sqlite3 loads its
+# native addon inside `new Database()`, so an import passed with an addon built
+# for another Node, and the server then died in dlopen after "Dependencies
+# present".
+elif ! node -e 'new (require("better-sqlite3"))(":memory:").close()' 2>/dev/null; then
   needs_install=1; reason="the better-sqlite3 native binding did not load"
 fi
 
@@ -121,10 +125,14 @@ port_is_free() {
   [ -z "$(port_holder_pid "$1")" ]
 }
 
+# Up to 14 s before KILL. The server's own shutdown waits up to 12 s for an
+# alert send in flight, and exits by itself at 13; killed after 3 s, as this
+# did, an alert claimed for sending was left FIRED though Telegram never took
+# it, and no copy retried it.
 stop_pid() {
   local pid="$1"
   kill -TERM "$pid" 2>/dev/null || true
-  for _ in 1 2 3 4 5 6; do
+  for _ in $(seq 1 28); do
     kill -0 "$pid" 2>/dev/null || return 0
     sleep 0.5
   done
@@ -132,21 +140,26 @@ stop_pid() {
   sleep 0.5
 }
 
+# Whether the process listening is an earlier ETH Roundtrip from this folder,
+# which is always safe to replace. `ps` prints the command as it was typed, so
+# the working directory is matched too - physically (`pwd -P`), as lsof reports
+# it: on macOS /tmp is /private/tmp, and a copy started through a symlinked path
+# was not recognised and kept running beside the new one.
+holder_is_ours() {
+  local pid="$1" cmd cwd
+  [ -n "$pid" ] || return 1
+  cmd="$(ps -o command= -p "$pid" 2>/dev/null | head -n 1)"
+  printf '%s' "$cmd" | grep -q 'server\.js' || return 1
+  cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | grep '^n' | tail -n 1)"
+  [ "${cwd#n}" = "$(pwd -P)" ]
+}
+
 if ! port_is_free "$PORT"; then
   HOLDER_PID="$(port_holder_pid "$PORT")"
   HOLDER_CMD="$(ps -o command= -p "$HOLDER_PID" 2>/dev/null | head -n 1)"
   warn "Port $PORT is busy (pid $HOLDER_PID: ${HOLDER_CMD:-unknown})"
 
-  # A previous ETH Roundtrip instance is always safe to reclaim. `ps` prints the
-  # command as it was typed, so match on the process working directory too.
-  holder_is_ours() {
-    printf '%s' "$HOLDER_CMD" | grep -q 'server\.js' || return 1
-    local cwd
-    cwd="$(lsof -a -p "$HOLDER_PID" -d cwd -Fn 2>/dev/null | grep '^n' | tail -n 1)"
-    [ "${cwd#n}" = "$(pwd)" ]
-  }
-
-  if holder_is_ours; then
+  if holder_is_ours "$HOLDER_PID"; then
     warn "That is an older ETH Roundtrip instance, stopping it"
     stop_pid "$HOLDER_PID"
     port_is_free "$PORT" || die "Could not free port $PORT."
@@ -159,11 +172,31 @@ if ! port_is_free "$PORT"; then
   else
     START="$PORT"
     FOUND=""
+    # An earlier copy from this folder that moved up last time is replaced
+    # where it is, before any free port is taken: looking only at $PORT, each
+    # launch while something else held it started one more copy beside the
+    # last, and the old code kept serving on the old port.
     for offset in $(seq 1 "$PORT_SCAN_LIMIT"); do
       CANDIDATE=$((START + offset))
       [ "$CANDIDATE" -le 65535 ] || break
-      if port_is_free "$CANDIDATE"; then FOUND="$CANDIDATE"; break; fi
+      # `|| true`: lsof exits 1 on a free port, and under pipefail and -e
+      # that would end the script here.
+      CANDIDATE_PID="$(port_holder_pid "$CANDIDATE" || true)"
+      if holder_is_ours "$CANDIDATE_PID"; then
+        warn "Port $CANDIDATE has an older ETH Roundtrip instance (pid $CANDIDATE_PID), stopping it"
+        stop_pid "$CANDIDATE_PID"
+        port_is_free "$CANDIDATE" || die "Could not free port $CANDIDATE."
+        FOUND="$CANDIDATE"
+        break
+      fi
     done
+    if [ -z "$FOUND" ]; then
+      for offset in $(seq 1 "$PORT_SCAN_LIMIT"); do
+        CANDIDATE=$((START + offset))
+        [ "$CANDIDATE" -le 65535 ] || break
+        if port_is_free "$CANDIDATE"; then FOUND="$CANDIDATE"; break; fi
+      done
+    fi
     [ -n "$FOUND" ] || die "No free port between $((START + 1)) and $((START + PORT_SCAN_LIMIT)). Use --kill or --port N."
     PORT="$FOUND"
     warn "Using port $PORT instead. Pass --kill to take $START back."

@@ -149,10 +149,6 @@ Ideas that came up on 20 Nov and were left for later, not bugs:
   follows it, so rates work, but each lookup makes two connections inside a 2.5 s
   timeout. Changing the default `FX_URL` in `fx.js` to the new address (the paths
   and answers are the same) saves the hop; until then `MYAAVE_FX_URL` can set it.
-- **Bug hunt, areas not covered yet:** `config.env` parsing and the shell scripts
-  (`runETHRoundTrip.sh`, `backupDatabase.sh`, `resetDatabase.sh`); a cbBTC trade
-  followed end to end; keyboard, screen reader and 320/375px use. The upgrade from
-  2.1.7, the exchange rates and the API's write rules were hunted on 20 Nov.
 - **Tiny cbBTC quantities in the CSV:** quantities are written raw, and JavaScript
   prints anything under 0.000001 in exponent form (`1e-7`). No real trade is that
   small, but a fixed-decimal writer would rule it out.
@@ -181,5 +177,19 @@ Accepted for now, worth knowing:
 - **Small things seen and left:** a PATCH with a bad body to a trade that does not
   exist answers 400, not 404; and the repayment error quotes the borrowed amount as
   typed (10,000.005), where the card prints 10,000.01.
+- **Seen in the 20 Nov bug hunt and left, each past that area's cap or minor:**
+  - With `config.env` unreadable and one Telegram value exported in the shell, the
+    alert window says `TELEGRAM_CHAT_ID is missing` instead of that the file could
+    not be read; and the missing-value messages say `config.env` even when
+    `MYAAVE_CONFIG` names another file (`config.js`, `telegramConfig`).
+  - `resetDatabase.sh` writes its backups readable by others (644), where
+    `backupDatabase.sh` uses `umask 077`. Harmless while `data/` is 700.
+  - A stage form left open while the same trade is edited elsewhere saves over
+    that edit (last write wins); only the alert window now checks its market.
+  - A part sale that keeps less than 0.00005 ETH shows "Still held 0.0000 ETH".
+- **Bug hunt coverage:** on 20 Nov every area was hunted: Stats, CSV and PDF;
+  alerts; trades; Telegram; the database; the interface and pagination; the price
+  banner; the landing page; the upgrade from 2.1.7; exchange rates; the API; the
+  config and shell scripts; cbBTC end to end; keyboard, screen reader and phones.
 - **Version:** 2.1.8 went out today, and the rule is one release a day. Work from
   tomorrow goes under `## [Unreleased]` and gets the next number.

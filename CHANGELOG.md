@@ -96,6 +96,23 @@ Exchange rates:
 - **A rate more than six days older than its day is not used:** a lagging mirror's two-week-old rate was stored as final, for every day in between.
 - **A rate service answering with a web page is reported in words,** not with the start of the page.
 
+cbBTC:
+
+- **An alert window opened before its trade switched asset cannot save in the other market:** a $3,500 goal typed as ETH's was stored as BTC's, and fired at once.
+- **Editing a purchase re-checks the sale's price only when the asset changes,** not on every save of the Bought card.
+
+Scripts:
+
+- **Relaunching waits up to 14 s for the old copy to stop**, not 3 s: killed mid-send, an alert stayed FIRED though Telegram never had it.
+- **The launcher's "native binding did not load" check works:** it imported the package without loading the addon, so a Node upgrade crashed the server after "Dependencies present".
+- **A relaunch replaces an earlier copy on the port it moved to**, and one started through a symlinked path such as /tmp; each had started one more copy beside it.
+- **`resetDatabase.sh` asks `fuser` when `lsof` is missing, and refuses with neither:** it deleted the ledger under a running server.
+
+Phones:
+
+- **The Sort by picker shows its whole choice at 320px;** "Trade date" read "Trade".
+- **A closed trade's dates wrap inside their card** instead of pushing the page sideways at 320px.
+
 ## [2.1.7] - 2026-11-13
 
 ### Fixed

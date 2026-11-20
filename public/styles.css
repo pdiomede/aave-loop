@@ -1417,6 +1417,7 @@ th[aria-sort="ascending"] .th-sort__caret {
    hidden. Nothing to see at desktop widths. */
 .sortbar {
   display: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 12px 16px 4px;
@@ -1427,9 +1428,12 @@ th[aria-sort="ascending"] .th-sort__caret {
   font-size: 13px;
 }
 
+/* Wide enough for the longest choice, "Annualized", beside the arrow. At
+   320px the label and the direction button left the select 86px, and it read
+   "Trade" for Trade date; now the button wraps to a line of its own there. */
 .sortbar .control {
   flex: 1;
-  min-width: 0;
+  min-width: 136px;
 }
 
 .chip {
@@ -2642,6 +2646,20 @@ th[aria-sort="ascending"] .th-sort__caret {
     padding: 5px 16px;
     box-shadow: none;
     white-space: normal;
+  }
+
+  /* `.table tbody td` sets nowrap and outranks `.row td`, so the line above
+     never applied: on a 320px phone a closed trade's "5 Jan 2026 -> 11 Feb
+     2026" ran 29px past the card and the whole page scrolled sideways. Only
+     the wrapping is raised here; the rest of `.row td` keeps its weight, so
+     `.row td:first-child` below still wins on alignment. */
+  .table tbody .row td {
+    white-space: normal;
+  }
+
+  /* The label stays on one line; it is the value beside it that gives way. */
+  .table tbody .row td::before {
+    white-space: nowrap;
   }
 
   /* The Trade cell is the only one with a multi line stack, and centring left
