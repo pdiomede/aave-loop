@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Writes lib/logo.js from public/AaveLoop_logo_96.png, for the statement PDF.
+ * Writes lib/logo.js from public/ETHRoundtrip_logo_96.png, for the statement PDF.
  *
  * Run by hand when the logo changes; its output is committed, so nothing is
  * built at install or at start. `scripts/check-statement.mjs` fails if the two
@@ -36,13 +36,13 @@ export function logoFromPng(png) {
 // whose path had one this was never true, and the script exited 0 having
 // written nothing.
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const src = new URL('../public/AaveLoop_logo_96.png', import.meta.url);
+  const src = new URL('../public/ETHRoundtrip_logo_96.png', import.meta.url);
   const { width, height, data } = logoFromPng(readFileSync(src));
   const lines = data.match(/.{1,100}/g).map((l) => `  '${l}'`).join(' +\n');
   writeFileSync(
     new URL('../lib/logo.js', import.meta.url),
     `/**
- * The app's logo, public/AaveLoop_logo_96.png, as the statement PDF embeds it:
+ * The app's logo, public/ETHRoundtrip_logo_96.png, as the statement PDF embeds it:
  * the PNG's IDAT data in base64, which a PDF reads as FlateDecode with the PNG
  * predictors. Written by scripts/make-logo.mjs; do not edit by hand.
  */

@@ -99,8 +99,8 @@ Ideas that came up on 20 Nov and were left for later, not bugs:
   (195px) is taller than the 180px scroll offset; the table's first 15px sit under it
   after a page turn.
 - **Optional rename of internal names:** `MYAAVE_*` settings, `myaave-*` browser
-  storage keys, the `myaave` package name and `AaveLoop_logo*` files still carry the
-  old brand. Renaming them needs the old names kept as a fallback, and the VPS
+  storage keys and the `myaave` package name still carry the old brand (the logo
+  files and the checks' temp folder were renamed on 20 Nov). Renaming them needs the old names kept as a fallback, and the VPS
   service file updated.
 - **Backfill tool for Morpho:** `scripts/set-platform.mjs` only knows `--etherfi`
   (everything else becomes Aave). A `--morpho <id>` flag would let old trades be

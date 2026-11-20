@@ -164,7 +164,7 @@ nothing is bundled and the CSP is untouched - from the same `summaryReport` the 
 view calls, over the year's **closed trades only** (`closedTrades`, by `isRealized`):
 it is a closing statement, so an open position is in no figure on it. It imports
 `calc.js` and `lib/logo.js`, the logo's PNG data written by `scripts/make-logo.mjs`
-(rerun it if `public/AaveLoop_logo_96.png` changes; the checks fail until you do).
+(rerun it if `public/ETHRoundtrip_logo_96.png` changes; the checks fail until you do).
 It is one A4 page by construction (a year has at most 12 months and `CURRENCIES` 5
 coins) and throws rather than draw past the bottom margin, so a layout change that
 overflows fails `npm run check`. It is ASCII throughout - text beyond it as octal

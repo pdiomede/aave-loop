@@ -77,7 +77,7 @@ check('lib/statement.js imports calc.js and the logo, nothing else', () => {
 });
 
 check('lib/logo.js is the logo the app shows, not an older copy', () => {
-  const png = readFileSync(new URL('../public/AaveLoop_logo_96.png', import.meta.url));
+  const png = readFileSync(new URL('../public/ETHRoundtrip_logo_96.png', import.meta.url));
   assert.deepEqual(LOGO, logoFromPng(png), 'run node scripts/make-logo.mjs');
 });
 

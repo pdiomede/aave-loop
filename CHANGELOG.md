@@ -22,7 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The CSV has an `asset` column after `platform`,** and `buy_eth` / `sell_eth` are now `buy_qty` / `sell_qty`.
 - **`/api/eth` is now `/api/prices`**, answering `{ pollMs, prices: { ETH, BTC } }`. `MYAAVE_BTC_PRICE` fixes BTC as `MYAAVE_ETH_PRICE` fixes ETH.
 - **The landing page names Aave, Ether.fi and Morpho and ETH and cbBTC**, with their logos, and says cbBTC is valued at BTC's price; each platform's logo opens its home page in a new tab.
-- **The launcher is `runETHRoundTrip.sh`** (was `run_myAave.sh`), and says ETH Roundtrip throughout.
+- **The launcher is `runETHRoundTrip.sh`** (was `run_myAave.sh`), and says ETH Roundtrip throughout; the logo files are `ETHRoundtrip_logo*.png` (were `AaveLoop_logo*`).
 
 ### Fixed
 

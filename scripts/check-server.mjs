@@ -25,7 +25,7 @@ import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aaveloop-check-'));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ethroundtrip-check-'));
 
 // Written straight to the streams: the sweep below runs in this process, and
 // its own log lines are silenced so a passing run prints one line.
