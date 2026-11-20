@@ -384,7 +384,7 @@ check('the CSV leaves an unknown figure and an unreached stage empty, never 0', 
   // Borrowed only, with a swap fee left behind on the purchase it never made.
   const t = { id: 3, borrow_date: '2026-09-01', borrow_amount: 1000, borrow_currency: 'USDC', borrow_apr: 4, borrow_gas_usd: 0, buy_gas_usd: 5 };
   const { rows, at } = csvRows([t]);
-  for (const k of ['net_gain_usd', 'buy_date', 'buy_swap_gas_usd', 'annualized_pct']) assert.equal(at(rows[0], k), '', k);
+  for (const k of ['net_gain_usd', 'buy_date', 'buy_swap_cost_usd', 'annualized_pct']) assert.equal(at(rows[0], k), '', k);
   assert.equal(at(rows[0], 'borrow_gas_usd'), '0', 'a recorded 0 is a 0');
 });
 
@@ -731,6 +731,14 @@ check('By asset splits the tab by what was bought, and its rows add up', () => {
   assert.equal(r.byAsset[2].open, 1);
   near(r.byAsset.reduce((a, b) => a + b.borrowed, 0), r.totalBorrowed, 'borrowed adds up');
   near(r.byAsset[0].netGain + r.byAsset[1].netGain, r.netGain, 'net gain adds up');
+});
+
+check('the CSV heads the whole cost of a swap as a cost, not as gas', () => {
+  // "Costs & Fees (swap)" is gas plus the DEX fee: 12.50 is the whole swap.
+  const { head, rows, at } = csvRows([{ ...flat(12.5), id: 1 }]);
+  assert.ok(!head.includes('buy_swap_gas_usd') && !head.includes('sell_swap_gas_usd'));
+  assert.equal(at(rows[0], 'buy_swap_cost_usd'), '12,5');
+  assert.equal(at(rows[0], 'sell_swap_cost_usd'), '0');
 });
 
 check('the CSV names the asset after the platform, and its quantity in full', () => {

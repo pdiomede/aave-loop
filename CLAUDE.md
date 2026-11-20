@@ -189,9 +189,11 @@ copy; this is mostly a dev-machine state, but the code holds for both. This is w
 - the Telegram bot takes a **lease** in `bot_state` (only one caller of `getUpdates`
   may exist), and an instance without it never touches the network;
 - a partial unique index allows one *armed* alert per trade;
-- an armed alert whose trade no longer holds ETH is closed by `closeUnwatched()`, a
-  conditional `UPDATE ... WHERE status = 'armed'`, run after a trade edit, at startup
-  and at the top of every sweep — the sweep is what catches the other copy's edits;
+- an armed alert whose trade no longer holds ETH, or whose goal is in another market
+  than its trade's now (`ALERT_OFF_MARKET`, built from `ASSET_META`), is closed by
+  `closeUnwatched()`, a conditional `UPDATE ... WHERE status = 'armed'`, run after a
+  trade edit, at startup and at the top of every sweep — the sweep is what catches the
+  other copy's edits, and an alert put back by a failed send after its asset changed;
 - a `PATCH` writes only to the row it read (`WHERE id = ? AND updated_at IS ?`) and
   works the edit out again from a fresh read when the other copy got there first,
   because the rate lookup in between can take seconds; three misses answer 503;
@@ -214,30 +216,42 @@ copy; this is mostly a dev-machine state, but the code holds for both. This is w
 
 ### How an alert's send can fail
 
-`telegram.js` answers every send with `{ ok, retryable, setup }`, and `alerts.js`
+`telegram.js` answers every send with `{ ok, retryable, setup, notSent }`, and `alerts.js`
 treats the three failures differently. **Retryable** (5xx, 429, a timeout) puts the
 alert back to armed and counts a try; three end in FAILED. **Setup** (401, 403, 404,
 or a 400 naming the chat or the bot's rights) puts it back without counting, because
 fixing `config.env` or the group cures it. **notSent** (connection refused, no DNS, no
 route: the request never reached Telegram) also goes back uncounted; a timeout still
 counts, because that message may have arrived. Anything else is a refusal of the
-message itself and is final. An armed alert with `fired_at` set has already reached
-its goal and is sent on the next sweep whatever ETH costs; a goal saved afresh has
-none, and saving a new goal over it closes it as `failed` with its reason rather
-than deleting it. The Alerts table's Fired at reads `firedAt`, not the status, so
+message itself and is final. A 200 whose body is not Telegram's JSON (a portal's
+page, a cut-off reply) is an unknown outcome and **retryable**, like a timeout. An
+armed alert with `fired_at` set has already reached its goal and is sent on the next
+sweep whatever ETH costs - at a fresh price when there is one, otherwise at its
+`fired_price`, worded "at" and "Worth then" rather than "now" (`alertMessage`'s
+`when`); a goal saved afresh has none, and saving a new goal over it closes it as
+`failed` with its reason rather than deleting it. The Alerts table's Fired at reads `firedAt`, not the status, so
 such a row shows when and where its goal was reached.
 
 `marketPrices` falls back to the cache whatever its age when the service fails, so
 `freshPrice(quote)` (`alerts.js`) is the gate: a fresh goal fires only on a price
-under two refreshes old, and a goal saved meanwhile takes its direction from the
-purchase price. Goals are stored to the cent (`asPrinted`), the figure every view
-prints. Shutdown waits for a sweep in flight (`alertSweepDone`, up to 12 s) before
-closing the database, or a claimed alert stays `fired` though its send failed.
+under two refreshes old - an age that is not a finite number (`ageOf`'s Infinity for
+a fetch time ahead of the clock) is not fresh - and a goal saved meanwhile takes its
+direction from the purchase price. `/api/prices` and `/api/alerts` send `stale` as
+that same test, so the alert window shows such a price with its age, never as "now".
+Goals are stored to the cent (`asPrinted`), the figure every view prints. Shutdown
+waits for a sweep in flight (`alertSweepDone`, up to 12 s) before closing the
+database, or a claimed alert stays `fired` though its send failed; `stopAlertPoller`
+sets `stopping`, so a sweep claims nothing new once shutdown begins, and `fire` looks
+a euro trade's rate up *before* its claim, so only the 10 s send is left to wait for.
 `scripts/check-server.mjs` drives each path against a mock Telegram.
 
 `/watch` stores the chat that sent it (`bot_state.watch_chat`) and the timer reports
 there, falling back to the group if that chat is no longer in the config; a report
-is skipped, not stopped, while `holdingCount()` is 0.
+is skipped, not stopped, while `holdingCount()` is 0. `/unwatch` is exempt from both
+the age limit and the ten-per-batch cap. A batch's offset is written before it is
+answered, so `stopBotPoller` puts `next_offset` back to the first command not yet
+answered (`rewindUnanswered`, before the lease is released) and Telegram hands the
+rest out again after a restart; the one in flight may be answered twice.
 
 ### The frontend
 
@@ -257,7 +271,9 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   with `fieldWrap` and its control with `fieldControl`, set `aria-invalid`, and write
   into the hint line `field()` ties to the control by `aria-describedby`.
   `refreshHints` swaps any field marked invalid for its saved value, so no hint is
-  worked out from a rejected figure.
+  worked out from a rejected figure, and `showFormError` reruns it (`rehint`) once a
+  field is flagged. The flag survives a redraw (`captureDraft` keeps `flagged`) and
+  an asset pick (`applyAsset` judges the field again in the new asset's words).
 - **`captureDraft`/`restoreDraft`** keep a half-typed stage form alive across
   re-renders. A change that re-renders the table must not discard it.
 - **Submit locks are per form**, keyed by what the form saves (`submitKey`), so a
@@ -297,7 +313,8 @@ in `trades.asset`, `NOT NULL DEFAULT 'eth'` because ETH was the only choice befo
 (a fact, unlike the platform). `assetOf(t)` reads it, ETH for a row that names none.
 `buy_eth` / `sell_eth` and `derive`'s `ethHeld` / `retainedEth` / `costOfSoldEth` keep
 their names and hold units of the trade's asset; the CSV heads them `buy_qty` /
-`sell_qty`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC), and
+`sell_qty`, and the swaps' "Costs & Fees" (`buy_gas_usd` / `sell_gas_usd`, gas plus
+the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC), and
 every "as printed" sum of quantities (`/holding`, `/summary`) uses it per asset and
 never adds two assets together.
 
@@ -306,7 +323,10 @@ Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC']`, and cbB
 reads each coin by its id, and caches a row per market in `market_price` (which
 replaced the single-row `eth_price`, left in place for an older copy). A partial
 answer caches what came back without the cooldown, so a missing BTC never holds ETH
-back. Callers pass a `{ ETH, BTC }` map (`openGainsUsd`, `holdingText`) and pick a
+back; a coin left out counts as asked (`missingAt`) for as long as the caller would
+accept a cached price, so it costs one request per window, not one per caller. The
+page's `adoptQuotes` judges "newer" by the server's clock (`fetchedAt + ageMs`), so a
+quote stamped ahead of it cannot freeze the banner. Callers pass a `{ ETH, BTC }` map (`openGainsUsd`, `holdingText`) and pick a
 trade's price with `priceFor(t, prices)`. An alert's goal is a price of its market,
 stored on the alert (`alerts.market`, NULL = ETH); a PATCH that changes the asset
 closes the armed alert in the same transaction, and the sweep skips any goal whose

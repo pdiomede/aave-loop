@@ -457,7 +457,9 @@ export async function runBotTick() {
     // The lease may have gone while we were waiting. Dropping the batch is the
     // safe half of that: they are still Telegram's to hand to whoever holds it.
     if (!commitOffset(next)) return { polled: true, handled: 0, reason: 'lease lost mid-poll' };
+    committedNext = next;
     await handle(updates);
+    committedNext = null;
   }
 
   await tickWatch(selectState().get());
@@ -475,6 +477,9 @@ function allowedChats() {
 }
 
 async function handle(updates) {
+  // Pending from the first update: a shutdown during the wait for the bot's
+  // name below must put the whole batch back, not none of it.
+  pendingFrom = updates[0]?.update_id ?? null;
   const allowed = allowedChats();
   // Only needed to tell our commands from another bot's, so only asked when
   // some message in the batch carries a suffix.
@@ -518,18 +523,29 @@ async function handle(updates) {
     // Past the cap they are dropped, and the offset covering them has already
     // been written, so they are gone rather than deferred. Rare enough to be
     // worth a line in the log rather than a second queue.
-    if (handled >= MAX_PER_BATCH) {
+    //
+    // Except /unwatch, for the reason it is exempt from the age limit above:
+    // dropped as the eleventh command of a batch, it was confirmed to Telegram
+    // and lost, and the reports kept coming.
+    if (handled >= MAX_PER_BATCH && command !== 'unwatch') {
       dropped += 1;
       continue;
     }
 
+    // Shutdown has begun: nothing more is answered here. `stopBotPoller` has
+    // already put the offset back to this command (`rewindUnanswered`), so it
+    // and the rest of the batch are handed out again after the restart.
+    if (stopping) break;
+
     handled += 1;
+    pendingFrom = update.update_id;
     try {
       await reply(await textFor(command, from), from);
     } catch (err) {
       console.error(`Could not answer /${command}:`, redact(err.message));
     }
   }
+  pendingFrom = null;
 
   if (stale) {
     console.log(`Skipped ${stale} bot command${stale === 1 ? '' : 's'} older than ${MAX_AGE_S} seconds.`);
@@ -591,6 +607,7 @@ export function startBotPoller() {
   }
 
   running = true;
+  stopping = false;
   state.stopped = false;
   const alsoDm = telegramConfig().ownerId ? ' and in your private chat' : '';
   console.log(`Bot commands are listening in ${chatName}${alsoDm}.`);
@@ -605,8 +622,49 @@ export function startBotPoller() {
 export function stopBotPoller() {
   if (!running) return;
   running = false;
+  stopping = true;
   controller?.abort();
   clearTimeout(sleepTimer);
   wake?.();
+  // Before the lease goes, which the rewind is conditional on.
+  rewindUnanswered();
   releaseLease();
+}
+
+/**
+ * The batch being answered: the offset written for it, and the first update
+ * in it not yet answered. Telegram only forgets an update once getUpdates is
+ * next called past it, and that call reads `next_offset`; so putting the
+ * offset back is all it takes for a command confirmed here but never answered
+ * to be handed out again.
+ */
+let committedNext = null;
+let pendingFrom = null;
+
+/**
+ * Set once shutdown begins, and only by it, so a batch stops answering then.
+ * Not `running`, which is false too for a tick driven by hand - the checks
+ * run `runBotTick` with no poller started.
+ */
+let stopping = false;
+
+/**
+ * On the way out, put the offset back to the first command of this batch not
+ * yet answered. Shutdown waits twelve seconds for a batch, and a batch answers
+ * one command after another: with Telegram slow, the fourth /price of four was
+ * cut off, its offset already written, and never answered at all. The command
+ * whose reply is in flight is put back too, so it may be answered twice - a
+ * repeat beats a silence. Only if nothing moved the offset since: written by
+ * the holder of the lease, and still the one this batch wrote.
+ */
+function rewindUnanswered() {
+  if (!db.open || committedNext === null || pendingFrom === null) return;
+  try {
+    prepare(`
+      UPDATE bot_state SET next_offset = @from, updated_at = @now
+       WHERE id = 1 AND holder = @me AND next_offset = @committed
+    `).run({ from: pendingFrom, committed: committedNext, me: ME, now: nowISO() });
+  } catch (err) {
+    console.error('Could not put the bot offset back:', err.message);
+  }
 }

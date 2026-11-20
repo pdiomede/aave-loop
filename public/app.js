@@ -291,7 +291,7 @@ const TIPS = {
       'The trade the goal is on. A new goal replaces one not yet reached, and adds a row otherwise; a reached goal still waiting to be sent is kept, as FAILED.',
     goal: "The price to wait for, in USD: ETH's for an ETH trade, BTC's for a cbBTC one.",
     direction:
-      "Set when saved, against the market's price at that moment. A goal above it waits for a rise; below it, for a fall.",
+      "Set when saved, against the market's price at that moment, or the purchase price when no recent price could be had. A goal above it waits for a rise; below it, for a fall.",
     status:
       'ARMED: still watched. FIRED: goal reached. FAILED: not delivered - three failed tries, or replaced by a new goal before it went. ' +
       'CLOSED: the trade stopped holding what it bought (sold, or the purchase undone), or its asset changed, so it is no longer watched. ' +
@@ -369,7 +369,12 @@ function platformMark(p) {
   );
 }
 
-const RATE_MISSING = `<span class="chip chip--warn" data-tip="${esc(TIPS.noRate)}">no rate</span>`;
+// Focusable, with the sentence in the text a screen reader reads, as the
+// Alerts chips are: on hover alone, why a figure is missing was out of reach
+// by keyboard and silent to a screen reader.
+const RATE_MISSING = `<span class="chip chip--warn" tabindex="0" data-tip="${esc(TIPS.noRate)}">no rate<span class="sr-only">: ${esc(
+  TIPS.noRate,
+)}</span></span>`;
 
 /** The asset's logo, small and decorative: its ticker is always written beside it. */
 const assetMark = (t, size = 15) =>
@@ -875,7 +880,15 @@ function adoptQuotes(quotes) {
     if (!isNum(quote.price) && isNum(mine?.price)) continue;
     const at = Date.parse(quote.fetchedAt ?? '');
     const held = Date.parse(mine?.fetchedAt ?? '');
-    if (Number.isFinite(at) && Number.isFinite(held) && at < held) continue;
+    // "Older" as the server's clock has it: the incoming quote's fetch time
+    // plus its age is the server's now. A held quote stamped later than that,
+    // past `ageOf`'s minute of slack, was stamped ahead of the clock - a
+    // database copied from a machine ahead, or a clock stepped back - and
+    // used to win every comparison: the banner and every estimate froze on it
+    // for as long as the tab stayed open.
+    const serverNow = Number.isFinite(at) && Number.isFinite(quote.ageMs) ? at + quote.ageMs : null;
+    const heldAhead = serverNow !== null && Number.isFinite(held) && held > serverNow + 60_000;
+    if (Number.isFinite(at) && Number.isFinite(held) && at < held && !heldAhead) continue;
     state.prices[market] = quote;
     changed = true;
   }
@@ -1036,11 +1049,35 @@ function renderTicker() {
       // `ageMs` the server put in the reply: that figure was true when it was
       // written and goes stale sitting in a tab, which is exactly the case the
       // title is for.
-      const title = `${market} price, fetched ${ageWords(Date.now() - Date.parse(q.fetchedAt ?? ''))} ago.`;
-      return `<div class="ticker__row" data-market="${market}" title="${esc(title)}"><span class="ticker__price">${market}: ${usd(q.price)}</span> ${chips}</div>`;
+      return `<div class="ticker__row" data-market="${market}" title="${esc(tickerTitle(market))}"><span class="ticker__price">${market}: ${usd(q.price)}</span> ${chips}</div>`;
     });
 
   mount.innerHTML = rows.join('');
+}
+
+/** A ticker row's title: what the price is and how old, as of now. */
+const tickerTitle = (market) => `${market} price, fetched ${fetchedAgo(state.prices[market]?.fetchedAt)}.`;
+
+/**
+ * Rewrite the ticker's titles just before one is shown. Written once per
+ * poll, they went on saying "less than a minute ago" for the whole five
+ * minutes - the staleness the age is measured from the clock to avoid.
+ */
+function refreshTickerTitles() {
+  for (const row of document.querySelectorAll('#price-ticker .ticker__row[data-market]')) {
+    row.title = tickerTitle(row.dataset.market);
+  }
+}
+
+/**
+ * "12 minutes ago", or "at an unknown time" for a fetch time ahead of the
+ * clock by more than `ageOf`'s minute of slack: a negative age used to read
+ * "less than a minute ago" on a figure hours off.
+ */
+function fetchedAgo(fetchedAt) {
+  const ms = Date.now() - Date.parse(fetchedAt ?? '');
+  if (!Number.isFinite(ms) || ms < -60_000) return 'at an unknown time';
+  return `${ageWords(ms)} ago`;
 }
 
 /** "12 minutes", and "less than a minute" for one that has only just landed. */
@@ -1065,10 +1102,19 @@ function ageWords(ms) {
 function startPricePoller() {
   stopPricePoller();
   if (document.visibilityState === 'hidden') return;
-  priceTimer = setInterval(loadPrices, pricePollMs);
+  // The first ask when the figure falls due, then every interval. Started
+  // from zero on each return to the tab, a figure four minutes old was not
+  // asked for again for another five: ten minutes between polls on screen.
+  const wait = Math.max(0, pricePollMs - (Date.now() - quotesAt));
+  priceTimer = setTimeout(() => {
+    loadPrices();
+    priceTimer = setInterval(loadPrices, pricePollMs);
+  }, wait);
 }
 
 function stopPricePoller() {
+  // A timeout and an interval share one pool of ids, so either clears it.
+  clearTimeout(priceTimer);
   clearInterval(priceTimer);
   priceTimer = null;
 }
@@ -1425,7 +1471,7 @@ const assetBadge = (t) =>
 function buyFields(t) {
   const { ticker, placeholder } = ASSET_META[assetOf(t)];
   return `<div class="grid">
-    ${field({ name: 'buy_date', label: 'Purchase date', tip: `Day you swapped the loan into ${ticker}.`, type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
+    ${field({ name: 'buy_date', label: 'Purchase date', tip: `Day you swapped the loan into ${ticker}.`, type: 'date', value: t.buy_date ?? t.borrow_date, autofocus: true })}
     ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Stablecoins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
     ${field({ name: 'buy_eth', label: `${ticker} purchased`, tip: `${ticker} received from the swap.`, type: 'number', value: t.buy_eth ?? '', suffix: ticker, placeholder })}
     ${gasField(t, 'buy_gas_usd', SWAP_FEE, `What the swap into ${ticker} cost, in USD: gas plus any swap or aggregator fee.`, true)}
@@ -1454,7 +1500,16 @@ function sellFields(t) {
 function applyAsset(form, trade) {
   const grid = form.querySelector('.grid');
   if (!grid || form.dataset.stageForm !== 'buy') return;
+  const flagged = flaggedField(form);
   grid.outerHTML = buyFields({ ...trade, ...payloadOf(form) });
+  // A flagged field comes back flagged, judged again for the asset now picked:
+  // rebuilt bare, 0.001 refused "per ETH" lost its error, and its hint priced
+  // the purchase from the rejected figure.
+  if (flagged && flagged.name !== 'asset') {
+    const value = form.elements[flagged.name]?.value ?? '';
+    const error = validateField(flagged.name, value, formContext(form, trade ?? {}, flagged.name));
+    if (error) showFormError(form, error, flagged.name, { focus: false });
+  }
 }
 
 function suggestedRepayOn(t, dateISO) {
@@ -1672,7 +1727,7 @@ function alertRow(row, t, d) {
   if (!d.stages.bought || d.stages.sold) return '';
   const a = alertFor(t.id);
   // The goal is a price of the market, which for cbBTC is BTC, so it says so.
-  return a ? row('Alert', `${marketOf(t)} ${usd(a.goalPrice)} goal`) : '';
+  return a ? row('Alert', `${a.market ?? 'ETH'} ${usd(a.goalPrice)} goal`) : '';
 }
 
 const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1691,7 +1746,9 @@ const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" st
 function alertBell(t, d) {
   if (!d.stages.bought || d.stages.sold) return '';
   const a = alertFor(t.id);
-  const label = a ? `Price alert at ${marketOf(t)} ${usd(a.goalPrice)}` : 'Set a price alert';
+  // The goal's own market, which the alert carries: the trade's could have
+  // changed since it was set.
+  const label = a ? `Price alert at ${a.market ?? 'ETH'} ${usd(a.goalPrice)}` : 'Set a price alert';
 
   return `<button class="btn btn--ghost btn--sm alert-bell ${a ? 'is-armed' : ''}" type="button"
     data-alert-trade="${t.id}" aria-label="${esc(label)}" title="${esc(label)}">${BELL_SVG}</button>`;
@@ -1992,7 +2049,9 @@ function closeAlertsOnSale(id, { assetChanged = false } = {}) {
 function estChip(t, d) {
   const standIn = !d.fxComplete && estimateRate(t, d, state.fxNow) !== null;
   return standIn
-    ? `<span class="chip chip--warn" data-tip="${esc(TIPS.estToday)}">est</span>`
+    ? `<span class="chip chip--warn" tabindex="0" data-tip="${esc(TIPS.estToday)}">est<span class="sr-only">: ${esc(
+        TIPS.estToday,
+      )}</span></span>`
     : '<span class="chip">est</span>';
 }
 
@@ -2150,6 +2209,10 @@ function captureDraft() {
     stage: form.dataset.stageForm,
     values: payloadOf(form),
     auto: !!form.querySelector('input[name="repay_amount"][data-auto="1"]'),
+    // The flagged field too. Only the values came back across a redraw, so a
+    // refused repayment of 1 returned unflagged, and its hints were worked
+    // out from it: "Net gain +10,494.00 USDC".
+    flagged: flaggedField(form),
   };
 }
 
@@ -2180,6 +2243,7 @@ function restoreDraft(draft) {
   for (const box of [...form.querySelectorAll('[data-coin-select]'), ...outside]) syncCoinSelect(box);
   const repay = form.querySelector('input[name="repay_amount"]');
   if (repay && !draft.auto) delete repay.dataset.auto;
+  if (draft.flagged?.message) showFormError(form, draft.flagged.message, draft.flagged.name, { focus: false });
   return true;
 }
 
@@ -3256,6 +3320,37 @@ function showFormError(form, message, fieldName, { focus = true } = {}) {
   } else {
     form.querySelector('[data-form-error]').textContent = message;
   }
+  // The hints beside it are worked out again now the value is flagged, which
+  // `refreshHints` reads to leave it out. They were drawn from it on the last
+  // keystroke, before blur or Save judged it, and stayed: a repayment of 1,
+  // refused, sat over "interest -9,999.00 USDC".
+  rehint(form);
+}
+
+/** `refreshHints` for whichever form this is: a stage's, or New trade's. */
+function rehint(form) {
+  const stageForm = form.closest('[data-stage-form]');
+  if (stageForm) {
+    const trade = state.trades.find((t) => t.id === Number(stageForm.dataset.trade));
+    refreshHints(stageForm, trade, stageForm.dataset.stageForm);
+  } else if (form.id === 'borrow-form') {
+    refreshHints(form, {}, 'borrow');
+  }
+}
+
+/**
+ * The field a form has flagged, and what it says, or null: one at a time, as
+ * `showFormError` keeps it. Read before a redraw so the flag can be put back.
+ */
+function flaggedField(form) {
+  const outside = form.id ? [...document.querySelectorAll(`[data-field-of="${form.id}"]`)] : [];
+  const wrap = [...form.querySelectorAll('.field.is-invalid[data-field]'), ...outside].find((w) =>
+    w.classList.contains('is-invalid'),
+  );
+  if (!wrap) return null;
+  const message =
+    wrap.querySelector('[data-hint]')?.textContent || form.querySelector('[data-form-error]')?.textContent || '';
+  return { name: wrap.dataset.field, message };
 }
 
 /**
@@ -3475,7 +3570,14 @@ function alertDialogBody(t, d, a) {
   // purchase price beside it is per unit of what was bought.
   const market = marketOf(t);
   const ticker = tickerOf(t);
-  const now = state.alertPrices?.[market]?.price;
+  // "Now" only for a price the save will use (`stale` is the server's
+  // `freshPrice` test). An older one is shown with its age, and the direction
+  // is said to come from the purchase price, as the save then takes it: shown
+  // as "now" while the save ignored it, a goal below it was saved to wait for
+  // a rise from the purchase price and fired at once.
+  const q = state.alertPrices?.[market];
+  const now = isNum(q?.price) && !q.stale ? q.price : null;
+  const old = isNum(q?.price) && q.stale ? q : null;
 
   // The figures the goal is being judged against: the Bought card's, in
   // its order. Named for the purchase, because out of that card "Trade date"
@@ -3486,7 +3588,14 @@ function alertDialogBody(t, d, a) {
     ['Bought on', fmtDate(t.buy_date)],
     ['Spent', money(t.buy_amount, c)],
     [`${ticker} purchase price`, isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING],
-    [`${market} now`, isNum(now) ? usd(now) : '<span class="muted">not known yet</span>'],
+    [
+      `${market} now`,
+      isNum(now)
+        ? usd(now)
+        : old
+          ? `${usd(old.price)}<small class="fx-note">fetched ${esc(fetchedAgo(old.fetchedAt))}</small>`
+          : '<span class="muted">not known yet</span>',
+    ],
   ]
     .map(([k, v]) => `<div class="stage__row"><dt>${k}</dt><dd>${v}</dd></div>`)
     .join('');
@@ -3498,7 +3607,10 @@ function alertDialogBody(t, d, a) {
     !isNum(now) && !isNum(d.buyPriceUsd)
       ? `<p class="modal__note">The ${market} price could not be fetched, so this will alert when ${market}
          <strong>rises</strong> to the goal.</p>`
-      : '';
+      : !isNum(now) && old
+        ? `<p class="modal__note">That ${market} price is not recent, so whether this waits for a rise or a fall
+           is set against the purchase price, ${usd(d.buyPriceUsd)}.</p>`
+        : '';
 
   const note = cfg?.configured
     ? `<p class="modal__note">We will send this to
@@ -3706,7 +3818,13 @@ async function removeAlert(id) {
       // No status at all means `fetch` itself threw and the request never got
       // a reply, so the raw "Failed to fetch" would be both unhelpful and
       // ambiguous about whether the alert is still there. It is.
-      toast(err.status ? err.message : 'Could not reach the server, so the alert is still set.');
+      const message = err.status ? err.message : 'Could not reach the server, so the alert is still set.';
+      // In the window when the delete came from it: a toast is drawn under a
+      // modal dialog, hidden behind it on a phone and silent to a screen
+      // reader, so a failed Remove alert said nothing at all.
+      const form = alertDialog()?.open ? alertDialog().querySelector('[data-alert-form]') : null;
+      if (form) showFormError(form, message, null);
+      else toast(message);
       return;
     }
   }
@@ -3914,14 +4032,30 @@ function setView(view, { updateHash = true } = {}) {
   // worse than one request against a local file.
   // The trades too when the log names one this tab has not loaded - added in
   // another tab - or its row drew a bare "Trade #23" with no coin or date.
-  if (state.view === 'alerts') {
-    loadAlertLog()
-      .then(async () => {
-        const known = new Set(state.trades.map((t) => t.id));
-        if (state.alertLog?.some((a) => !known.has(a.tradeId))) await loadTrades().catch(() => {});
-      })
-      .then(render);
-  }
+  if (state.view === 'alerts') refreshAlertsView();
+}
+
+/**
+ * Read the Alerts list again and redraw it: on every visit, and on coming back
+ * to a tab left on it. One path for both, which the return lacked twice over:
+ * a goal set from another tab on a trade this one had not loaded drew as a
+ * bare "Trade #13", no coin or date, and the redraw replaced the button that
+ * had focus, so it fell to the page. `keepFocus` puts it back on the same
+ * Delete, or the same pager button, when it was in the table.
+ */
+async function refreshAlertsView({ keepFocus = false } = {}) {
+  await loadAlertLog();
+  const known = new Set(state.trades.map((t) => t.id));
+  if (state.alertLog?.some((a) => !known.has(a.tradeId))) await loadTrades().catch(() => {});
+  const mount = document.getElementById('alerts-mount');
+  const was = keepFocus && mount?.contains(document.activeElement) ? document.activeElement : null;
+  const again = was?.dataset.alertDelete
+    ? `[data-alert-delete="${CSS.escape(was.dataset.alertDelete)}"]`
+    : was?.getAttribute('aria-label')
+      ? `[aria-label="${CSS.escape(was.getAttribute('aria-label'))}"]`
+      : null;
+  render();
+  if (again) mount.querySelector(again)?.focus();
 }
 
 /* ------------------------------------------------------------------ theme */
@@ -3954,6 +4088,10 @@ function applyTheme(theme, { persist = true } = {}) {
 function wire() {
   for (const link of document.querySelectorAll('.nav__link')) {
     link.addEventListener('click', (e) => {
+      // A Cmd, Ctrl, Shift or middle click asks the browser for a new tab or
+      // window, and the link is a real #hash for it. Taken here as well, it
+      // opened nothing and switched this tab's view instead.
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       e.preventDefault();
       setView(link.dataset.view);
     });
@@ -3968,14 +4106,17 @@ function wire() {
   // anything new, because the server serves the same cached figure for five
   // minutes. On the deployed app each of those goes through nginx and basic
   // auth to be told what the page already knew.
+  // The ticker's titles say the price's age as of the moment they are read.
+  document.getElementById('price-ticker')?.addEventListener('mouseover', refreshTickerTitles);
+
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') return stopPricePoller();
-    if (quotesDue()) loadPrices();
+    // Asks at once when the figure is due, and otherwise when it falls due.
     startPricePoller();
     // The Alerts table is read when the view is opened, and a tab left on it
     // never read it again: an alert that fired meanwhile still said ARMED,
     // and its bell stayed lit. Coming back to it is a visit too.
-    if (state.view === 'alerts') loadAlertLog().then(render);
+    if (state.view === 'alerts') refreshAlertsView({ keepFocus: true });
   });
 
   document.getElementById('theme-toggle').addEventListener('click', () => {
@@ -4382,10 +4523,12 @@ function wire() {
       if (!input.matches('input[name]')) return;
       const form = input.closest('form');
       if (!form || input.value.trim() === '') return;
-      const stageForm = input.closest('[data-stage-form]');
-      const trade = stageForm
-        ? state.trades.find((t) => t.id === Number(stageForm.dataset.trade)) || {}
-        : {};
+      // The trade the form belongs to: a stage's, or the alert window's, whose
+      // goal is named for the trade's market. Judged against nothing, a cbBTC
+      // trade's goal was "ETH goal price" on blur and "BTC goal price" on Save.
+      const owner = input.closest('[data-stage-form]') ?? input.closest('[data-alert-form]');
+      const ownerId = Number(owner?.dataset.trade ?? owner?.dataset.alertForm);
+      const trade = owner ? state.trades.find((t) => t.id === ownerId) || {} : {};
       // Against the form as typed, as Save judges it. Against the saved trade
       // alone, ETH purchased was checked against the old amount spent, and a
       // warning the save would not give appeared mid-edit.

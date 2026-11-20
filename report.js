@@ -56,6 +56,18 @@ function ageWords(ms) {
 }
 
 /**
+ * Whether a price's age is worth saying: older than the alert window calls
+ * stale, or not known at all. `ageOf` in prices.js answers Infinity for a
+ * fetch time ahead of the clock - the clock stepped back, or a database copied
+ * from a machine ahead - which is "unknown", not "fresh", and was printed as
+ * fresh, with no line under it. Undefined is "not given" and says nothing.
+ */
+const worthSaying = (age) => age === Infinity || (Number.isFinite(age) && age > alertPollMs);
+
+/** "3 hours ago", or "at an unknown time" for an age nobody can tell. */
+const fetchedWhen = (age) => (age === Infinity ? 'at an unknown time' : `${ageWords(age)} ago`);
+
+/**
  * Every market's price, ETH then BTC, a block each. `quotes` is `{ ETH, BTC }`
  * as `marketPrices` answers it. A market with no price is named once at the
  * end with the reason, rather than leaving the other's figure unsaid.
@@ -86,8 +98,8 @@ export function priceText(quotes) {
 
     // The same threshold the alert window uses to call a price stale. Below it
     // nothing is said, because the age of a fresh figure is not news.
-    if (Number.isFinite(quote.ageMs) && quote.ageMs > alertPollMs) {
-      lines.push(`<i>Last fetched ${escHtml(ageWords(quote.ageMs))} ago.</i>`);
+    if (worthSaying(quote.ageMs)) {
+      lines.push(`<i>Last fetched ${escHtml(fetchedWhen(quote.ageMs))}.</i>`);
     }
 
     blocks.push(lines.join('\n'));
@@ -297,19 +309,20 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   // the market when there are two.
   for (const m of markets) {
     const age = ages?.[m];
-    if (!Number.isFinite(prices?.[m]) || !Number.isFinite(age) || age <= alertPollMs) continue;
+    if (!Number.isFinite(prices?.[m]) || !worthSaying(age)) continue;
     const which = markets.length > 1 ? `${m} price` : 'price';
-    head.push(`<i>At the ${which} last fetched ${escHtml(ageWords(age))} ago.</i>`);
+    head.push(`<i>At the ${which} last fetched ${escHtml(fetchedWhen(age))}.</i>`);
   }
 
   const unpricedCount = [...noPrice.values()].reduce((a, b) => a + b, 0);
+  // Each absence named for what it is, in both branches below.
+  const left = [
+    ...(noRate ? [`${noRate} without an exchange rate`] : []),
+    ...[...noPrice].map(([m, n]) => `${n} without a ${m} price`),
+  ];
   if (gainKnown > 0) {
     // Never a total over a subset without saying so. A gain missing a term is
-    // not a smaller gain, it is a wrong one. Each absence named for what it is.
-    const left = [
-      ...(noRate ? [`${noRate} without an exchange rate`] : []),
-      ...[...noPrice].map(([m, n]) => `${n} without a ${m} price`),
-    ];
+    // not a smaller gain, it is a wrong one.
     const n = noRate + unpricedCount;
     const caveat = left.length ? ` (${left.join(', ')} ${n === 1 ? 'is' : 'are'} not counted)` : '';
     // The estimate takes the fees already paid off too, and a figure has to
@@ -327,11 +340,15 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   } else if (noRate || unpricedCount) {
     // Two different absences. With no ETH price every ETH row is unpriced, a
     // dollar coin included, and blaming the exchange rate sat above a table
-    // printing that trade's purchase price in dollars.
+    // printing that trade's purchase price in dollars. With both - a euro ETH
+    // row waiting on its rate beside a cbBTC row with no BTC price - each is
+    // named: the price alone was blamed for the rate's absence too.
     head.push(
-      unpricedCount
-        ? `No ${[...noPrice.keys()].join(' or ')} price right now, so the gain is not known.`
-        : 'No exchange rate yet, so the gain is not known in dollars.',
+      noRate && unpricedCount
+        ? `The gain is not known: ${left.join(', ')}.`
+        : unpricedCount
+          ? `No ${[...noPrice.keys()].join(' or ')} price right now, so the gain is not known.`
+          : 'No exchange rate yet, so the gain is not known in dollars.',
     );
   }
 
@@ -425,7 +442,15 @@ export function summaryText(s, held = []) {
   const w = Math.max(...rows.map(([label]) => label.length)) + 2;
   const body = rows.map(([label, value]) => `${padRight(`${label}:`, w)}${value}`).join('\n');
 
-  return `<b>Summary</b>\n<pre>${escHtml(body)}</pre>`;
+  // A held line valued at a price the service could not refresh says so, as
+  // /holding and /price do: it read "ETH held: 4.0000 ETH ($12,000.00)" at a
+  // price three hours old, with nothing to tell it from a fresh one.
+  const markets = [...new Set(held.filter((h) => Number.isFinite(h.price)).map((h) => h.market))];
+  const notes = held
+    .filter((h, i) => Number.isFinite(h.price) && worthSaying(h.ageMs) && held.findIndex((o) => o.market === h.market) === i)
+    .map((h) => `<i>At the ${markets.length > 1 ? `${h.market} price` : 'price'} last fetched ${escHtml(fetchedWhen(h.ageMs))}.</i>`);
+
+  return `<b>Summary</b>\n<pre>${escHtml(body)}</pre>${notes.length ? `\n${notes.join('\n')}` : ''}`;
 }
 
 /* -------------------------------------------------------------------- help */
@@ -547,6 +572,6 @@ export async function summaryMessage() {
   const quotes = markets.length ? await marketPrices({ markets }) : {};
   return summaryText(
     summary,
-    held.map((h) => ({ ...h, price: quotes[h.market]?.price ?? null })),
+    held.map((h) => ({ ...h, price: quotes[h.market]?.price ?? null, ageMs: quotes[h.market]?.ageMs })),
   );
 }

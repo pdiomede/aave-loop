@@ -60,6 +60,13 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
 
     const body = await res.json().catch(() => null);
     if (res.ok && body?.ok) return { ok: true, retryable: false, error: null };
+    // A 200 that is not Telegram's answer - a captive portal's or a proxy's
+    // HTML page, or Telegram's own reply cut off before its end - says nothing
+    // about whether the message arrived. Read as a refusal it used a goal up
+    // for good, never retried; it is an unknown outcome, counted like a timeout.
+    if (res.ok && typeof body?.ok !== 'boolean') {
+      return { ok: false, retryable: true, setup: false, error: 'Telegram sent back an answer that could not be read.' };
+    }
 
     const described = redact(body?.description || `Telegram answered ${res.status}.`);
     // 5xx is Telegram having a bad minute, and 429 is it asking us to slow

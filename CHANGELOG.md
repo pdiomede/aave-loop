@@ -22,6 +22,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The CSV has an `asset` column after `platform`,** and `buy_eth` / `sell_eth` are now `buy_qty` / `sell_qty`.
 - **`/api/eth` is now `/api/prices`**, answering `{ pollMs, prices: { ETH, BTC } }`. `MYAAVE_BTC_PRICE` fixes BTC as `MYAAVE_ETH_PRICE` fixes ETH.
 
+### Fixed
+
+Stats exports:
+
+- **The CSV's swap columns are `buy_swap_cost_usd` / `sell_swap_cost_usd`:** headed `*_swap_gas_usd`, they held gas plus the DEX fee.
+- **A Statement tile never ends a line on its "·"**, which had wrapped onto a line of its own above the figure.
+
+Alerts:
+
+- **The alert window no longer calls an old price "now":** past the age a save accepts, it gives the price's age and says the direction comes from the purchase price, as the save takes it.
+- **A price of unknown age (stamped ahead of the clock) no longer fires a goal**, nor reads as fresh in /price or /holding.
+- **An alert caught sending while its trade changed asset is closed**, not left armed in the other market for good.
+- **Shutdown no longer claims alerts it cannot finish;** a euro alert's rate is looked up before the claim, so a FIRED alert is one that went.
+- **A Telegram 200 that is not its answer** (a portal's page, a cut-off reply) is retried, not taken as a refusal.
+- **An owed alert resent without a fresh price** is written at the price its goal was reached at, not "now" at an old one.
+
+Telegram:
+
+- **/unwatch past ten commands in one batch** still stops the reports.
+- **A restart while Telegram is slow no longer loses commands:** the unanswered ones are handed out again.
+- **/summary says when its held values use an old price**, as /holding does.
+- **/holding names both absences** when one row lacks a rate and another a BTC price, rather than blaming the price for both.
+
+Trades:
+
+- **A flagged field's neighbours drop the hints worked out from it**, on blur, on Save and on a failed save.
+- **A redraw keeps a field's error,** rather than bringing back its rejected value unflagged.
+- **Switching a purchase to cbBTC keeps the error, reworded**, and a cleared purchase date stays cleared.
+- **A cbBTC trade's goal error says "BTC goal price"** on blur as on Save.
+
+Price banner:
+
+- **A cached price stamped ahead of the clock no longer freezes the banner** and every estimate for the life of the tab.
+- **A coin missing from CoinGecko's answer is asked for once per window,** not by every caller.
+- **Coming back to the tab asks for the price when it is due**, not a full interval later.
+- **The banner's tooltip gives the price's age when you hover it**, not the age at the last poll.
+
+Across pages:
+
+- **A failed Remove alert says so in the alert window,** where a toast underneath went unseen and unheard.
+- **Coming back to a tab on Alerts draws new rows in full and keeps focus** on the button it was on.
+- **The pager's current page and the ticker's labels and figures read at AA contrast** in both themes.
+- **"no rate" tooltips stay on a phone screen** in a trade's date cell and under By month closed.
+- **Cmd, Ctrl and Shift clicks on the nav** open a new tab again.
+- **The "no rate" and "est" chips explain themselves to the keyboard and screen readers.**
+- **The active view's underline sits on the header's edge**, not below it over the page.
+
 ## [2.1.7] - 2026-11-13
 
 ### Fixed

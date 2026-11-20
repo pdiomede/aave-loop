@@ -97,6 +97,18 @@ const MAX_COOLDOWN_MS = 3_600_000;
 // monotonic clock. Timed by `Date.now()`, a clock stepped back six hours kept
 // lookups asleep for six hours more, against a ceiling of one.
 const state = { cooldownUntil: 0, sleepUntil: 0, lastError: null, lastTriedAt: null };
+
+/**
+ * When a market was last asked for and left out of, or wrong in, an otherwise
+ * good answer (monotonic). A partial answer puts nothing to sleep, so ETH is
+ * not held back - but with nothing remembered, every caller wanting BTC went
+ * straight back to the service while it was missing: five page polls in a
+ * second, five requests against a rate limit shared with the whole address.
+ * Asked for within the age a caller accepts counts as asked, the way a quote
+ * fetched within it does, so each caller asks at its own pace and no faster;
+ * the cached price is served meanwhile.
+ */
+const missingAt = {};
 const monoNow = () => performance.now();
 
 export function priceStatus() {
@@ -288,7 +300,12 @@ function validate(price, market = '') {
  */
 export async function marketPrices({ maxAgeMs = FRESH_MS, markets = MARKETS } = {}) {
   const hits = cachedMarketPrices();
-  const due = markets.filter((m) => FIXED[m] === null && !(hits[m] && hits[m].ageMs <= maxAgeMs));
+  const due = markets.filter(
+    (m) =>
+      FIXED[m] === null &&
+      !(hits[m] && hits[m].ageMs <= maxAgeMs) &&
+      !(missingAt[m] !== undefined && monoNow() - missingAt[m] <= maxAgeMs),
+  );
   if (due.length === 0 || networkIsOut()) return hits;
 
   // One request at a time, however many callers want an answer.
@@ -371,8 +388,10 @@ async function fetchPrices() {
       const problem = coin ? validate(price, market) : `The ${market} price did not come back.`;
       if (problem) {
         problems.push(problem);
+        missingAt[market] = monoNow();
         continue;
       }
+      delete missingAt[market];
       const row = {
         market,
         price,

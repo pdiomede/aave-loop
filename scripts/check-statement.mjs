@@ -226,5 +226,15 @@ check('a full year - twelve months, every coin, a warning - still fits one page'
   for (const c of coins) assert.ok(shows(pdf, c), c);
 });
 
+check('a wrapped tile sub-line never ends on its separator dot', () => {
+  // 100,000 EURC at 1.1 sold for 108,320 in ten days: the best rate's line,
+  // "EURC, 20 Jan 2026 · +$9,150.00", is wider than its tile and wraps.
+  const rate = { borrow_fx: 1.1, buy_fx: 1.1, sell_fx: 1.1, repay_fx: 1.1 };
+  const pdf = build([trade({ loan: 100000, proceeds: 108320, buyGas: 1, sellGas: 1, month: '01', currency: 'EURC', ...rate })]);
+  const lines = [...pdf.matchAll(/\(((?:[^()\\]|\\.)*)\) Tj/g)].map((m) => m[1]);
+  assert.ok(lines.some((l) => l.startsWith('\\267 ')), 'the dot opens the wrapped line');
+  assert.ok(!lines.some((l) => l.endsWith('\\267')), lines.filter((l) => l.endsWith('\\267')).join(' | '));
+});
+
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);
 else console.log(`ok - ${passed} statement checks`);

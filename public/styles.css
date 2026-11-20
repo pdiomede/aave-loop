@@ -22,6 +22,15 @@
 
   --accent: #6b66ff;
   --accent-soft: rgba(107, 102, 255, 0.12);
+  /* Text on a filled accent, and the fill that holds it at AA: white on the
+     accent read 4.23:1 here and 2.58:1 in the dark theme, on the pager's
+     current page. The ticker's window labels and its up and down figures sit
+     on the soft tints, and at 11.5px need 4.5:1 there too (3.4 to 4.4 before). */
+  --accent-strong: #5752e8;
+  --on-accent: #ffffff;
+  --chip-label: #5f6670;
+  --positive-on-soft: #18704b;
+  --negative-on-soft: #c0362c;
   --positive: #1c7c54;
   --positive-soft: rgba(28, 124, 84, 0.12);
   --negative: #c0362c;
@@ -66,6 +75,12 @@
 
   --btn-primary-bg: #f1f1f3;
   --btn-primary-fg: #15161d;
+
+  --accent-strong: #9896ff;
+  --on-accent: #15161d;
+  --chip-label: #bfc2ce;
+  --positive-on-soft: #4ade80;
+  --negative-on-soft: #ff8a81;
 }
 
 /* ------------------------------------------------------------------ base */
@@ -281,7 +296,10 @@ a.brand {
   position: absolute;
   left: 10px;
   right: 10px;
-  bottom: -19px;
+  /* On the header's bottom edge: the link ends 12.5px above it in the 58px
+     row. At -19px it hung below the hairline and, the header being sticky,
+     was drawn across whatever scrolled under it. */
+  bottom: -12.5px;
   height: 2px;
   border-radius: 2px;
   background: var(--accent);
@@ -340,21 +358,21 @@ a.brand {
 }
 
 /* The window's name is the label, not the figure, so it stays quiet while the
-   percentage beside it takes the colour. */
+   percentage beside it takes the colour - quiet by weight and colour, at AA:
+   the 0.85 opacity it also had took it to 3.4:1. */
 .ticker__win {
-  color: var(--text-muted);
+  color: var(--chip-label);
   font-weight: 500;
-  opacity: 0.85;
 }
 
 .ticker__chip--pos {
   background: var(--positive-soft);
-  color: var(--positive);
+  color: var(--positive-on-soft);
 }
 
 .ticker__chip--neg {
   background: var(--negative-soft);
-  color: var(--negative);
+  color: var(--negative-on-soft);
 }
 
 /* A movement too small to show. It keeps the plain chip colours rather than
@@ -1376,10 +1394,10 @@ th[aria-sort="ascending"] .th-sort__caret {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* The same treatment the nav uses for the view you are on. */
+/* The same treatment the nav uses for the view you are on, at AA. */
 .pager__btn.is-active {
-  background: var(--accent);
-  color: #fff;
+  background: var(--accent-strong);
+  color: var(--on-accent);
 }
 
 .pager__btn[disabled] {
@@ -1492,10 +1510,24 @@ th[aria-sort="ascending"] .th-sort__caret {
   border-radius: 4px;
 }
 
-/* Under By month closed: the closed trades its months cannot hold yet. */
+/* Under By month closed: the closed trades its months cannot hold yet. Its
+   "no rate" chip sits near the start of the line, so the bubble hangs from
+   the note and grows right: from the chip it grew left and lost its start
+   off a phone's edge ("...te yet. Use Fetch rates"). */
 .month-gap {
+  position: relative;
   margin: 12px 0 0;
   font-size: 12.5px;
+}
+
+.month-gap .chip--warn[data-tip] {
+  position: static;
+}
+
+.month-gap .chip--warn[data-tip]::after {
+  left: 0;
+  right: auto;
+  max-width: 100%;
 }
 
 .fx-banner {
@@ -2214,6 +2246,17 @@ th[aria-sort="ascending"] .th-sort__caret {
 .row td:first-child .chip--warn[data-tip]::after {
   left: 0;
   right: auto;
+}
+
+/* On a phone the trade's date cell is right aligned with the rest of its
+   card, so a bubble growing right from its content ran past the screen and
+   gave the page a sideways scroll (427px of a 375px phone). There it grows
+   left, from the content's right edge. */
+@media (max-width: 760px) {
+  .row td:first-child .chip--warn[data-tip]::after {
+    left: auto;
+    right: 0;
+  }
 }
 
 /* The exception is the currency name in the summary table, which is left

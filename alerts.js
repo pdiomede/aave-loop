@@ -37,6 +37,8 @@ import {
   todayISO,
   intervalMs,
   marketOf,
+  ASSETS,
+  ASSET_META,
 } from './lib/calc.js';
 import { resolveRate, cachedRate } from './fx.js';
 import { marketPrices } from './prices.js';
@@ -113,6 +115,17 @@ export const HOLDING = `
 
 // The trade's asset rides along, so the sweep judges each goal against its
 // own market.
+/**
+ * The market of the trade aliased `t`, in SQL: 'BTC' for cbBTC, 'ETH' for
+ * anything else, built from `ASSET_META` so it cannot drift from `marketOf`.
+ * `ALERT_OFF_MARKET` is an alert whose goal is a price of the other market -
+ * set before the trade's asset changed - which nothing may judge or send.
+ */
+const TRADE_MARKET = `CASE t.asset ${ASSETS.map((a) => `WHEN '${a}' THEN '${ASSET_META[a].market}'`).join(' ')} ELSE '${
+  ASSET_META[ASSETS[0]].market
+}' END`;
+const ALERT_OFF_MARKET = `COALESCE(alerts.market, 'ETH') <> ${TRADE_MARKET}`;
+
 const selectArmed = () =>
   prepare(`
     SELECT a.*, t.id AS t_id, t.asset AS t_asset FROM alerts a
@@ -140,10 +153,15 @@ const selectTrade = () => prepare('SELECT * FROM trades WHERE id = ?');
 export function closeUnwatched() {
   if (!db.open) return 0;
   try {
+    // And one left armed in the other market. The PATCH that changes an asset
+    // closes the armed goal, but a goal claimed for sending at that moment is
+    // not armed; its send failing then put it back, an ETH goal on a cbBTC
+    // trade that the sweep passed over for good, its owed message never sent.
     return prepare(`
       UPDATE alerts SET status = 'closed', updated_at = @now
       WHERE status = 'armed'
-        AND trade_id IN (SELECT t.id FROM trades t WHERE NOT (${HOLDING}))
+        AND EXISTS (SELECT 1 FROM trades t WHERE t.id = alerts.trade_id
+                     AND (NOT (${HOLDING}) OR ${ALERT_OFF_MARKET}))
     `).run({ now: new Date().toISOString() }).changes;
   } catch (err) {
     console.error('Could not close alerts on trades that sold:', err.message);
@@ -346,7 +364,13 @@ export function deleteAllAlerts(through = null) {
  * `fxNow` is today's rate per borrowed coin, so a euro trade's gain reads the
  * same here as in /holding and on the page (see `estimatedGainUsd`).
  */
-export function alertMessage(trade, alert, price, fxNow = {}) {
+/**
+ * `when` is 'now' for a message written at the price the sweep just fetched,
+ * and 'then' for one owed since an earlier sweep and sent without a fresh
+ * price: it is written at the price its goal was reached at, and says so
+ * rather than calling an hours-old cached figure "now".
+ */
+export function alertMessage(trade, alert, price, fxNow = {}, { when = 'now' } = {}) {
   const d = derive(trade, derivedOn(trade));
   const c = trade.borrow_currency;
   // The goal is a price of the market, BTC for a cbBTC trade; the quantity is
@@ -357,7 +381,8 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
   // is not: a check every quarter hour finds the market somewhere past it. In
   // the window, where the two are equal by construction, saying it twice read
   // like a mistake.
-  const at = n2(price) === n2(alert.goal_price) ? '' : ` - now $${n2(price)}`;
+  const at =
+    n2(price) === n2(alert.goal_price) ? '' : when === 'then' ? ` at $${n2(price)}` : ` - now $${n2(price)}`;
 
   const lines = [
     // "Reached" either way. "Fell to" read as bad news on a goal set below
@@ -376,7 +401,7 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
   // rate is missing: what the asset is worth needs no exchange rate, while the
   // gain underneath it is measured against a cost basis that does.
   if (Number.isFinite(d.ethHeld) && Number.isFinite(price)) {
-    value.push(`Worth now: $${n2(d.ethHeld * price)}`);
+    value.push(`Worth ${when === 'then' ? 'then' : 'now'}: $${n2(d.ethHeld * price)}`);
   }
 
   const gain = estimatedGainUsd(trade, d, price, fxNow);
@@ -477,6 +502,11 @@ const backToArmed = ({ counted }) =>
         WHEN NOT EXISTS (
           SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING}
         ) THEN 'closed'
+        -- Its trade changed asset while it was being sent: the goal is a
+        -- price of the other market now (see closeUnwatched).
+        WHEN EXISTS (
+          SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${ALERT_OFF_MARKET}
+        ) THEN 'closed'
         WHEN EXISTS (
           SELECT 1 FROM alerts other
            WHERE other.trade_id = alerts.trade_id
@@ -489,7 +519,21 @@ const backToArmed = ({ counted }) =>
     WHERE id = @id
   `);
 
-async function fire(row, price, market) {
+async function fire(row, price, market, { when = 'now' } = {}) {
+  // Today's rate, asked for properly: this message leaves the machine. A lookup
+  // that fails answers null rather than throwing, and the stored rates stand in.
+  //
+  // Before the claim, not after: shutdown waits twelve seconds for a sweep, and
+  // a euro alert's lookup (up to 2.5 s) and its send (up to 10 s) after the
+  // claim outlasted it - the database closed under a claimed alert, left FIRED
+  // with no error for a message never sent. Claimed after it, only the send is
+  // left to wait for. A sweep told to stop meanwhile claims nothing.
+  const before = selectTrade().get(row.trade_id);
+  if (!before) return;
+  const today = isUsdPegged(before.borrow_currency) ? null : await resolveRate(before.borrow_currency, todayISO());
+  const fxNow = Number.isFinite(today?.rate) ? { [before.borrow_currency]: today.rate } : {};
+  if (stopping || !db.open) return;
+
   const now = new Date().toISOString();
   // `last_error` is cleared here. A retry that succeeds writes nothing after
   // the claim, so the error from the attempt before it stayed on a delivered
@@ -507,7 +551,8 @@ async function fire(row, price, market) {
     UPDATE alerts SET status = 'fired', fired_at = COALESCE(fired_at, @now),
       fired_price = COALESCE(fired_price, @price), last_error = NULL, updated_at = @now
     WHERE id = @id AND status = 'armed'
-      AND EXISTS (SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING})
+      AND EXISTS (SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING}
+                   AND NOT (${ALERT_OFF_MARKET}))
   `).run({ id: row.id, price, now });
 
   if (claimed.changes !== 1) return;
@@ -515,11 +560,7 @@ async function fire(row, price, market) {
   const trade = selectTrade().get(row.trade_id);
   if (!trade) return;
 
-  // Today's rate, asked for properly: this message leaves the machine. A lookup
-  // that fails answers null rather than throwing, and the stored rates stand in.
-  const today = isUsdPegged(trade.borrow_currency) ? null : await resolveRate(trade.borrow_currency, todayISO());
-  const fxNow = Number.isFinite(today?.rate) ? { [trade.borrow_currency]: today.rate } : {};
-  const sent = await sendTelegramMessage(alertMessage(trade, row, price, fxNow));
+  const sent = await sendTelegramMessage(alertMessage(trade, row, price, fxNow, { when }));
   if (sent.ok) {
     console.log(`Alert on trade #${row.trade_id} sent: ${market} at ${price}.`);
     return;
@@ -610,7 +651,10 @@ const PRICE_FRESH_MS = 2 * Math.min(POLL_MS, 300_000);
  */
 export function freshPrice(quote) {
   if (!quote || !Number.isFinite(quote.price)) return null;
-  return Number.isFinite(quote.ageMs) && quote.ageMs > PRICE_FRESH_MS ? null : quote.price;
+  // An age that is not a number is not fresh. `ageOf` answers Infinity for a
+  // fetch time ahead of the clock, which it calls unknown; tested as "older
+  // than", Infinity was not finite, so passed, and a goal fired on it.
+  return Number.isFinite(quote.ageMs) && quote.ageMs <= PRICE_FRESH_MS ? quote.price : null;
 }
 
 /**
@@ -668,10 +712,14 @@ async function sweepOnce() {
     // a ledger with no cbBTC goal never makes BTC's price a reason to ask.
     const markets = [...new Set(armed.map(marketOfAlert))];
     const quotes = await marketPrices({ maxAgeMs: Math.min(POLL_MS, 300_000), markets });
-    if (!db.open) return { checked: armed.length, fired: 0 };
+    if (stopping || !db.open) return { checked: armed.length, fired: 0 };
 
     let fired = 0;
     for (const row of armed) {
+      // Shutdown has begun: nothing more is claimed. The loop used to go on to
+      // the next reached goal after SIGTERM, claim it nine seconds later, and
+      // have the database closed under its send - FIRED, no error, never sent.
+      if (stopping || !db.open) break;
       // Each goal against its own market. A BTC quote that could not be had
       // holds back the cbBTC goals and nothing else.
       const market = marketOfAlert(row);
@@ -680,7 +728,7 @@ async function sweepOnce() {
       // transaction, so this only meets one written by something else.
       if (market !== marketOf({ asset: row.t_asset })) continue;
       const quote = quotes[market];
-      if (!quote) continue;
+      const fresh = freshPrice(quote);
       // An armed row with a firing time already reached its goal and is only
       // waiting for the message to go through - after a send that failed, or
       // while Telegram's setup was wrong - so it is sent whatever the market
@@ -690,14 +738,19 @@ async function sweepOnce() {
       // went on calling the alert armed. A goal saved afresh has none.
       // A fresh goal is judged on a fresh price only. One already reached is
       // owed its message, whatever the price is now.
-      if (row.fired_at == null && (freshPrice(quote) === null || !reached(row, quote.price))) continue;
+      if (row.fired_at == null && (fresh === null || !reached(row, fresh))) continue;
+      // An owed one is sent at a fresh price when there is one, and otherwise
+      // at the price its goal was reached at, said as such: resent on the
+      // cached figure, it read "- now $2,540.00" at a price three hours old.
+      const sendAt = fresh ?? row.fired_price;
+      if (!Number.isFinite(sendAt)) continue;
       // Each one on its own. The catch below covers the pass, so anything
       // thrown here used to abandon every alert still to be looked at - and
       // the one that threw had already been claimed, which is to say marked
       // as sent. One bad row should cost one message, not the rest of the
       // quarter hour.
       try {
-        await fire(row, quote.price, market);
+        await fire(row, sendAt, market, { when: fresh === null ? 'then' : 'now' });
         fired += 1;
       } catch (err) {
         console.error(`Alert ${row.id} on trade #${row.trade_id} failed:`, err.message);
@@ -719,8 +772,15 @@ async function sweepOnce() {
   }
 }
 
+/**
+ * Set once shutdown begins (`stopAlertPoller`), so a sweep under way claims
+ * nothing more; it finishes the send it has, and shutdown waits for that.
+ */
+let stopping = false;
+
 export function startAlertPoller() {
   if (timer) return;
+  stopping = false;
   // Unreferenced, both of them: a pending check must never be the reason the
   // process refuses to exit.
   firstRun = setTimeout(runAlertSweep, FIRST_RUN_MS);
@@ -733,6 +793,7 @@ export function startAlertPoller() {
 export const alertPollMs = POLL_MS;
 
 export function stopAlertPoller() {
+  stopping = true;
   clearTimeout(firstRun);
   clearInterval(timer);
   firstRun = null;

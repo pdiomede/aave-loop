@@ -51,13 +51,14 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // answers to sendMessage, [status, description]; empty means 200.
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
-const mock = { price: 3000, btc: 90000, tg: [], sent: [], sentTo: [], updates: [] };
+const mock = { price: 3000, btc: 90000, asked: 0, tg: [], sent: [], sentTo: [], updates: [] };
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url.startsWith('/coins/markets')) {
+      mock.asked += 1;
       // Both coins, whatever was asked, as CoinGecko answers a list of ids;
       // a null `btc` leaves bitcoin out of the answer.
       const coins = [{ id: 'ethereum', current_price: mock.price }];
@@ -70,6 +71,11 @@ const mockServer = http.createServer((req, res) => {
     if (req.url.includes('/getMe')) return res.end('{"ok":true,"result":{"username":"TestBot"}}');
     if (req.url.includes('/sendMessage')) {
       const [status = 200, description = ''] = mock.tg.shift() ?? [];
+      // [200, 'html']: a captive portal's page, not Telegram's answer.
+      if (status === 200 && description === 'html') {
+        res.setHeader('Content-Type', 'text/html');
+        return res.end('<html><body>Sign in to the network</body></html>');
+      }
       if (status === 200) {
         mock.sent.push(JSON.parse(body).text);
         mock.sentTo.push(String(JSON.parse(body).chat_id ?? ''));
@@ -563,6 +569,18 @@ await check('an answer with no BTC in it does not hold ETH back', async () => {
   mock.btc = 90000;
 });
 
+await check('a coin left out of the answer is not asked for again by every caller', async () => {
+  const { marketPrices } = await import('../prices.js');
+  mock.btc = null;
+  // Past the window, so both coins are due when the first caller asks.
+  await wait(1100);
+  mock.asked = 0;
+  // Five callers in a row that accept a second-old price.
+  for (let i = 0; i < 5; i += 1) await marketPrices({ maxAgeMs: 1000 });
+  mock.btc = 90000;
+  assert.equal(mock.asked, 1, 'one request, then the absence counts as asked');
+});
+
 await check('a cbBTC goal is watched against BTC, not ETH', async () => {
   // Only this goal armed, so nothing else answers the prices below.
   prepare(`UPDATE alerts SET status = 'closed' WHERE status = 'armed'`).run();
@@ -598,6 +616,64 @@ await check('a cbBTC goal is watched against BTC, not ETH', async () => {
   assert.match(mock.sent[0], /\nWorth now: \$9,600\.00\nGain \(%\): -4\.04%\n/);
   assert.match(mock.sent[0], /Gain \(\$\): -\$404\.00 after \$0\.00 interest and \$4\.00 fees$/);
   prepare('DELETE FROM trades WHERE id = ?').run(id);
+});
+
+await check('a price of unknown age is not fresh', async () => {
+  const { freshPrice } = await import('../alerts.js');
+  // `ageOf` answers Infinity for a fetch time ahead of the clock.
+  assert.equal(freshPrice({ price: 2400, ageMs: Infinity }), null);
+  assert.equal(freshPrice({ price: 2400, ageMs: 0 }), 2400);
+});
+
+await check('a goal left armed in the other market from its trade is closed', async () => {
+  prepare(`UPDATE alerts SET status = 'closed' WHERE status = 'armed'`).run();
+  const t = holding();
+  const a = saveAlert(t, 2550, 2600);
+  // The trade turned cbBTC while the goal was out being sent, and the failed
+  // send put it back to armed: an ETH goal on a BTC position.
+  prepare("UPDATE trades SET asset = 'cbbtc' WHERE id = ?").run(t.id);
+  await runAlertSweep();
+  assert.equal(getAlertById(a.id).status, 'closed');
+  prepare('DELETE FROM trades WHERE id = ?').run(t.id);
+});
+
+await check('a 200 that is not Telegram\'s answer is retried, not taken as a refusal', async () => {
+  const { sendTelegramMessage } = await import('../telegram.js');
+  mock.tg.push([200, 'html']);
+  const r = await sendTelegramMessage('x');
+  assert.equal(r.ok, false);
+  assert.equal(r.retryable, true);
+});
+
+await check('an owed alert resent with no fresh price is written at the price its goal was reached at', async () => {
+  prepare(`UPDATE alerts SET status = 'closed' WHERE status = 'armed'`).run();
+  const a = saveAlert(holding(), 2550, 2600);
+  // Reached at 2,540 by an earlier sweep, its send failed; now the service
+  // answers nothing usable for ETH, and the last ETH price grows old.
+  prepare('UPDATE alerts SET fired_at = ?, fired_price = 2540 WHERE id = ?').run(new Date().toISOString(), a.id);
+  mock.price = null;
+  await wait(2100);
+  mock.sent.length = 0;
+  await runAlertSweep();
+  mock.price = 3000;
+  assert.equal(getAlertById(a.id).status, 'fired');
+  assert.match(mock.sent[0] ?? '', /^ETH reached your \$2,550\.00 goal at \$2,540\.00\n/);
+  // 4 ETH at 2,540 is $10,160.00; never "now", at a price that is not.
+  assert.match(mock.sent[0], /\nWorth then: \$10,160\.00\n/);
+  assert.doesNotMatch(mock.sent[0], /now/);
+});
+
+// Last of the sweeps: it leaves the poller stopped.
+await check('once shutdown begins, the sweep claims nothing more', async () => {
+  const { stopAlertPoller } = await import('../alerts.js');
+  prepare(`UPDATE alerts SET status = 'closed' WHERE status = 'armed'`).run();
+  const a = saveAlert(holding(), 2550, 2600);
+  await priceAt(2540);
+  stopAlertPoller();
+  mock.sent.length = 0;
+  await runAlertSweep();
+  assert.equal(getAlertById(a.id).status, 'armed', 'not claimed, so not left FIRED and unsent');
+  assert.equal(mock.sent.length, 0);
 });
 
 /* ------------------------------------------------------------- bot reports */
@@ -646,6 +722,27 @@ await check('/holding gives a line per platform, adding up to its Unrealised', a
   assert.match(holdingText([row(1, 'aave', 'eth', 4), row(2, 'morpho', 'cbbtc', 0.1)], { ETH: 3000 }, {}), /\nMorpho: 1 trade · 0\.10000000 cbBTC\n/);
   // One platform: its line would repeat the totals, so there is none.
   assert.doesNotMatch(holdingText([row(1, 'aave', 'eth', 4), row(3, 'aave', 'eth', 1, 2500)], { ETH: 3000 }, {}), /Aave: /);
+});
+
+await check('a price of unknown age, or an old one under /summary, is said to be so', async () => {
+  const { priceText, summaryText } = await import('../report.js');
+  const { summarize } = await import('../lib/calc.js');
+  const row = { id: 1, asset: 'eth', platform: 'aave', borrow_currency: 'USDC', borrow_amount: 10000, borrow_apr: 4,
+    borrow_date: today, buy_date: today, buy_amount: 10000, buy_eth: 4, buy_gas_usd: 2 };
+  // Infinity is `ageOf`'s "fetched ahead of the clock": unknown, not fresh.
+  assert.match(priceText({ ETH: { price: 3000, ageMs: Infinity } }), /\n<i>Last fetched at an unknown time\.<\/i>/);
+  assert.match(holdingText([row], { ETH: 3000 }, {}, { ages: { ETH: Infinity } }), /\n<i>At the price last fetched at an unknown time\.<\/i>/);
+  const held = [{ asset: 'eth', ticker: 'ETH', market: 'ETH', total: 4, price: 3000, ageMs: 3 * 3_600_000 }];
+  assert.match(summaryText(summarize([]), held), /<\/pre>\n<i>At the price last fetched 3 hours ago\.<\/i>$/);
+  assert.doesNotMatch(summaryText(summarize([]), [{ ...held[0], ageMs: 1000 }]), /last fetched/);
+});
+
+await check('/holding names both absences when neither row has a gain', async () => {
+  const row = (id, asset, qty, over = {}) => ({ id, asset, platform: 'aave', borrow_currency: 'USDC', borrow_amount: 10000,
+    borrow_apr: 4, borrow_date: today, buy_date: today, buy_amount: 10000, buy_eth: qty, buy_gas_usd: 2, ...over });
+  // A euro ETH row with no rate yet, and a cbBTC row with no BTC price.
+  const text = holdingText([row(1, 'eth', 4, { borrow_currency: 'EURC' }), row(2, 'cbbtc', 0.1)], { ETH: 3000 }, {});
+  assert.match(text, /\nThe gain is not known: 1 without an exchange rate, 1 without a BTC price\.\n/);
 });
 
 await check('/summary says what is held of each asset, valued at its own market', async () => {
@@ -895,6 +992,22 @@ await check('/holding heads its rows with their sum as printed, and fits Telegra
   const visible = text.replace(/<[^>]+>/g, '').replace(/&(?:lt|gt|amp);/g, '_').length;
   assert.ok(visible <= 4096, `${visible} characters`);
   assert.match(text, /and \d+ more<\/pre>$/);
+});
+
+await check('/unwatch past the ten-command limit of a batch still stops the reports', async () => {
+  const bot = await import('../bot.js');
+  const date = Math.floor(Date.now() / 1000);
+  const say = (id, text) => mock.updates.push({ update_id: id, message: { chat: { id: -1 }, text, date } });
+  say(5000, '/watch');
+  await bot.runBotTick();
+  assert.equal(prepare('SELECT watch FROM bot_state WHERE id = 1').get().watch, 1);
+  // Ten commands and then the stop, in one batch: the stop is the eleventh.
+  for (let i = 1; i <= 10; i += 1) say(5000 + i, '/price');
+  say(5011, '/unwatch');
+  mock.sent.length = 0;
+  await bot.runBotTick();
+  assert.equal(prepare('SELECT watch FROM bot_state WHERE id = 1').get().watch, 0);
+  assert.match(mock.sent.at(-1) ?? '', /^Stopped\./);
 });
 
 /* ------------------------------------------------------------------ the end */

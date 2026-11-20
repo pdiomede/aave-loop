@@ -46,7 +46,6 @@ import {
   deleteAlert,
   deleteAllAlerts,
   previewMessage,
-  alertPollMs,
   startAlertPoller,
   stopAlertPoller,
   alertSweepDone,
@@ -716,8 +715,12 @@ const PRICE_TICKER_MS = intervalMs(process.env.MYAAVE_ETH_POLL_MS, 300_000);
 /**
  * One quote as the page reads it: the header ticker and the alert window take
  * the same shape, so the two cannot come to show different figures for one
- * price. `stale` is the threshold the alerts use, so the two never disagree
- * about whether the figure on screen is old.
+ * price. `stale` is `freshPrice`'s answer, the very test a goal's save and
+ * the sweep apply, so the window never shows as "now" a price the save is
+ * about to ignore. It was `ageMs > alertPollMs` - fifteen minutes against the
+ * sweep's ten - and the window was never told: a twelve-minute-old $3,000 read
+ * "ETH now", a goal of $2,800 was saved to wait for a rise from the purchase
+ * price, and fired at once. An age nobody knows is stale too.
  */
 function quoteView(quote) {
   if (!quote) return { price: null, fetchedAt: null, stale: true, reason: priceStatus().lastError };
@@ -725,7 +728,7 @@ function quoteView(quote) {
     price: quote.price,
     fetchedAt: quote.fetchedAt,
     ageMs: quote.ageMs,
-    stale: quote.ageMs > alertPollMs,
+    stale: freshPrice(quote) === null,
     change1h: quote.change1h,
     change24h: quote.change24h,
     change7d: quote.change7d,
