@@ -102,3 +102,39 @@ Ideas that came up on 20 Nov and were left for later, not bugs:
   storage keys, the `myaave` package name and `AaveLoop_logo*` files still carry the
   old brand. Renaming them needs the old names kept as a fallback, and the VPS
   service file updated.
+- **Backfill tool for Morpho:** `scripts/set-platform.mjs` only knows `--etherfi`
+  (everything else becomes Aave). A `--morpho <id>` flag would let old trades be
+  marked as Morpho the same way.
+- **A check for the `/landing/` rule:** CLAUDE.md says `npm run check` enforces that
+  the public pages load only from `/landing/`, but only the CSP-hash rule has a check.
+  Add one that fails when `landing/*.html` references an image, script or stylesheet
+  outside `/landing/` (fonts from Google excepted).
+- **Statement PDF and assets:** the Statement has no By asset table, because its
+  fullest year already fills the A4 page to within a few points. Adding one means
+  making room first (a narrower By month, or a second page).
+- **Tiny cbBTC quantities in the CSV:** quantities are written raw, and JavaScript
+  prints anything under 0.000001 in exponent form (`1e-7`). No real trade is that
+  small, but a fixed-decimal writer would rule it out.
+
+## Known limits and loose ends
+
+Accepted for now, worth knowing:
+
+- **A command may be answered twice after a restart.** When the app stops in the
+  middle of a reply, the bot rewinds to that command so nothing is lost. That command
+  can get its answer twice.
+- **Saving a goal on an old price:** with no recent price, the alert's direction
+  (rise or fall) comes from the purchase price. The alert window now says so.
+- **The old `eth_price` table stays in the database,** unused since prices moved to
+  `market_price`, so an older copy of the app sharing the file keeps working. It can
+  be dropped once no older copy runs anywhere.
+- **`public/eth.svg` is unused** since the app switched to `eth.png`; it can be
+  deleted.
+- **Not demonstrated, so not fixed:**
+  - On the very first visit to Alerts, a stage save landing during the list's first
+    request might leave it on "Loading alerts" until the next visit.
+  - The alert goal form checks the bounds ($1 to $1,000,000) on the raw figure while
+    the server rounds to the cent first, so a goal of 0.996 previews but the form
+    refuses it.
+- **Version:** 2.1.8 went out today, and the rule is one release a day. Work from
+  tomorrow goes under `## [Unreleased]` and gets the next number.
