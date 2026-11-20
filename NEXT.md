@@ -1,7 +1,7 @@
 # Next
 
 What is left to do on the VPS, and what to build next. Written 20 Nov 2026, after
-`bd30dc8` was pushed to `main`.
+`281e8bd` was pushed to `main`.
 
 ## On the VPS
 
@@ -80,6 +80,12 @@ help - what this bot can do
 
 - `/app` loads. The header shows ETH and BTC, a row each.
 - A new trade offers Aave, Ether.fi and Morpho.
+- Ether.fi shows its new logo, a violet outline on a white disc (`etherfi.png`; the
+  black `etherfi.jpg` is gone): in the new trade's platform picker, on an Ether.fi
+  trade's Borrowed card, on Stats, and in the landing page's "Run the loop on" row.
+  A broken image or the old black one means the pull did not land, or the browser
+  kept the old file; `curl -sI https://ethroundtrip.com/landing/etherfi.png` should
+  answer 200 without a password.
 - The Bought card offers ETH and cbBTC.
 - `/price` in Telegram answers with both prices.
 - The new social card is served, with no password asked: it lives under `/landing/`,
