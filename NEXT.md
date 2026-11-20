@@ -57,12 +57,12 @@ In its `script-src`, the hashes must be exactly these two:
 
 ```
 'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs='
-'sha256-ncgLIggzLhNYlxt5z2CZJ809QJpZbeGZCmKby9xkDfk='
+'sha256-W9be3A+UEXvbL09tjpkkWtuJt36Q7WGeXBruE3mVoH0='
 ```
 
 Remove any other `sha256-` hash in that list. They are all older versions of
 these two scripts and no longer match anything (they do no harm if left, but
-nothing needs them): `idlxi...`, `dzz2...`, `kcXx...`, `4gct...`, `0khB...`.
+nothing needs them): `idlxi...`, `dzz2...`, `kcXx...`, `ncgL...`, `4gct...`, `0khB...`.
 
 Then:
 

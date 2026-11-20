@@ -201,6 +201,23 @@ check('a sale that keeps less than prints is a full exit, in the asset\'s own pl
   assert.ok(Math.abs(ethHeldNow(btc) - 0.00004) < 1e-12);
 });
 
+check('a sale is judged on Bought and Sold as printed, so half a unit is not float noise', () => {
+  // 0.1 less 0.09995 is 5.000000000000837e-5 raw, which printed 0.0001: the
+  // card read Bought 0.1000, Sold 0.1000, Still held 0.0001. Sold prints as
+  // the whole purchase, so it is a full exit, as 0.3 less 0.29995 already was.
+  const t = { borrow_date: '2026-09-01', borrow_amount: 300, borrow_currency: 'USDC', borrow_apr: 0,
+    buy_date: '2026-09-01', buy_amount: 300, buy_gas_usd: 0, sell_date: '2026-09-10', sell_amount: 330, sell_gas_usd: 0 };
+  for (const [buy, sell] of [[0.1, 0.09995], [0.3, 0.29995]]) {
+    const d = derive({ ...t, buy_eth: buy, sell_eth: sell }, AS_OF);
+    assert.equal(d.isPartialSale, false, `${buy} less ${sell}`);
+    assert.equal(ethHeldNow(d), 0);
+  }
+  // A real part sale keeps Bought less Sold as printed: 1.2346 less 0.5000.
+  const part = derive({ ...t, buy_eth: 1.23456, sell_eth: 0.5 }, AS_OF);
+  assert.equal(part.isPartialSale, true);
+  assert.ok(Math.abs(part.retainedEth - 0.7346) < 1e-12, part.retainedEth);
+});
+
 check('partial sale needs the ETH price, a full one does not', () => {
   const part = sold({ sell_amount: 21000, sell_eth: 6 });
   assert.equal(est(part, null), null);
@@ -526,9 +543,9 @@ const CSP_PINNED = [
   'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs=',
   // The theme toggle, the same on both pages: storage and the system theme
   // get a try each (a dark system with storage blocked turned light), it
-  // follows the system live while nobody has chosen, and it saves under the
-  // new key.
-  'sha256-ncgLIggzLhNYlxt5z2CZJ809QJpZbeGZCmKby9xkDfk=',
+  // follows the system live while nobody has chosen here (showing a choice
+  // saved meanwhile in another tab), and it saves under the new key.
+  'sha256-W9be3A+UEXvbL09tjpkkWtuJt36Q7WGeXBruE3mVoH0=',
 ];
 
 const inlineScriptHashes = (file) => {

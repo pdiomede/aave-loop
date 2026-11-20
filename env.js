@@ -35,14 +35,31 @@ export function settingName(name) {
 }
 
 /**
- * The old names in use, as one line for the startup log, or null. They still
- * work; this is the nudge to rename them in the service file, said once.
+ * The old names set, as a line for the startup log, or null: the nudge to
+ * rename them in the service file, said once. One whose new name is set too
+ * is not read at all, and is said to be ignored - listed as "still read", a
+ * line left behind halfway through the rename looked as if it counted.
  */
 export function oldSettingsNote() {
   const old = Object.keys(process.env)
     .filter((k) => k.startsWith(OLD_PREFIX) && present(process.env[k]))
     .sort();
   if (old.length === 0) return null;
-  const renamed = old.map((k) => `${k} -> ${PREFIX}${k.slice(OLD_PREFIX.length)}`).join(', ');
-  return `Old setting names still read: ${renamed}. They keep working; rename them when convenient.`;
+  const newName = (k) => PREFIX + k.slice(OLD_PREFIX.length);
+  const read = old.filter((k) => !present(process.env[newName(k)]));
+  const ignored = old.filter((k) => present(process.env[newName(k)]));
+  const parts = [];
+  if (read.length) {
+    parts.push(
+      `Old setting names still read: ${read.map((k) => `${k} -> ${newName(k)}`).join(', ')}. ` +
+        'They keep working; rename them when convenient.',
+    );
+  }
+  if (ignored.length) {
+    parts.push(
+      `Ignored, as the new name is set: ${ignored.map((k) => `${k} (${newName(k)} is used)`).join(', ')}. ` +
+        'Remove them.',
+    );
+  }
+  return parts.join(' ');
 }

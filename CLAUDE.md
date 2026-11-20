@@ -346,8 +346,9 @@ their names and hold units of the trade's asset; the CSV heads them `buy_qty` /
 the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC), and
 every "as printed" sum of quantities (`/holding`, `/summary`) uses it per asset and
 never adds two assets together. A sale is partial only if what it keeps prints as more
-than zero to those places (`qtyPrintsZero` in `derive`'s `isPartialSale`): 0.00004 ETH
-kept is a full exit, 0.00004 cbBTC a holding.
+than zero to those places: `derive`'s `isPartialSale` compares Bought and Sold as printed
+(`qtyAsPrinted`), and `retainedEth` after a partial sale is their printed difference, so
+the card's lines add up. 0.00004 ETH kept is a full exit, 0.00004 cbBTC a holding.
 
 Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC']`, and cbBTC's
 `market` is BTC. `prices.js` (was `eth.js`) fetches both in one CoinGecko request,

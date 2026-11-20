@@ -134,6 +134,10 @@ const isolated = {
   // any the developer's shell exports are blanked here, or they would leak in.
   ...Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith('MYAAVE_')).map((k) => [k, ''])),
   ETHROUNDTRIP_CONFIG: path.join(tmp, 'none.env'),
+  // No fixed price unless a check sets one: an exported one decided which
+  // market a goal was watched against.
+  ETHROUNDTRIP_ETH_PRICE: '',
+  ETHROUNDTRIP_BTC_PRICE: '',
   ETHROUNDTRIP_TELEGRAM_URL: MOCK,
   ETHROUNDTRIP_ETH_URL: MOCK,
   ETHROUNDTRIP_FX_OFFLINE: '1',
@@ -356,7 +360,12 @@ await check('the settings read ETHROUNDTRIP_*, and the old MYAAVE_* names when a
   assert.equal(old.name, 'MYAAVE_DB');
   assert.match(old.note, /MYAAVE_DB -> ETHROUNDTRIP_DB/);
   // Both: the new name wins. Neither: unset, and nothing to say.
-  assert.equal(read({ MYAAVE_DB: '/srv/old.db', ETHROUNDTRIP_DB: '/srv/new.db' }).db, '/srv/new.db');
+  const both = read({ MYAAVE_DB: '/srv/old.db', ETHROUNDTRIP_DB: '/srv/new.db' });
+  assert.equal(both.db, '/srv/new.db');
+  // The old one is not read then, and the note says so rather than calling it
+  // "still read" - a line left behind mid-rename looked as if it counted.
+  assert.match(both.note, /Ignored, as the new name is set: MYAAVE_DB \(ETHROUNDTRIP_DB is used\)/);
+  assert.doesNotMatch(both.note, /still read/);
   const none = read({});
   assert.equal(none.db, null);
   assert.equal(none.note, null);

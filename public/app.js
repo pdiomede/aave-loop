@@ -4133,12 +4133,16 @@ function followSystemTheme() {
   }
   query.addEventListener?.('change', (e) => {
     if (themePicked) return;
+    // A choice saved meanwhile - in another tab, or on the landing page - is
+    // the one to show. Returning when one was found left this tab on the theme
+    // it was drawn with, which could match neither the choice nor the system.
+    let saved = null;
     try {
-      if (stored('theme')) return;
+      saved = stored('theme');
     } catch (err) {
       /* unreadable storage holds no choice */
     }
-    applyTheme(e.matches ? 'dark' : 'light', { persist: false });
+    applyTheme(saved === 'dark' || saved === 'light' ? saved : e.matches ? 'dark' : 'light', { persist: false });
   });
 }
 
@@ -4155,7 +4159,16 @@ function wire() {
       setView(link.dataset.view);
     });
   }
-  window.addEventListener('hashchange', () => setView(viewFromHash(), { updateHash: false }));
+  window.addEventListener('hashchange', () => {
+    // Back or Forward hides the view focus may be in - a field half typed -
+    // and focus fell to the page, so the next Tab started from the top. It
+    // goes to the nav link of the view now showing, as a click would leave it.
+    const next = viewFromHash();
+    const leaving = next !== state.view ? document.getElementById(`view-${state.view}`) : null;
+    const hadFocus = Boolean(leaving?.contains(document.activeElement));
+    setView(next, { updateHash: false });
+    if (hadFocus) document.querySelector('.nav__link[aria-current="page"]')?.focus();
+  });
 
   // The ticker stops asking while the tab is hidden, and on the way back asks
   // again only if the figure it is holding is actually due.

@@ -95,6 +95,7 @@ API and forms:
 - **An unreadable config.env is reported with its error code,** not its full path on disk.
 - **An unreadable config file is reported even with one Telegram value exported,** not as "TELEGRAM_CHAT_ID is missing"; the messages name the file `MYAAVE_CONFIG` points at.
 - **A sale that keeps less than its asset prints is a full exit:** 0.29996 of 0.3 ETH read "Still held 0.0000 ETH".
+- **A sale is judged on Bought and Sold as printed, and Still held is their printed difference:** at half a unit the raw difference was float noise, and 0.09995 of 0.1 ETH read Sold 0.1000, Still held 0.0001.
 - **The CSV writes every number in digits:** 0.00000015 cbBTC went out as "1.5e-7", text to a spreadsheet.
 
 Exchange rates:
@@ -121,6 +122,12 @@ Phones:
 
 - **The Sort by picker shows its whole choice at 320px;** "Trade date" read "Trade".
 - **A closed trade's dates wrap inside their card** instead of pushing the page sideways at 320px.
+
+Navigation, theme and settings:
+
+- **Back or Forward while typing leaves focus on the nav**, not on the page, so the next Tab does not start from the top.
+- **A theme chosen in another tab is shown when the system theme changes**; the open page kept the theme it was drawn with, matching neither. The landing toggle script changed again: nginx's CSP needs its newest hash.
+- **The startup note says when an old `MYAAVE_*` setting is ignored** because its new name is set, instead of calling it "still read".
 - **The price banner keeps to one row per coin at 320px**, a six-figure BTC with two-digit moves included, and a page turn lands below the header however tall it is: a wrapped row hid the table's first lines.
 
 ## [2.1.7] - 2026-11-13

@@ -309,16 +309,18 @@
           applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
         });
 
-        // Live, while nobody has chosen: the theme is written into data-theme
-        // above, which the stylesheet obeys over its media query, so a system
-        // turning dark left an open page light until a reload.
+        // Live, while nobody has chosen here: the theme is written into
+        // data-theme above, which the stylesheet obeys over its media query, so
+        // a system turning dark left an open page light until a reload. A
+        // choice saved meanwhile in another tab is the one shown.
         try {
           window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
             if (picked) return;
+            let saved = null;
             try {
-              if (localStorage.getItem('ethroundtrip-theme') || localStorage.getItem('myaave-theme')) return;
+              saved = localStorage.getItem('ethroundtrip-theme') || localStorage.getItem('myaave-theme');
             } catch (err) {}
-            const theme = e.matches ? 'dark' : 'light';
+            const theme = saved === 'dark' || saved === 'light' ? saved : e.matches ? 'dark' : 'light';
             document.documentElement.dataset.theme = theme;
             document.getElementById('theme-icon').innerHTML = theme === 'dark' ? SUN : MOON;
           });
