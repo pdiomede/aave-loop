@@ -128,4 +128,4 @@ else
   warn "Dependencies are not installed, so the schema will be created on the next start."
 fi
 
-printf '\n  %sDone.%s Start again with ./run_myAave.sh\n\n' "$BOLD" "$OFF"
+printf '\n  %sDone.%s Start again with ./runETHRoundTrip.sh\n\n' "$BOLD" "$OFF"

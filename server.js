@@ -1069,7 +1069,7 @@ const server = app.listen(PORT, '127.0.0.1', () => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${PORT} is already in use. Try ./run_myAave.sh, which picks a free one.`);
+    console.error(`Port ${PORT} is already in use. Try ./runETHRoundTrip.sh, which picks a free one.`);
   } else {
     console.error(err);
   }

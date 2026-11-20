@@ -2,12 +2,14 @@
 
 Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned.
 
+**Platforms:** Aave, Ether.fi and Morpho. **Assets bought:** ETH, and cbBTC (Coinbase's wrapped bitcoin), valued at BTC's price.
+
 A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH to four places and cbBTC to eight. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
 
 ## Run
 
 ```bash
-./run_myAave.sh
+./runETHRoundTrip.sh
 ```
 
 Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script installs dependencies when the lockfile's packages change, and replaces an earlier ETH Roundtrip from this folder on the port. Another program there moves it to the next free port (`--kill` stops that program instead, `--port N` picks one).
@@ -28,7 +30,7 @@ A trade starts with the borrow; each stage is added as it happens.
 | Sell | date, amount sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
 | Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
 
-Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank Aave lend or unstake fee means none was paid.
+Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank lend or unstake fee means none was paid.
 
 - **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on.
 - **Stats** shows performance for all platforms and, in cards that fold open, for Aave, Ether.fi and Morpho alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
@@ -49,7 +51,7 @@ Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require 
 | Estimate, holding | `buy_eth * market_price_now - (buy_amount + accrued_interest) * rate_today - fees` |
 | Estimate, sold | `(gross_gain - accrued_interest) * rate_today - fees`, plus anything still held at today's price less its cost |
 
-Gross gain uses the cost of the ETH actually sold, so a profitable partial exit is never reported as a loss. The return is annualized: a 3 day trade netting 7.2% reads 876%. Every amount, conversion and fee is taken to the cent as printed, so each card and total adds up from its lines.
+Gross gain uses the cost of what was actually sold, so a profitable partial exit is never reported as a loss. The return is annualized: a 3 day trade netting 7.2% reads 876%. Every amount, conversion and fee is taken to the cent as printed, so each card and total adds up from its lines.
 
 ## Exchange rates
 

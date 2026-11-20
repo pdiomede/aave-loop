@@ -21,6 +21,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The trades table's ETH column is Amount**, each quantity with its asset's logo: ETH to four places, cbBTC to eight.
 - **The CSV has an `asset` column after `platform`,** and `buy_eth` / `sell_eth` are now `buy_qty` / `sell_qty`.
 - **`/api/eth` is now `/api/prices`**, answering `{ pollMs, prices: { ETH, BTC } }`. `MYAAVE_BTC_PRICE` fixes BTC as `MYAAVE_ETH_PRICE` fixes ETH.
+- **The landing page names Aave, Ether.fi and Morpho and ETH and cbBTC**, with their logos, and says cbBTC is valued at BTC's price.
+- **The launcher is `runETHRoundTrip.sh`** (was `run_myAave.sh`), and says ETH Roundtrip throughout.
 
 ### Fixed
 
@@ -68,6 +70,15 @@ Across pages:
 - **Cmd, Ctrl and Shift clicks on the nav** open a new tab again.
 - **The "no rate" and "est" chips explain themselves to the keyboard and screen readers.**
 - **The active view's underline sits on the header's edge**, not below it over the page.
+
+Landing page:
+
+- **The phone header keeps its 16px gutters**, and the header button fits beside the logo again.
+- **"What it does" and "How it works" land below the phone's sticky header**, not under it.
+- **Keyboard focus on a button shows a solid ring**; the soft one was 1.16:1 against white.
+- **The author link in the footer reads as a link.**
+- **Grey text on the lavender band reaches AA** (4.46:1 before).
+- **The 404 page has no empty band on a phone** and no empty navigation landmark, and its disclaimer names every platform.
 
 ## [2.1.7] - 2026-11-13
 

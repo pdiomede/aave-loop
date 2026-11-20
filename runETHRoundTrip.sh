@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# myAave local launcher.
+# ETH Roundtrip local launcher.
 # Checks Node, installs dependencies when needed, finds a free port, starts up.
 #
 set -euo pipefail
@@ -20,7 +20,7 @@ PORT_SCAN_LIMIT=10
 
 usage() {
   cat <<'USAGE'
-Usage: ./run_myAave.sh [options]
+Usage: ./runETHRoundTrip.sh [options]
 
   --port N     Start on port N instead of 3000.
   --kill       If another program holds the port, stop it and reuse the port.
@@ -49,7 +49,7 @@ case "$PORT" in
 esac
 [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || die "Port must be between 1 and 65535."
 
-printf '\n%smyAave%s %slauncher%s\n\n' "$BOLD" "$OFF" "$DIM" "$OFF"
+printf '\n%sETH Roundtrip%s %slauncher%s\n\n' "$BOLD" "$OFF" "$DIM" "$OFF"
 
 # --------------------------------------------------------------------- node
 
@@ -137,17 +137,17 @@ if ! port_is_free "$PORT"; then
   HOLDER_CMD="$(ps -o command= -p "$HOLDER_PID" 2>/dev/null | head -n 1)"
   warn "Port $PORT is busy (pid $HOLDER_PID: ${HOLDER_CMD:-unknown})"
 
-  # A previous myAave instance is always safe to reclaim. `ps` prints the
+  # A previous ETH Roundtrip instance is always safe to reclaim. `ps` prints the
   # command as it was typed, so match on the process working directory too.
-  holder_is_myaave() {
+  holder_is_ours() {
     printf '%s' "$HOLDER_CMD" | grep -q 'server\.js' || return 1
     local cwd
     cwd="$(lsof -a -p "$HOLDER_PID" -d cwd -Fn 2>/dev/null | grep '^n' | tail -n 1)"
     [ "${cwd#n}" = "$(pwd)" ]
   }
 
-  if holder_is_myaave; then
-    warn "That is an older myAave instance, stopping it"
+  if holder_is_ours; then
+    warn "That is an older ETH Roundtrip instance, stopping it"
     stop_pid "$HOLDER_PID"
     port_is_free "$PORT" || die "Could not free port $PORT."
     ok "Port $PORT reclaimed"

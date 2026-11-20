@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-./run_myAave.sh              # start it; checks Node, installs deps, finds a free port
-./run_myAave.sh --kill       # stop another program on port 3000 instead of moving on
-./run_myAave.sh --port 3011  # a specific port
+./runETHRoundTrip.sh              # start it; checks Node, installs deps, finds a free port
+./runETHRoundTrip.sh --kill       # stop another program on port 3000 instead of moving on
+./runETHRoundTrip.sh --port 3011  # a specific port
 ./resetDatabase.sh           # empty the ledger; asks twice, backs up to data/backups
 ./backupDatabase.sh          # online SQLite backup, safe while the server runs; --help has the cron line
 npm start                    # node server.js, no port hunting
@@ -178,7 +178,7 @@ be wrong in a Telegram message.
 
 ### Two instances can share one database
 
-`run_myAave.sh` replaces an earlier copy started from the same folder, but moves to
+`runETHRoundTrip.sh` replaces an earlier copy started from the same folder, but moves to
 the next free port when anything else holds it, and a copy started by hand (`PORT=3011
 npm start`, a second checkout pointed at the same `MYAAVE_DB`) runs beside it. So
 concurrent access is a supported state, not an edge case. Production runs one
@@ -404,7 +404,10 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
 - **The public pages load only from `/landing/`.** That is the one path nginx serves
   without a password, besides `/` itself. An image at the root goes to the app, behind
   auth, and the browser shows a login prompt on the public page — the landing logo did
-  exactly that, in every browser without saved credentials. Keep a copy in `landing/`.
+  exactly that, in every browser without saved credentials. Keep a copy in `landing/`:
+  the coin, platform (`aave.png`, `etherfi.jpg`, `morpho.jpg`) and asset (`eth.png`,
+  `cbbtc.png`) marks are all copies, so a new platform or asset needs its logo copied
+  there and named on the landing page.
 - **Text can change freely; inline scripts cannot.** The landing page describes what
   `lib/calc.js` computes (net gain after interest *and fees*, partial exits, weekend
   rates), so a formula change may mean a copy change there too.

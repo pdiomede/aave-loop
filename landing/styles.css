@@ -25,7 +25,8 @@
   --ink-fg: #ffffff;
 
   --text: #37373c;
-  --text-muted: #6f6f77;
+  /* #6f6f77 read 4.46:1 on the wash behind How it works; this clears 4.8:1. */
+  --text-muted: #6a6a72;
 
   --bg: #ffffff;
   --bg-wash: #f3f1fe;
@@ -231,8 +232,10 @@ p {
 }
 
 .btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 1px var(--hairline), 0 0 0 4px var(--violet-soft);
+  /* A solid ring in the ink violet. The soft violet ring was 1.16:1 on white
+     and the very colour of the soft buttons, so focus all but vanished. */
+  outline: 2px solid var(--violet-ink);
+  outline-offset: 2px;
 }
 
 /* The dark pill in the top right, which is the one that leads to the ledger
@@ -449,6 +452,43 @@ p {
   border-radius: 50%;
 }
 
+/* Named marks: the platforms the loop runs on and the assets it buys. The
+   logo sits on a white disc with a hairline ring, as in the app, so ETH's grey
+   diamond and Ether.fi's near-black mark read in the dark theme too. */
+.coins--named {
+  gap: 14px 28px;
+  margin-top: 32px;
+}
+
+.mark {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.coins .mark img {
+  box-sizing: border-box;
+  padding: 2px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px var(--hairline-strong);
+  object-fit: contain;
+}
+
+.mark figcaption {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.coins__note {
+  width: 100%;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
 /* ------------------------------------------------------------------ steps */
 
 .steps {
@@ -607,14 +647,16 @@ p {
   font-size: 13px;
 }
 
-.footer__line a {
-  color: var(--text);
-  font-weight: 500;
-}
-
 .footer a {
   color: var(--text-muted);
   text-decoration: none;
+}
+
+/* After `.footer a`, which matches it equally and used to win: the author's
+   link read as plain text in its line. */
+.footer__line a {
+  color: var(--text);
+  font-weight: 500;
 }
 
 .footer a:hover {
@@ -648,11 +690,31 @@ p {
     padding: 0 16px;
   }
 
+  /* Block padding only: the shorthand's 0 sides beat `.shell`'s gutter, and
+     the logo and the button sat on the screen's edges. */
   .header__inner {
     height: auto;
     flex-wrap: wrap;
     gap: 10px;
-    padding: 10px 0;
+    padding-block: 10px;
+  }
+
+  /* The header wraps to two rows here, and the nav's links landed their
+     section's eyebrow and title under it. */
+  html {
+    scroll-padding-top: 160px;
+  }
+
+  /* A size down, so the brand, the toggle and this still share one row
+     inside the gutters on a 375px phone; full size it took a row of its own. */
+  .header__inner .btn--sm {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  /* The 404 page's spacer: no links, so no row of its own. */
+  .nav:empty {
+    display: none;
   }
 
   .brand {

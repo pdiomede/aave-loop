@@ -6,7 +6,7 @@
  *
  * The first is that Telegram hands each update to exactly one caller of
  * `getUpdates`, and a second caller gets an error rather than a copy. This app
- * can legitimately be running twice against one database - `run_myAave.sh`
+ * can legitimately be running twice against one database - `runETHRoundTrip.sh`
  * starts a second copy on the next free port when the first one is in the way -
  * so one of them has to be the one that asks. That is the lease in `bot_state`,
  * taken with the same kind of conditional UPDATE the alerts use to claim a

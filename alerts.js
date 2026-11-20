@@ -10,7 +10,7 @@
  * Two things in here are load bearing and neither is obvious.
  *
  * The first is that the alert is claimed before the message is sent, with a
- * conditional UPDATE, and not after. `run_myAave.sh` will happily start a
+ * conditional UPDATE, and not after. `runETHRoundTrip.sh` will happily start a
  * second copy of the app on the next free port pointed at this same database
  * file, and both copies poll. Only one of them can win a
  * `WHERE status = 'armed'`, so only one of them sends. Sent-then-marked would
