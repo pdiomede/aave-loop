@@ -15,6 +15,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Stats has a By asset table**, beside By Platform; its rows add up to the totals.
 - **Morpho is a platform,** beside Aave and Ether.fi: in the New trade and Borrowed pickers, with its logo, and on Stats as Performance (Morpho) and a row in By Platform.
 - **/holding gives a line per platform** under its totals, with the trades, what each holds and its share of Unrealised; the lines add up to it. Shown when the holdings span two platforms or more.
+- **Back and Forward move between Trades, Stats and Alerts,** with a half-typed form kept; Back used to leave the app.
 
 ### Changed
 

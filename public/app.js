@@ -4028,10 +4028,16 @@ function setView(view, { updateHash = true } = {}) {
     else link.removeAttribute('aria-current');
   }
 
-  // An old name is rewritten even when the hash is otherwise left alone, so the
-  // address bar agrees with the nav link that is now underlined.
+  // A move to another view is an entry of its own, so Back returns to the view
+  // before it and Forward comes back: written over with `replaceState`, Back
+  // left the app altogether. Traversing those entries changes only the hash, so
+  // the `hashchange` listener below draws them, as it draws a typed hash.
+  // An old name is rewritten in place even when the hash is otherwise left
+  // alone, so the address bar agrees with the nav link that is now underlined.
   const aliased = aliasOf((location.hash || '').replace(/^#/, '')) !== null;
-  if ((updateHash && viewFromHash() !== state.view) || aliased) {
+  if (updateHash && viewFromHash() !== state.view) {
+    history.pushState(null, '', `#${state.view}`);
+  } else if (aliased) {
     history.replaceState(null, '', `#${state.view}`);
   }
 

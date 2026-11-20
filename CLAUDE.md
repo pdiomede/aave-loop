@@ -272,6 +272,10 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
 
 - **Anything from outside goes through `esc()`.** `fmtDate` escapes its own output, so
   double-escaping is also a defect.
+- **Views are history entries.** A nav click to another view pushes `#view`
+  (`setView`), and Back and Forward arrive as `hashchange`, drawn by the same
+  listener as a typed hash; an old `#summary` is rewritten in place. A new way to
+  change view should go through `setView`, not write the hash itself.
 - **Sequence guards.** `loadSeq`/`writeSeq` (and `alertLogSeq`/`alertWriteSeq`) drop a
   reply that a newer load overtook or a write superseded. Any new fetch that writes
   into `state` needs the same treatment.

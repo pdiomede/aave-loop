@@ -125,9 +125,6 @@ help - what this bot can do
 
 Ideas that came up on 20 Nov and were left for later, not bugs:
 
-- **Back and Forward between views:** the app's nav uses `history.replaceState`, so
-  Back leaves the app instead of returning to the previous view. Switch to
-  `pushState` if that is wanted.
 - **Follow the system theme live:** neither the ledger nor the landing page reacts
   when the system theme changes while the page is open.
 - **320px phones:** in the app, the BTC ticker row wraps at 320px and the header
