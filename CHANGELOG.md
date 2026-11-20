@@ -3,13 +3,6 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
-## [2.1.9] - 2026-11-20
-
-### Added
-
-- **Morpho is a platform,** beside Aave and Ether.fi: in the New trade and Borrowed pickers, with its logo, and on Stats as Performance (Morpho) and a row in By Platform.
-- **/holding gives a line per platform** under its totals, with the trades, what each holds and its share of Unrealised; the lines add up to it. Shown when the holdings span two platforms or more.
-
 ## [2.1.8] - 2026-11-20
 
 ### Added
@@ -20,6 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Price alerts on cbBTC trades**, set and judged in BTC: "BTC reached your $100,000.00 goal". Changing a trade's asset closes its armed alert.
 - **Telegram covers BTC:** `/price` and `/watch` send both prices, `/holding` lists cbBTC rows with a total per asset, and `/summary` says what is held of each. Paste the new command list from the README into BotFather.
 - **Stats has a By asset table**, beside By Platform; its rows add up to the totals.
+- **Morpho is a platform,** beside Aave and Ether.fi: in the New trade and Borrowed pickers, with its logo, and on Stats as Performance (Morpho) and a row in By Platform.
+- **/holding gives a line per platform** under its totals, with the trades, what each holds and its share of Unrealised; the lines add up to it. Shown when the holdings span two platforms or more.
 
 ### Changed
 
