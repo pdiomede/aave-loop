@@ -21,6 +21,7 @@ import {
   cents,
   ethHeldNow,
   PLATFORM_META,
+  PLATFORMS,
   ASSETS,
   ASSET_META,
   MARKETS,
@@ -195,6 +196,10 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   // move)" under a total of two euro trades named one trade's move as the
   // whole of it.
   let moveGap = false;
+  // The rows by platform, in cents as printed like the total, for the line
+  // per platform under it. A trade from before the platform was asked for is
+  // filed under null, "Not recorded", so the lines still add up.
+  const byPlatform = new Map();
 
   const cells = rows.map((t) => {
     const d = derive(t, derivedOn(t));
@@ -202,6 +207,14 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
 
     const price = priceOf(t);
     const g = price === null ? null : estimatedGainUsd(t, d, price, fxNow);
+    const where = PLATFORMS.includes(t.platform) ? t.platform : null;
+    if (!byPlatform.has(where)) byPlatform.set(where, { rows: [], gain: 0, known: 0 });
+    const mine = byPlatform.get(where);
+    mine.rows.push(t);
+    if (g !== null) {
+      mine.gain += cents(g);
+      mine.known += 1;
+    }
     if (g === null) {
       if (price === null) noPrice.set(marketOf(t), (noPrice.get(marketOf(t)) ?? 0) + 1);
       else noRate += 1;
@@ -320,6 +333,26 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
         ? `No ${[...noPrice.keys()].join(' or ')} price right now, so the gain is not known.`
         : 'No exchange rate yet, so the gain is not known in dollars.',
     );
+  }
+
+  // A line per platform: its trades, what it holds of each asset (summed as
+  // printed, as the totals above are) and its share of the Unrealised figure,
+  // in whole cents so the lines add up to it. A platform with some gains
+  // unknown says how many it is short, as the total does; with none known it
+  // gives no figure. Only when the rows span two platforms or more: with one,
+  // the line would repeat the totals above it, the rule the page's Open
+  // positions grid keeps for a single position.
+  const groups = [...PLATFORMS, null].filter((p) => byPlatform.has(p));
+  if (groups.length > 1) {
+    for (const p of groups) {
+      const { rows: mine, gain: g, known } = byPlatform.get(p);
+      const n = mine.length;
+      const held = heldTotals(mine).map(totalText).join(' · ');
+      const short = n - known;
+      const fig = known === 0 ? '' : ` · ${signedUsd(g / 100)}${short ? ` (${short} not counted)` : ''}`;
+      const label = PLATFORM_META[p]?.label ?? 'Not recorded';
+      head.push(escHtml(`${label}: ${n} trade${n === 1 ? '' : 's'}${held ? ` · ${held}` : ''}${fig}`));
+    }
   }
 
   // The table gets what the lines above it leave. It used to have 3,900 of

@@ -268,13 +268,17 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
 ### Platforms
 
 `PLATFORMS` / `PLATFORM_META` in `lib/calc.js` are where a trade ran (`aave`,
-`etherfi`), stored lowercase in `trades.platform`. The API requires it on a new trade
+`etherfi`, `morpho`), stored lowercase in `trades.platform`. The API requires it on a new trade
 and refuses to blank it; the column is nullable because a trade from before it was
 asked for has none, which shows as not recorded, never as Aave.
 `scripts/set-platform.mjs` fills those in (dry run unless `--apply`). Stats splits by
 it through `summaryReport().byPlatform`, built by the same `groupBuckets` loop as
 `byCurrency`, with a not-recorded row so the rows still add up to the totals; the
-per-platform Performance cards are `summaryReport` over that platform's trades. They
+per-platform Performance cards are `summaryReport` over that platform's trades, so a
+new platform needs only its `PLATFORM_META` entry, a logo in `public/` and its id in
+`PLATFORMS`. `/holding` adds a line per platform under its totals (`holdingText`),
+each gain summed in cents as printed so the lines add up to Unrealised, and only when
+the held trades span two platforms or more. The Performance cards
 and the four breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
 start closed, and keep their open/closed state in localStorage (`myaave-stats-open`).
 

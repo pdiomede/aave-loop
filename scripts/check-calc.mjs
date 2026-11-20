@@ -599,6 +599,17 @@ check('Stats: a closed trade whose rate cannot be worked out is not ranked by ra
   assert.equal(r.worstPct.id, 1);
 });
 
+check('Stats: Morpho has a By Platform row of its own, after Aave and Ether.fi', () => {
+  // 1,000 at 0% on 1 ETH each: Morpho +40, Aave +50, and one recorded nowhere.
+  const r = summaryReport([
+    shut(1, '2026-03-11', 40, { platform: 'morpho' }),
+    shut(2, '2026-03-11', 50, { platform: 'aave' }),
+    shut(3, '2026-03-11', 20),
+  ], AS_OF);
+  assert.deepEqual(r.byPlatform.map((b) => b.platform), ['aave', 'morpho', null]);
+  assert.deepEqual([r.byPlatform[1].closed, r.byPlatform[1].borrowed, r.byPlatform[1].netGain], [1, 1000, 40]);
+});
+
 check('Stats: By Platform splits the tab by platform, unrecorded last, and its rows add up', () => {
   // Three closed 1,000 loans, each at 0% on 1 ETH: Aave +50 in 10 days,
   // Ether.fi +30 in 20, and one recorded nowhere +20 in 5; plus 2,000 still

@@ -1,6 +1,6 @@
 # ETH Roundtrip
 
-Track leveraged trade cycles on Aave and Ether.fi: borrow a stablecoin, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned.
+Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned.
 
 A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH to four places and cbBTC to eight. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
 
@@ -23,7 +23,7 @@ A trade starts with the borrow; each stage is added as it happens.
 
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
-| Borrow | platform (Aave or Ether.fi), date, currency, amount, APR, gas fee (optional) | `OPEN` |
+| Borrow | platform (Aave, Ether.fi or Morpho), date, currency, amount, APR, gas fee (optional) | `OPEN` |
 | Buy | asset (ETH or cbBTC), date, amount spent, amount received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
 | Sell | date, amount sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
 | Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
@@ -31,7 +31,7 @@ A trade starts with the borrow; each stage is added as it happens.
 Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank Aave lend or unstake fee means none was paid.
 
 - **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on.
-- **Stats** shows performance for all platforms and, in cards that fold open, for Aave and Ether.fi alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
+- **Stats** shows performance for all platforms and, in cards that fold open, for Aave, Ether.fi and Morpho alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
 - **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
 - **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.
 - **Open positions**, in the header, estimates what the open trades would make if closed today, at the current price of what each trade holds (ETH, or BTC for cbBTC) and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
@@ -82,7 +82,7 @@ The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat i
 | Command | Returns |
 | --- | --- |
 | `/price` | ETH and BTC now, each with 24h, 7d and 30d change |
-| `/holding` | each trade still holding ETH or cbBTC, with its estimated gain at its own market's price, and a total per asset with what it is worth; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
+| `/holding` | each trade still holding ETH or cbBTC, with its estimated gain at its own market's price, and a total per asset with what it is worth; when the trades span platforms, a line per platform with its trades, holdings and share of the gain; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
 | `/summary` | realized net gain, blended annualized, closed trades, open positions, and the ETH and cbBTC held |
 | `/watch` / `/unwatch` | the ETH and BTC prices every twenty minutes in the chat that asked, sent only while a trade holds ETH or cbBTC, or stop. One watch at a time: `/watch` from the other chat moves it there |
 

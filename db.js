@@ -344,7 +344,7 @@ const GAS_COLUMN_TYPES = [
   ['sell_unstake_gas_usd', 'REAL'],
 ];
 
-// Where the loop was run, Aave or Ether.fi (PLATFORMS in lib/calc.js). Nullable
+// Where the loop was run, Aave, Ether.fi or Morpho (PLATFORMS in lib/calc.js). Nullable
 // for the same reason as the fees: a trade recorded before it was asked for
 // has none, and a default of 'aave' would state something nobody recorded.
 // The API requires it on a new trade; scripts/set-platform.mjs fills in the

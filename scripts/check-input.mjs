@@ -194,11 +194,12 @@ check('a repayment is judged against the loan as printed, to the cent', () => {
   assert.notEqual(validateField('borrow_amount', '10000.005', { repay_amount: 10000 }), null);
 });
 
-check('the platform is required, one of Aave or Ether.fi, and kept as a word', () => {
+check('the platform is required, one of Aave, Ether.fi or Morpho, and kept as a word', () => {
   assert.equal(validateField('platform', ''), 'Platform is required.');
   assert.equal(validateField('platform', 'uniswap'), 'Pick a platform.');
   assert.equal(validateField('platform', 'aave'), null);
   assert.equal(validateField('platform', 'EtherFi'), null);
+  assert.equal(validateField('platform', 'Morpho'), null);
   assert.equal(contextFrom({}, { platform: 'etherfi' }).platform, 'etherfi');
 });
 

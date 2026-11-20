@@ -178,7 +178,7 @@ await check('a borrow with no gas fee is saved, its fee not recorded', async () 
   assert.deepEqual(t1.derived.feesMissing, ['borrow']);
 });
 
-await check('a new trade must say where it was run, Aave or Ether.fi, by id in any case', async () => {
+await check('a new trade must say where it was run, Aave, Ether.fi or Morpho, by id in any case', async () => {
   const { platform, ...none } = borrow();
   const missing = await api('POST', '/api/trades', none);
   assert.equal(missing.status, 400);
@@ -191,6 +191,10 @@ await check('a new trade must say where it was run, Aave or Ether.fi, by id in a
   assert.equal(upper.status, 201);
   assert.equal(upper.data.platform, 'etherfi');
   await api('DELETE', `/api/trades/${upper.data.id}`);
+  const morpho = await api('POST', '/api/trades', borrow({ platform: 'Morpho' }));
+  assert.equal(morpho.status, 201);
+  assert.equal(morpho.data.platform, 'morpho');
+  await api('DELETE', `/api/trades/${morpho.data.id}`);
 });
 
 await check('a platform can be changed but not cleared, and a trade without one still edits', async () => {
@@ -623,6 +627,25 @@ await check('/holding values each asset at its own market and totals them apart'
   // No BTC price: the cbBTC row is left out for that, not for a rate.
   assert.match(holdingText(rows, { ETH: 3000 }, {}), /Unrealised \+\$1,998\.00 after interest and fees \(1 without a BTC price is not counted\)/);
   assert.match(holdingText([row(2, 'cbbtc', 0.1)], { ETH: 3000 }, {}), /No BTC price right now, so the gain is not known\./);
+});
+
+await check('/holding gives a line per platform, adding up to its Unrealised', async () => {
+  const row = (id, platform, asset, qty, amt = 10000) => ({ id, platform, asset, borrow_currency: 'USDC', borrow_amount: amt,
+    borrow_apr: 4, borrow_date: today, buy_date: today, buy_amount: amt, buy_eth: qty, buy_gas_usd: 2 });
+  // At ETH 3,000 and BTC 96,000, less $2 of fees each and no interest today:
+  // #1 +$1,998.00 and #3 +$498.00 on Aave, #2 -$402.00 on Morpho, and #4,
+  // 0.5 ETH for 1,500, -$2.00 with no platform recorded. +$2,092.00 in all.
+  const text = holdingText(
+    [row(1, 'aave', 'eth', 4), row(2, 'morpho', 'cbbtc', 0.1), row(3, 'aave', 'eth', 1, 2500), row(4, null, 'eth', 0.5, 1500)],
+    { ETH: 3000, BTC: 96000 },
+    {},
+  );
+  assert.match(text, /\nUnrealised \+\$2,092\.00 after interest and fees\nAave: 2 trades · 5\.0000 ETH · \+\$2,496\.00\nMorpho: 1 trade · 0\.10000000 cbBTC · -\$402\.00\nNot recorded: 1 trade · 0\.5000 ETH · -\$2\.00\n\n<pre>/);
+  assert.match(text, /#2  Morpho  0\.10000000 cbBTC/);
+  // A platform whose gain is not known says nothing rather than $0.00.
+  assert.match(holdingText([row(1, 'aave', 'eth', 4), row(2, 'morpho', 'cbbtc', 0.1)], { ETH: 3000 }, {}), /\nMorpho: 1 trade · 0\.10000000 cbBTC\n/);
+  // One platform: its line would repeat the totals, so there is none.
+  assert.doesNotMatch(holdingText([row(1, 'aave', 'eth', 4), row(3, 'aave', 'eth', 1, 2500)], { ETH: 3000 }, {}), /Aave: /);
 });
 
 await check('/summary says what is held of each asset, valued at its own market', async () => {

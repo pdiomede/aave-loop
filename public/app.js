@@ -1392,7 +1392,7 @@ function platformHeadPicker() {
 function borrowFields(t = {}, { platform = false } = {}) {
   return `<div class="grid">${
     platform
-      ? field({ name: 'platform', label: 'Platform', tip: 'Where the loop was run: Aave or Ether.fi.', value: t.platform ?? '', options: PLATFORMS })
+      ? field({ name: 'platform', label: 'Platform', tip: 'Where the loop was run: Aave, Ether.fi or Morpho.', value: t.platform ?? '', options: PLATFORMS })
       : ''
   }
     ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
@@ -2193,7 +2193,7 @@ function renderTable() {
   if (state.trades.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No trades yet</h3>
-      <p>Start with the stablecoin you borrowed, on Aave or Ether.fi, then add each stage as it happens.</p>
+      <p>Start with the stablecoin you borrowed, on Aave, Ether.fi or Morpho, then add each stage as it happens.</p>
     </div>`;
     return;
   }
