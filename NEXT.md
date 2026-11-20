@@ -90,7 +90,7 @@ help - what this bot can do
 
 Ideas that came up on 20 Nov and were left for later, not bugs:
 
-- **Social preview images:** `landing/og4.png` (and og/og2/og3) still show the
+- **Social preview images:** `landing/og4.png` still shows the
   ETH-only story. Remake them to mention cbBTC and the three platforms, keeping
   1200x630.
 - **Back and Forward between views:** the app's nav uses `history.replaceState`, so
@@ -131,8 +131,6 @@ Accepted for now, worth knowing:
 - **The old `eth_price` table stays in the database,** unused since prices moved to
   `market_price`, so an older copy of the app sharing the file keeps working. It can
   be dropped once no older copy runs anywhere.
-- **`public/eth.svg` is unused** since the app switched to `eth.png`; it can be
-  deleted.
 - **Not demonstrated, so not fixed:**
   - On the very first visit to Alerts, a stage save landing during the list's first
     request might leave it on "Loading alerts" until the next visit.
