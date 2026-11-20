@@ -1,7 +1,7 @@
 # Next
 
 What is left to do on the VPS, and what to build next. Written 20 Nov 2026, after
-`bd5771b` was pushed to `main`.
+`bd30dc8` was pushed to `main`.
 
 ## On the VPS
 
@@ -82,9 +82,21 @@ help - what this bot can do
 - A new trade offers Aave, Ether.fi and Morpho.
 - The Bought card offers ETH and cbBTC.
 - `/price` in Telegram answers with both prices.
-- The link preview shows the new card (`landing/og5.png`, with the three platforms
-  and cbBTC). X, LinkedIn and Telegram may keep the old one for a while; LinkedIn's
-  Post Inspector and Telegram's @WebpageBot refetch it on request.
+- The new social card is served, with no password asked: it lives under `/landing/`,
+  which nginx serves without basic auth.
+
+  ```bash
+  curl -sI https://ethroundtrip.com/landing/og5.png | head -5      # 200, image/png
+  curl -s https://ethroundtrip.com/ | grep -o 'landing/og[0-9]*\.png' | sort -u   # og5.png only
+  ```
+
+  A 401 means nginx's open location does not cover it; a 404 means the pull did not
+  land. Then paste `https://ethroundtrip.com/` into
+  [opengraph.xyz](https://www.opengraph.xyz) or a private Telegram chat: the preview
+  should show the card with Aave, Ether.fi, Morpho, ETH and cbBTC. Sites that
+  already cached the old card (`og4.png`, gone now) refetch it on request: LinkedIn's
+  [Post Inspector](https://www.linkedin.com/post-inspector/), and for Telegram send
+  the link to @WebpageBot. X refreshes on its own within about a week.
 - The logo shows in the app's header and on the landing page. The files were renamed
   from `AaveLoop_logo*` to `ETHRoundtrip_logo*`; if it is missing, look for the old
   name in nginx's config: `sudo grep -rn AaveLoop /etc/nginx/`.
