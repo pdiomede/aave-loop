@@ -109,6 +109,15 @@ its notes merged into that day's section. (cbBTC went out as 2.1.8 and Morpho as
 Work is committed straight to `main` and pushed: production deploys by pulling `main`
 on the VPS, and there are no pull requests.
 
+`NEXT.md` lists what is left to do on the VPS after a release (nginx, BotFather,
+checks) and what to build next. `.gitignore` names `next.md` for personal notes, which
+on a case-insensitive Mac matches it too, so it was force-added; edits to it are
+tracked as usual. Keep it current when a release leaves a step for the VPS.
+
+The old Aave Loop name is gone from the code except `~/aaveloop-backups`,
+`backupDatabase.sh`'s default destination, kept on purpose so existing backups and
+cron lines stay valid, and the `MYAAVE_*` / `myaave-*` names (see NEXT.md).
+
 Every user-visible change gets its `CHANGELOG.md` line in the commit that makes it,
 under `## [Unreleased]`, which you rename to the new number by hand at release (the
 bump does not touch `CHANGELOG.md`). A change committed with

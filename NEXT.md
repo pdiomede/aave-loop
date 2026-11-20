@@ -82,6 +82,9 @@ help - what this bot can do
 - A new trade offers Aave, Ether.fi and Morpho.
 - The Bought card offers ETH and cbBTC.
 - `/price` in Telegram answers with both prices.
+- The logo shows in the app's header and on the landing page. The files were renamed
+  from `AaveLoop_logo*` to `ETHRoundtrip_logo*`; if it is missing, look for the old
+  name in nginx's config: `sudo grep -rn AaveLoop /etc/nginx/`.
 
 ## To build next
 
