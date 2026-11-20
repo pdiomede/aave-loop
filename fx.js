@@ -15,7 +15,7 @@
  * an account, which matters for something meant to run on a laptop forever.
  *
  * They are read through a mirror of that daily file rather than from the Bank
- * itself - `FX_URL` below, which `MYAAVE_FX_URL` overrides. Worth saying here
+ * itself - `FX_URL` below, which `ETHROUNDTRIP_FX_URL` overrides. Worth saying here
  * rather than leaving to be discovered on the line that sets it: this comment
  * said the rates "come from the European Central Bank", which is true of the
  * figures and not of the request.
@@ -29,6 +29,7 @@ import {
   parseDate,
   intervalMs,
 } from './lib/calc.js';
+import { setting } from './env.js';
 
 const DAY_MS = 86400000;
 
@@ -46,8 +47,8 @@ const MAX_RATE_LAG_DAYS = 6;
 // Frankfurter's current address. The old one, api.frankfurter.app, answers
 // every request with a 301 to this, which fetch follows - but at the cost of a
 // second connection inside the 2.5 s timeout, on every lookup.
-const FX_URL = (process.env.MYAAVE_FX_URL || 'https://api.frankfurter.dev/v1').replace(/\/+$/, '');
-const OFFLINE = process.env.MYAAVE_FX_OFFLINE === '1';
+const FX_URL = (setting('FX_URL') || 'https://api.frankfurter.dev/v1').replace(/\/+$/, '');
+const OFFLINE = setting('FX_OFFLINE') === '1';
 const QUOTE = 'USD';
 
 // A lookup has to lose to a stalled network quickly. Four stages on one trade
@@ -624,7 +625,7 @@ export async function backfillRates({ refresh = false } = {}) {
  * someone asks again. That used to be a button on Stats, pressed by hand for a
  * difference of cents; now the server asks by itself until the real rate is in.
  */
-const FX_REFRESH_MS = intervalMs(process.env.MYAAVE_FX_REFRESH_MS, 3_600_000);
+const FX_REFRESH_MS = intervalMs(setting('FX_REFRESH_MS'), 3_600_000);
 const FX_FIRST_REFRESH_MS = 15_000;
 
 let refreshTimer = null;

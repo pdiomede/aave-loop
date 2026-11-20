@@ -130,11 +130,14 @@ const freePort = () =>
 // Nothing from the developer's own setup may leak in: no real token, no fixed
 // price, no other config file.
 const isolated = {
-  MYAAVE_CONFIG: path.join(tmp, 'none.env'),
-  MYAAVE_TELEGRAM_URL: MOCK,
-  MYAAVE_ETH_URL: MOCK,
-  MYAAVE_FX_OFFLINE: '1',
-  MYAAVE_BOT_OFF: '1',
+  // The old MYAAVE_* names are still read when a new one is unset (env.js), so
+  // any the developer's shell exports are blanked here, or they would leak in.
+  ...Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith('MYAAVE_')).map((k) => [k, ''])),
+  ETHROUNDTRIP_CONFIG: path.join(tmp, 'none.env'),
+  ETHROUNDTRIP_TELEGRAM_URL: MOCK,
+  ETHROUNDTRIP_ETH_URL: MOCK,
+  ETHROUNDTRIP_FX_OFFLINE: '1',
+  ETHROUNDTRIP_BOT_OFF: '1',
   TELEGRAM_BOT_TOKEN: '',
   TELEGRAM_CHAT_ID: '',
   TELEGRAM_OWNER_ID: '',
@@ -149,11 +152,11 @@ const server = spawn(process.execPath, ['server.js'], {
     ...process.env,
     ...isolated,
     PORT: String(port),
-    MYAAVE_DB: path.join(tmp, 'api.db'),
-    MYAAVE_ETH_OFFLINE: '1',
-    MYAAVE_ETH_PRICE: '3000',
-    MYAAVE_BTC_PRICE: '90000',
-    MYAAVE_ALERT_POLL_MS: '3600000',
+    ETHROUNDTRIP_DB: path.join(tmp, 'api.db'),
+    ETHROUNDTRIP_ETH_OFFLINE: '1',
+    ETHROUNDTRIP_ETH_PRICE: '3000',
+    ETHROUNDTRIP_BTC_PRICE: '90000',
+    ETHROUNDTRIP_ALERT_POLL_MS: '3600000',
   },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
@@ -332,10 +335,40 @@ await check('a config.env that cannot be read is named without its path', async 
   const out = execFileSync(
     process.execPath,
     ['--input-type=module', '-e', "const { telegramConfig } = await import('./config.js'); console.log(telegramConfig().reason)"],
-    { cwd: root, env: { ...process.env, ...isolated, MYAAVE_CONFIG: path.join(file, 'config.env') }, stdio: ['ignore', 'pipe', 'ignore'] },
+    { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_CONFIG: path.join(file, 'config.env') }, stdio: ['ignore', 'pipe', 'ignore'] },
   ).toString();
   assert.match(out, /config\.env could not be read \(ENOTDIR\)/);
   assert.ok(!out.includes(tmp), out);
+});
+
+await check('the settings read ETHROUNDTRIP_*, and the old MYAAVE_* names when a new one is unset', async () => {
+  const read = (env) =>
+    JSON.parse(
+      execFileSync(
+        process.execPath,
+        ['--input-type=module', '-e', "const e = await import('./env.js'); console.log(JSON.stringify({ db: e.setting('DB') ?? null, name: e.settingName('DB'), note: e.oldSettingsNote() }))"],
+        { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: '', ...env }, stdio: ['ignore', 'pipe', 'ignore'] },
+      ).toString(),
+    );
+  // An install configured before the rename: only the old name.
+  const old = read({ MYAAVE_DB: '/srv/ledger.db' });
+  assert.equal(old.db, '/srv/ledger.db');
+  assert.equal(old.name, 'MYAAVE_DB');
+  assert.match(old.note, /MYAAVE_DB -> ETHROUNDTRIP_DB/);
+  // Both: the new name wins. Neither: unset, and nothing to say.
+  assert.equal(read({ MYAAVE_DB: '/srv/old.db', ETHROUNDTRIP_DB: '/srv/new.db' }).db, '/srv/new.db');
+  const none = read({});
+  assert.equal(none.db, null);
+  assert.equal(none.note, null);
+  // Through the app: a config file named by the old setting is the one read.
+  const file = path.join(tmp, 'old-name.env');
+  fs.writeFileSync(file, 'TELEGRAM_BOT_TOKEN=123456:FAKE\n');
+  const reason = execFileSync(
+    process.execPath,
+    ['--input-type=module', '-e', "const { telegramConfig } = await import('./config.js'); console.log(telegramConfig().reason)"],
+    { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_CONFIG: '', MYAAVE_CONFIG: file }, stdio: ['ignore', 'pipe', 'ignore'] },
+  ).toString().trim();
+  assert.equal(reason, 'TELEGRAM_CHAT_ID is missing from old-name.env.');
 });
 
 await check('a config file that cannot be read is said so even with one value exported, and named as it is', async () => {
@@ -351,14 +384,14 @@ await check('a config file that cannot be read is said so even with one value ex
   fs.writeFileSync(locked, 'TELEGRAM_CHAT_ID=-100\n');
   fs.chmodSync(locked, 0o000);
   try {
-    assert.match(reasonFor({ MYAAVE_CONFIG: locked, TELEGRAM_BOT_TOKEN: '123456:FAKE' }), /locked\.env exists but this process cannot read it/);
+    assert.match(reasonFor({ ETHROUNDTRIP_CONFIG: locked, TELEGRAM_BOT_TOKEN: '123456:FAKE' }), /locked\.env exists but this process cannot read it/);
   } finally {
     fs.chmodSync(locked, 0o600);
   }
-  // Named as MYAAVE_CONFIG names it, not "config.env".
+  // Named as ETHROUNDTRIP_CONFIG names it, not "config.env".
   const other = path.join(tmp, 'alerts.env');
   fs.writeFileSync(other, 'TELEGRAM_BOT_TOKEN=123456:FAKE\n');
-  assert.equal(reasonFor({ MYAAVE_CONFIG: other }), 'TELEGRAM_CHAT_ID is missing from alerts.env.');
+  assert.equal(reasonFor({ ETHROUNDTRIP_CONFIG: other }), 'TELEGRAM_CHAT_ID is missing from alerts.env.');
 });
 
 await check('amounts typed with a decimal comma read as written', async () => {
@@ -546,13 +579,13 @@ if (process.exitCode && serverErr) warn(`server stderr:\n${serverErr}`);
 // In this process, so each sweep can be driven by hand. Set before the first
 // import of db.js, which opens the file it names.
 Object.assign(process.env, isolated, {
-  MYAAVE_DB: path.join(tmp, 'alerts.db'),
+  ETHROUNDTRIP_DB: path.join(tmp, 'alerts.db'),
   TELEGRAM_BOT_TOKEN: '1:test',
   TELEGRAM_CHAT_ID: '-1',
-  MYAAVE_ALERT_POLL_MS: '1000',
+  ETHROUNDTRIP_ALERT_POLL_MS: '1000',
 });
-delete process.env.MYAAVE_ETH_OFFLINE;
-delete process.env.MYAAVE_ETH_PRICE;
+delete process.env.ETHROUNDTRIP_ETH_OFFLINE;
+delete process.env.ETHROUNDTRIP_ETH_PRICE;
 console.log = () => {};
 console.error = () => {};
 console.warn = () => {};
@@ -974,9 +1007,9 @@ function fxChild(body) {
   const env = {
     ...process.env,
     ...isolated,
-    MYAAVE_DB: path.join(tmp, `fx-${(fxDbs += 1)}.db`),
-    MYAAVE_FX_OFFLINE: '0',
-    MYAAVE_FX_URL: MOCK,
+    ETHROUNDTRIP_DB: path.join(tmp, `fx-${(fxDbs += 1)}.db`),
+    ETHROUNDTRIP_FX_OFFLINE: '0',
+    ETHROUNDTRIP_FX_URL: MOCK,
   };
   const code = `const { db, prepare } = await import('./db.js');\nconst fx = await import('./fx.js');\n${body}\nprocess.exit(0);`;
   return new Promise((resolve, reject) => {
@@ -1073,7 +1106,7 @@ await check('set-platform: a dry run writes nothing, --apply sets Aave on the re
   const runIt = (...args) =>
     execFileSync(process.execPath, ['scripts/set-platform.mjs', ...args], {
       cwd: root,
-      env: { ...process.env, ...isolated, MYAAVE_DB: file },
+      env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file },
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });

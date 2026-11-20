@@ -16,6 +16,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Morpho is a platform,** beside Aave and Ether.fi: in the New trade and Borrowed pickers, with its logo, and on Stats as Performance (Morpho) and a row in By Platform.
 - **/holding gives a line per platform** under its totals, with the trades, what each holds and its share of Unrealised; the lines add up to it. Shown when the holdings span two platforms or more.
 - **Back and Forward move between Trades, Stats and Alerts,** with a half-typed form kept; Back used to leave the app.
+- **The Statement has a By asset section**, ETH and cbBTC rows under By currency, adding up to the totals; By month now runs in two columns to make room on the one page.
 - **The ledger and the landing page follow the system theme live** while no theme has been picked: an open page goes dark with the Mac. The landing toggle script changed again, so nginx's CSP needs its newest hash.
 
 ### Changed
@@ -27,6 +28,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Ether.fi has a new logo, `etherfi.png`**, replacing `etherfi.jpg` in the app, the landing page and the social card. Platform logos sit on a white disc, so its transparent outline reads in the dark theme.
 - **The social card is redrawn as `landing/og5.png`**, naming the three platforms, ETH and cbBTC; a new filename because scrapers cache by URL. Its source is `scripts/og.html`, rendered with headless Chrome.
 - **The launcher is `runETHRoundTrip.sh`** (was `run_myAave.sh`), and says ETH Roundtrip throughout; the logo files are `ETHRoundtrip_logo*.png` (were `AaveLoop_logo*`).
+- **Settings are `ETHROUNDTRIP_*`, browser storage `ethroundtrip-*` and the package `eth-roundtrip`**, the last of the myAave name. The old `MYAAVE_*` settings and `myaave-*` keys still work, and the startup log lists old settings in use. The ledger stays at `data/myaave.db`. Both landing scripts changed, so nginx's CSP needs two new hashes.
 
 ### Fixed
 
@@ -119,6 +121,7 @@ Phones:
 
 - **The Sort by picker shows its whole choice at 320px;** "Trade date" read "Trade".
 - **A closed trade's dates wrap inside their card** instead of pushing the page sideways at 320px.
+- **The price banner keeps to one row per coin at 320px**, a six-figure BTC with two-digit moves included, and a page turn lands below the header however tall it is: a wrapped row hid the table's first lines.
 
 ## [2.1.7] - 2026-11-13
 

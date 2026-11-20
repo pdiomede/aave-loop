@@ -45,6 +45,7 @@ import { marketPrices } from './prices.js';
 import { sendTelegramMessage } from './telegram.js';
 import { telegramConfig } from './config.js';
 import { n2, qty, fmtDate, signedUsd, signedPct2 } from './format.js';
+import { setting } from './env.js';
 
 /**
  * Fifteen minutes. The price is checked on a schedule rather than watched, and
@@ -52,7 +53,7 @@ import { n2, qty, fmtDate, signedUsd, signedPct2 } from './format.js';
  * the point, and asking a free service four times an hour keeps us a polite
  * distance from its rate limit.
  */
-const POLL_MS = intervalMs(process.env.MYAAVE_ALERT_POLL_MS, 900_000);
+const POLL_MS = intervalMs(setting('ALERT_POLL_MS'), 900_000);
 
 /** A first look shortly after boot, so a restart is not blind for the interval. */
 const FIRST_RUN_MS = 10_000;

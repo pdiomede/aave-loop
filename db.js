@@ -3,11 +3,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 import { PEGGED_CURRENCIES } from './lib/calc.js';
+import { setting } from './env.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const dbFile = process.env.MYAAVE_DB || path.join(root, 'data', 'myaave.db');
+// The file keeps its old name, myaave.db, on purpose: it is the ledger, and
+// renaming it would mean moving it on every install.
+const dbFile = setting('DB') || path.join(root, 'data', 'myaave.db');
 
-// The directory of whichever file was chosen, not `data/`. MYAAVE_DB can point
+// The directory of whichever file was chosen, not `data/`. ETHROUNDTRIP_DB can point
 // anywhere, and creating `data/` while writing somewhere else left an empty
 // directory behind on every install that used it.
 fs.mkdirSync(path.dirname(dbFile), { recursive: true });

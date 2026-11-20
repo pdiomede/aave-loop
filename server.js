@@ -56,6 +56,7 @@ import {
   freshPrice,
 } from './alerts.js';
 import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
+import { setting, oldSettingsNote } from './env.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -100,7 +101,7 @@ app.use((_req, res, next) => {
 // on the internet that points its own hostname at 127.0.0.1 still fails this
 // check, because its name is not on the list. Left unset, this is exactly the
 // loopback-only ledger it has always been.
-const EXTRA_HOSTS = (process.env.MYAAVE_ALLOWED_HOSTS || '')
+const EXTRA_HOSTS = (setting('ALLOWED_HOSTS') || '')
   .split(',')
   .map((h) => h.trim().toLowerCase())
   .filter(Boolean);
@@ -117,7 +118,7 @@ app.use((req, res, next) => {
       .type('text/plain')
       .send(
         'This ledger only answers on localhost. Behind a proxy, name the host in ' +
-          'MYAAVE_ALLOWED_HOSTS.',
+          'ETHROUNDTRIP_ALLOWED_HOSTS.',
       );
   }
   next();
@@ -721,11 +722,11 @@ app.post('/api/fx/backfill', async (req, res, next) => {
  * polls for it. One number so the two cannot drift: asking more often than the
  * cache allows would return the same figure and spend a request doing it.
  *
- * Overridable for the same reason `MYAAVE_ALERT_POLL_MS` is - five minutes is
+ * Overridable for the same reason `ETHROUNDTRIP_ALERT_POLL_MS` is - five minutes is
  * a long time to sit watching a ticker to find out whether it ticks. The page
  * refuses anything under thirty seconds whatever this says.
  */
-const PRICE_TICKER_MS = intervalMs(process.env.MYAAVE_ETH_POLL_MS, 300_000);
+const PRICE_TICKER_MS = intervalMs(setting('ETH_POLL_MS'), 300_000);
 
 /**
  * One quote as the page reads it: the header ticker and the alert window take
@@ -1085,6 +1086,8 @@ app.use((err, _req, res, _next) => {
 // no business being reachable from the rest of the network.
 const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`ETH Roundtrip v${pkg.version} running at http://localhost:${PORT}`);
+  const oldNames = oldSettingsNote();
+  if (oldNames) console.log(oldNames);
   // Started here rather than at import, so the port being taken below cannot
   // leave a poller running in a process that is on its way out.
   reportConfig();

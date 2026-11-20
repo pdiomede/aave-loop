@@ -457,7 +457,7 @@ export function summaryText(s, held = []) {
 
 /**
  * `every` is the interval the bot actually sends `/watch` at, in words, which
- * `MYAAVE_WATCH_MS` can change; this said "every 20 minutes" regardless.
+ * `ETHROUNDTRIP_WATCH_MS` can change; this said "every 20 minutes" regardless.
  */
 export function helpText(every = '20 minutes') {
   return [

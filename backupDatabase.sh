@@ -49,12 +49,14 @@ die()  {
   exit 1
 }
 
-DB="${MYAAVE_DB:-data/myaave.db}"
+# ETHROUNDTRIP_* first, then the old MYAAVE_* names, as the app reads them
+# (env.js), so a cron line written before the rename keeps working.
+DB="${ETHROUNDTRIP_DB:-${MYAAVE_DB:-data/myaave.db}}"
 # HOME is not guaranteed. cron sets it from the passwd entry, but a systemd
 # timer does not, and under `set -u` a bare $HOME took the script down with
 # "HOME: unbound variable" rather than saying what to pass instead.
-if [ -n "${MYAAVE_BACKUP_DIR:-}" ]; then
-  DEST="$MYAAVE_BACKUP_DIR"
+if [ -n "${ETHROUNDTRIP_BACKUP_DIR:-${MYAAVE_BACKUP_DIR:-}}" ]; then
+  DEST="${ETHROUNDTRIP_BACKUP_DIR:-$MYAAVE_BACKUP_DIR}"
 elif [ -n "${HOME:-}" ]; then
   DEST="$HOME/aaveloop-backups"
 else
@@ -69,7 +71,7 @@ LOG_GIVEN=0
 # was typed: once before the checks, and again once the destination exists.
 LOG_OPEN=0
 KEEP=12
-# Whether --db was given, as opposed to defaulted. The default and MYAAVE_DB
+# Whether --db was given, as opposed to defaulted. The default and ETHROUNDTRIP_DB
 # are relative to the checkout - `data/myaave.db` only means anything there,
 # and resetDatabase.sh reads them the same way. A path typed on the command
 # line is not that: it means what it means from where it was typed.
@@ -85,10 +87,12 @@ backups past --keep are then removed, oldest first. A log of every run is
 kept in that same folder, so the copies and the account of how they got there
 sit side by side.
 
-  --dest DIR    Where backups go. Defaults to $MYAAVE_BACKUP_DIR, then to
+  --dest DIR    Where backups go. Defaults to $ETHROUNDTRIP_BACKUP_DIR
+                (or the older $MYAAVE_BACKUP_DIR), then to
                 ~/aaveloop-backups.
   --keep N      How many backups to keep. Defaults to 12. 0 keeps them all.
-  --db FILE     Database to back up. Defaults to $MYAAVE_DB, then to
+  --db FILE     Database to back up. Defaults to $ETHROUNDTRIP_DB (or the
+                older $MYAAVE_DB), then to
                 data/myaave.db.
   --log FILE    Append this run's output here instead. Defaults to a file
                 beside the backups named after the database, so backing up
@@ -97,7 +101,7 @@ sit side by side.
   --help        Show this message.
 
 A path typed into --dest, --log or --db is resolved from wherever you run
-this. The database's two defaults are not: data/myaave.db and $MYAAVE_DB are
+this. The database's defaults are not: data/myaave.db and $ETHROUNDTRIP_DB are
 read from the folder the script lives in, the same way resetDatabase.sh reads
 them, because that is the only place they mean anything.
 

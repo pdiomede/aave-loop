@@ -18,9 +18,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { setting } from './env.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const FILE = process.env.MYAAVE_CONFIG || path.join(root, 'config.env');
+const FILE = setting('CONFIG') || path.join(root, 'config.env');
 
 /**
  * KEY=value, one per line. `#` comments, blank lines and a leading `export `
@@ -149,7 +150,7 @@ export function telegramConfig() {
   // who is the only reader, so the name of the setting does not say group.
   const chatName = get('TELEGRAM_CHAT_NAME') || FALLBACK_NAME;
 
-  // The file by the name it has: `MYAAVE_CONFIG` can call it anything, and
+  // The file by the name it has: `ETHROUNDTRIP_CONFIG` can call it anything, and
   // "missing from config.env" sent the reader to a file the app never read.
   const name = path.basename(FILE);
   let reason = null;

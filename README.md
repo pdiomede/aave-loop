@@ -16,7 +16,7 @@ Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script i
 
 - `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open (it asks `lsof`, or `fuser`, and will not run with neither), and keeps a backup under `data/backups`.
 - `./backupDatabase.sh` takes a backup that is safe while the server runs, by default into `~/aaveloop-backups` (the old name, kept so existing backups and cron lines stay valid); `--help` gives the cron line.
-- `node scripts/set-platform.mjs --etherfi <id> --apply` fills in the platform on trades recorded before it was asked for: the ids named go to Ether.fi, the rest to Aave. Without `--apply` it only lists what would change; it honours `MYAAVE_DB`.
+- `node scripts/set-platform.mjs --etherfi <id> --apply` fills in the platform on trades recorded before it was asked for: the ids named go to Ether.fi, the rest to Aave. Without `--apply` it only lists what would change; it honours `ETHROUNDTRIP_DB`.
 - `npm run check` runs four offline suites: the formulas in `lib/calc.js` against hand-worked figures, the forms' input rules, the Statement PDF, and the server itself against a throwaway database with Telegram and the price service mocked.
 
 ## How a trade works
@@ -66,7 +66,7 @@ Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage 
 
 A loan cost can be negative: if the euro fell, the loan was cheaper in dollars than its interest.
 
-- **Rates are the ECB's**, through Frankfurter, a public mirror of its daily file at `api.frankfurter.dev/v1` (`MYAAVE_FX_URL` points elsewhere). It publishes on business days, so a Sunday trade takes Friday's rate; the publication date is shown beside each figure so it can be checked against [the ECB's tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
+- **Rates are the ECB's**, through Frankfurter, a public mirror of its daily file at `api.frankfurter.dev/v1` (`ETHROUNDTRIP_FX_URL` points elsewhere). It publishes on business days, so a Sunday trade takes Friday's rate; the publication date is shown beside each figure so it can be checked against [the ECB's tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
 - **EURC is valued as one euro**, the honest approximation with no free feed for the coin itself.
 - **Rates fill themselves in.** A trade always saves. One without a rate is marked, left out of the totals, and looked up every hour; **Fetch rates** on Stats asks at once.
 - **A day not yet published takes the day before's rate, marked provisional,** and the real rate replaces it once the ECB publishes, however long the app was off in between. A rate more than six days older than its day is never used: the stage waits for a real one.
@@ -109,7 +109,7 @@ help - what this bot can do
    ```bash
    curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*'
    ```
-   Do this with the app stopped or started with `MYAAVE_BOT_OFF=1`: only one reader is allowed, and a running app takes the updates first. A group's id changes when it becomes a supergroup, which making the bot an admin can trigger; the log prints the id of every chat it ignores.
+   Do this with the app stopped or started with `ETHROUNDTRIP_BOT_OFF=1`: only one reader is allowed, and a running app takes the updates first. A group's id changes when it becomes a supergroup, which making the bot an admin can trigger; the log prints the id of every chat it ignores.
 3. **Write the file** in the app's directory, then fill it in:
    ```bash
    cp config.env.example config.env && chmod 600 config.env
@@ -128,7 +128,7 @@ help - what this bot can do
    ```
    `{"ok":true}` and a message means it works; otherwise the answer says why (`chat not found`, `Unauthorized`). One test per ten seconds.
 
-The format is `KEY=value` per line, with `#` comments, an optional `export ` and one pair of quotes stripped; no interpolation. An exported variable overrides the file for one run. Where the app directory is not yours to write, point at a file you own with `MYAAVE_CONFIG=/path/to/file`. `config.env` is gitignored, the app warns if others can read it, and the token never appears in a log or a response.
+The format is `KEY=value` per line, with `#` comments, an optional `export ` and one pair of quotes stripped; no interpolation. An exported variable overrides the file for one run. Where the app directory is not yours to write, point at a file you own with `ETHROUNDTRIP_CONFIG=/path/to/file`. Settings were named `MYAAVE_*` before 20 Nov 2026; those names still work when the new one is unset, and the startup log lists any in use. `config.env` is gitignored, the app warns if others can read it, and the token never appears in a log or a response.
 
 ## Layout
 
@@ -142,6 +142,7 @@ alerts.js      price alerts and their timer
 bot.js         reading and answering commands
 report.js      what the bot says, with format.js
 config.js      reads config.env
+env.js         reads the ETHROUNDTRIP_* settings
 lib/           shared with the browser: calc.js (every formula), input.js (form rules),
                csv.js (the export), statement.js and logo.js (the PDF)
 public/        interface

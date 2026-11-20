@@ -11,7 +11,7 @@
  * set to Aave. A trade that already has one and is not named is left alone, so
  * running it twice changes nothing the second time.
  *
- * Against MYAAVE_DB, or data/myaave.db. It goes through db.js, so the column is
+ * Against ETHROUNDTRIP_DB (or the older MYAAVE_DB), or data/myaave.db. It goes through db.js, so the column is
  * added first if the server has not been restarted on this version yet. Take a
  * backup first (./backupDatabase.sh); it writes in one transaction, and an
  * unknown id writes nothing at all.

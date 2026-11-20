@@ -43,7 +43,7 @@ Beyond that, verification means executing the thing you changed:
 ```bash
 node --check server.js                      # syntax (public/app.js needs a .mjs copy)
 node --input-type=module -e "import('./lib/calc.js').then(...)"   # pure functions
-PORT=3011 MYAAVE_DB=/tmp/scratch.db npm start                     # never data/myaave.db
+PORT=3011 ETHROUNDTRIP_DB=/tmp/scratch.db npm start                     # never data/myaave.db
 ```
 
 Drive a throwaway ledger rather than reasoning about a figure: import `lib/calc.js`
@@ -61,22 +61,22 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 
 | Variable | Effect |
 | --- | --- |
-| `MYAAVE_DB` | database file. Always set it when testing. |
-| `MYAAVE_FX_OFFLINE=1` / `MYAAVE_ETH_OFFLINE=1` | no network lookups at all |
-| `MYAAVE_ETH_PRICE=3450` / `MYAAVE_BTC_PRICE=97000` | a fixed ETH / BTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
-| `MYAAVE_BOT_OFF=1` | no Telegram long-poll |
-| `MYAAVE_FX_URL` / `MYAAVE_ETH_URL` / `MYAAVE_TELEGRAM_URL` | point at a mock |
-| `MYAAVE_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
-| `MYAAVE_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
+| `ETHROUNDTRIP_DB` | database file. Always set it when testing. |
+| `ETHROUNDTRIP_FX_OFFLINE=1` / `ETHROUNDTRIP_ETH_OFFLINE=1` | no network lookups at all |
+| `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` | a fixed ETH / BTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
+| `ETHROUNDTRIP_BOT_OFF=1` | no Telegram long-poll |
+| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` | point at a mock |
+| `ETHROUNDTRIP_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
+| `ETHROUNDTRIP_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
 
-Every interval read from the environment (`MYAAVE_FX_REFRESH_MS`, `MYAAVE_ALERT_POLL_MS`,
-`MYAAVE_ETH_POLL_MS`, and the bot's `MYAAVE_BOT_LEASE_MS`, `MYAAVE_BOT_LEASE_RETRY_MS`,
-`MYAAVE_WATCH_MS`) goes through `intervalMs` in `lib/calc.js`: below a second it is
+Every interval read from the environment (`ETHROUNDTRIP_FX_REFRESH_MS`, `ETHROUNDTRIP_ALERT_POLL_MS`,
+`ETHROUNDTRIP_ETH_POLL_MS`, and the bot's `ETHROUNDTRIP_BOT_LEASE_MS`, `ETHROUNDTRIP_BOT_LEASE_RETRY_MS`,
+`ETHROUNDTRIP_WATCH_MS`) goes through `intervalMs` in `lib/calc.js`: below a second it is
 the default, above 2^31 − 1 ms it is capped. Node turns an out-of-range timer into 1 ms,
 so a huge value meant to switch something off made it fire continuously.
-`MYAAVE_BOT_POLL_S` is clamped to 1–50 seconds, and `/watch` to at least a minute.
+`ETHROUNDTRIP_BOT_POLL_S` is clamped to 1–50 seconds, and `/watch` to at least a minute.
 
-`MYAAVE_CONFIG` relocates `config.env`. Everything in that file can be overridden by
+`ETHROUNDTRIP_CONFIG` relocates `config.env`. Everything in that file can be overridden by
 exporting it for one run; the shell always wins over the file.
 
 ### Releasing
@@ -117,7 +117,19 @@ tracked as usual. Keep it current when a release leaves a step for the VPS.
 
 The old Aave Loop name is gone from the code except `~/aaveloop-backups`,
 `backupDatabase.sh`'s default destination, kept on purpose so existing backups and
-cron lines stay valid, and the `MYAAVE_*` / `myaave-*` names (see NEXT.md).
+cron lines stay valid. The first name, myAave, survives only as fallbacks and in
+`data/myaave.db`, the ledger's file, kept so no install has to move it:
+
+- Settings are `ETHROUNDTRIP_*`, read through `setting()` in `env.js` (server-only),
+  which falls back to the old `MYAAVE_*` name when the new one is unset or empty, so
+  a service file written before the rename keeps working; the startup log names any
+  old ones in use. The shell scripts read them in the same order. Read a new setting
+  through `setting()`, never `process.env` directly. `scripts/check-server.mjs`
+  blanks every `MYAAVE_*` from the developer's shell for that reason.
+- Browser storage is `ethroundtrip-*` (`stored`/`store` in `public/app.js`, and the
+  theme in `public/theme.js` and both landing scripts): read under the new key, then
+  the old `myaave-*` one, and saved under the new key with the old one removed.
+- The package is `eth-roundtrip`.
 
 Every user-visible change gets its `CHANGELOG.md` line in the commit that makes it,
 under `## [Unreleased]`, which you rename to the new number by hand at release (the
@@ -175,12 +187,13 @@ view calls, over the year's **closed trades only** (`closedTrades`, by `isRealiz
 it is a closing statement, so an open position is in no figure on it. It imports
 `calc.js` and `lib/logo.js`, the logo's PNG data written by `scripts/make-logo.mjs`
 (rerun it if `public/ETHRoundtrip_logo_96.png` changes; the checks fail until you do).
-It is one A4 page by construction (a year has at most 12 months and `CURRENCIES` 5
-coins) and throws rather than draw past the bottom margin, so a layout change that
-overflows fails `npm run check`. It is ASCII throughout - text beyond it as octal
+It is one A4 page by construction (a year has at most 12 months, drawn in two
+columns of six, `CURRENCIES` 5 coins and `ASSETS` 2) and throws rather than draw past
+the bottom margin, so a layout change that overflows fails `npm run check`; the
+fullest year, both assets included, leaves about 25pt. It is ASCII throughout - text beyond it as octal
 escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
-`fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
+`env.js`, `fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
 `report.js` and `format.js` sit at the root **because they are server-only** — the
 browser is served `lib/` wholesale. `format.js` duplicates some of `public/app.js`'s
 formatters on purpose: the browser's escape their output for `innerHTML`, which would
@@ -192,7 +205,7 @@ be wrong in a Telegram message.
 its physical working directory, on the port asked for or one it moved to, with 14 s to
 shut down: the server waits up to 12 s for an alert send), but moves to the next free
 port when anything else holds it, and a copy started by hand (`PORT=3011
-npm start`, a second checkout pointed at the same `MYAAVE_DB`) runs beside it. So
+npm start`, a second checkout pointed at the same `ETHROUNDTRIP_DB`) runs beside it. So
 concurrent access is a supported state, not an edge case. Production runs one
 copy; this is mostly a dev-machine state, but the code holds for both. This is why:
 
@@ -320,7 +333,7 @@ new platform needs only its `PLATFORM_META` entry, a logo in `public/` and its i
 each gain summed in cents as printed so the lines add up to Unrealised, and only when
 the held trades span two platforms or more. The Performance cards
 and the four breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
-start closed, and keep their open/closed state in localStorage (`myaave-stats-open`).
+start closed, and keep their open/closed state in localStorage (`ethroundtrip-stats-open`).
 
 ### Assets and markets
 
@@ -353,8 +366,9 @@ market is not the trade's. The alert window sends the market it was drawn in
 trade's now, so a window left open across a change of asset cannot arm one. The asset picker sits in the Bought card's heading and
 joins the stage form by `form=`, as the new trade's platform does; `applyAsset`
 redraws the form's fields for a pick. Stats' By asset is `summaryReport().byAsset`,
-with a row for loans that bought nothing yet. The Statement PDF has no By asset: its
-worst case fills the A4 page to within a few points.
+with a row for loans that bought nothing yet. The Statement PDF draws it as a second
+section of its By currency card ("By currency and asset"), which costs less than a
+card of its own; a closing statement has no nothing-bought row.
 
 ### Rules the code holds itself to
 

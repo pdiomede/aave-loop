@@ -20,7 +20,8 @@ ok()   { printf '  %s+%s %s\n' "$GREEN" "$OFF" "$1"; }
 warn() { printf '  %s!%s %s\n' "$YELLOW" "$OFF" "$1"; }
 die()  { printf '  %sx%s %s\n' "$RED" "$OFF" "$1" >&2; exit 1; }
 
-DB="${MYAAVE_DB:-data/myaave.db}"
+# The old MYAAVE_DB still read, after ETHROUNDTRIP_DB, as the app reads it.
+DB="${ETHROUNDTRIP_DB:-${MYAAVE_DB:-data/myaave.db}}"
 BACKUP=1
 ASSUME_YES=0
 
@@ -35,7 +36,8 @@ Deletes every trade and leaves an empty ledger. You are asked to confirm twice.
   --help        Show this message.
 
 Environment:
-  MYAAVE_DB     Database file to reset. Defaults to data/myaave.db
+  ETHROUNDTRIP_DB  Database file to reset (MYAAVE_DB, the old name, works
+                   too). Defaults to data/myaave.db
 USAGE
 }
 
@@ -59,10 +61,10 @@ fi
 
 COUNT="unknown"
 if [ -d node_modules/better-sqlite3 ]; then
-  COUNT="$(MYAAVE_DB_PATH="$DB" node -e '
+  COUNT="$(ETHROUNDTRIP_DB_PATH="$DB" node -e '
     try {
       const Database = require("better-sqlite3");
-      const db = new Database(process.env.MYAAVE_DB_PATH, { readonly: true });
+      const db = new Database(process.env.ETHROUNDTRIP_DB_PATH, { readonly: true });
       const row = db.prepare("SELECT COUNT(*) AS n FROM trades").get();
       db.close();
       process.stdout.write(String(row.n));
@@ -136,7 +138,7 @@ ok "Ledger deleted"
 
 # Recreate the schema so the next start finds a ready, empty database.
 if [ -d node_modules/better-sqlite3 ]; then
-  MYAAVE_DB="$DB" node -e 'import("./db.js").then(({ closeDb }) => closeDb());' >/dev/null 2>&1 \
+  ETHROUNDTRIP_DB="$DB" node -e 'import("./db.js").then(({ closeDb }) => closeDb());' >/dev/null 2>&1 \
     && ok "Empty ledger created at $DB" \
     || warn "Could not pre-create the schema. The next start will do it."
 else

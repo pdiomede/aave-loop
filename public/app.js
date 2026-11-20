@@ -385,7 +385,21 @@ const assetMark = (t, size = 15) =>
 // Both tables, the trades and the alerts: they read the same constant, so the
 // two pagers always agree about how long a page is.
 const PAGE_SIZE = 10;
-const SORT_KEY = 'myaave-sort';
+
+/**
+ * Browser storage under the app's name, `ethroundtrip-<name>`. Read under the
+ * old one too, `myaave-<name>` from before 20 Nov 2026, so a saved theme, sort
+ * or set of open cards carries over; the next save moves it to the new key.
+ * Either can throw where storage is blocked, and every caller catches it.
+ */
+function stored(name) {
+  return localStorage.getItem(`ethroundtrip-${name}`) ?? localStorage.getItem(`myaave-${name}`);
+}
+
+function store(name, value) {
+  localStorage.setItem(`ethroundtrip-${name}`, value);
+  localStorage.removeItem(`myaave-${name}`);
+}
 
 // Newest borrow date first, which is the order the server already sends and
 // therefore what the table showed before it could be sorted at all.
@@ -427,7 +441,7 @@ const SORT_LABELS = {
 
 function loadSort() {
   try {
-    const saved = JSON.parse(localStorage.getItem(SORT_KEY) || 'null');
+    const saved = JSON.parse(stored('sort') || 'null');
     if (saved && SORT_KEYS[saved.key] && (saved.dir === 'asc' || saved.dir === 'desc')) {
       return saved;
     }
@@ -437,15 +451,13 @@ function loadSort() {
   return { ...DEFAULT_SORT };
 }
 
-const STATS_OPEN_KEY = 'myaave-stats-open';
-
 // Every Stats card that folds: one Performance card per platform, and the
 // four breakdown tables. A key no longer here is dropped on load.
 const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-asset', 'by-currency', 'by-month'];
 
 function loadStatsOpen() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STATS_OPEN_KEY) || '[]');
+    const saved = JSON.parse(stored('stats-open') || '[]');
     if (Array.isArray(saved)) return new Set(saved.filter((k) => FOLDING_CARDS.includes(k)));
   } catch (e) {
     /* private browsing, or something else wrote nonsense to the key */
@@ -455,7 +467,7 @@ function loadStatsOpen() {
 
 function saveStatsOpen() {
   try {
-    localStorage.setItem(STATS_OPEN_KEY, JSON.stringify([...state.statsOpen]));
+    store('stats-open', JSON.stringify([...state.statsOpen]));
   } catch (e) {
     /* the cards simply start collapsed next time */
   }
@@ -463,7 +475,7 @@ function saveStatsOpen() {
 
 function saveSort() {
   try {
-    localStorage.setItem(SORT_KEY, JSON.stringify(state.sort));
+    store('sort', JSON.stringify(state.sort));
   } catch (e) {
     /* the sort simply will not persist */
   }
@@ -2657,7 +2669,7 @@ function missingOnTab(count, tab) {
  * Where these rates are published.
  *
  * Not where this app fetches them: the figures are ECB reference rates, but
- * they arrive by way of a mirror, and `MYAAVE_FX_URL` can point the fetch
+ * they arrive by way of a mirror, and `ETHROUNDTRIP_FX_URL` can point the fetch
  * somewhere else again. So the claim the note makes is the one the README and
  * `fx.js` already make - that a conversion can be checked against the ECB's own
  * tables - and this page is the place to check it, because it carries the day's
@@ -4100,7 +4112,7 @@ function applyTheme(theme, { persist = true } = {}) {
   if (!persist) return;
   themePicked = true;
   try {
-    localStorage.setItem('myaave-theme', theme);
+    store('theme', theme);
   } catch (e) {
     /* private browsing, the toggle simply will not persist */
   }
@@ -4122,7 +4134,7 @@ function followSystemTheme() {
   query.addEventListener?.('change', (e) => {
     if (themePicked) return;
     try {
-      if (localStorage.getItem('myaave-theme')) return;
+      if (stored('theme')) return;
     } catch (err) {
       /* unreadable storage holds no choice */
     }
@@ -4683,11 +4695,28 @@ function wire() {
   });
 }
 
+/**
+ * The sticky header's height as `--header-h`, which the pagers' scroll offset
+ * reads on a phone. Measured, not assumed: a ticker row that wraps - a
+ * six-figure BTC with two-digit moves on a narrow screen - made the header
+ * 195px against a fixed 180, and a page turn left the table's first rows
+ * under it.
+ */
+function trackHeaderHeight() {
+  const header = document.querySelector('header');
+  if (!header || typeof ResizeObserver !== 'function') return;
+  const set = () =>
+    document.documentElement.style.setProperty('--header-h', `${Math.ceil(header.getBoundingClientRect().height)}px`);
+  new ResizeObserver(set).observe(header);
+  set();
+}
+
 /* ------------------------------------------------------------------- boot */
 
 async function boot() {
   applyTheme(document.documentElement.dataset.theme || 'light', { persist: false });
   followSystemTheme();
+  trackHeaderHeight();
   wire();
   // Not awaited, for the same reason the ticker below is not: the number in
   // the markup is stamped at release and is already right, so this only ever

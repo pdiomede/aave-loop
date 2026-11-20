@@ -30,8 +30,9 @@ import { telegramConfig } from './config.js';
 import { intervalMs } from './lib/calc.js';
 import { sendTelegramMessage } from './telegram.js';
 import { priceMessage, watchMessage, holdingMessage, holdingCount, summaryMessage, helpText } from './report.js';
+import { setting, settingName } from './env.js';
 
-const OFF = process.env.MYAAVE_BOT_OFF === '1';
+const OFF = setting('BOT_OFF') === '1';
 
 /**
  * Telegram holds a long poll open this long before answering with nothing.
@@ -39,13 +40,13 @@ const OFF = process.env.MYAAVE_BOT_OFF === '1';
  * huge value made that a 1 ms timer, so every poll was aborted as it left and
  * the loop - which does not wait after an abort - asked again at once, forever.
  */
-const POLL_S = Math.min(Math.max(Math.round(Number(process.env.MYAAVE_BOT_POLL_S)) || 50, 1), 50);
+const POLL_S = Math.min(Math.max(Math.round(Number(setting('BOT_POLL_S'))) || 50, 1), 50);
 
 /**
  * Long enough to outlive a whole poll several times over, so a holder that is
  * simply waiting is never mistaken for one that has died.
  */
-const LEASE_MS = intervalMs(process.env.MYAAVE_BOT_LEASE_MS, Math.max(POLL_S * 3000, 120_000));
+const LEASE_MS = intervalMs(setting('BOT_LEASE_MS'), Math.max(POLL_S * 3000, 120_000));
 
 /**
  * How long an instance without the lease waits before asking for it again.
@@ -57,21 +58,21 @@ const LEASE_MS = intervalMs(process.env.MYAAVE_BOT_LEASE_MS, Math.max(POLL_S * 3
  */
 // Through `intervalMs`, like every interval from the environment: it is a
 // sleep, and a negative or huge value became a 1 ms one.
-const LEASE_RETRY_MS = intervalMs(process.env.MYAAVE_BOT_LEASE_RETRY_MS, 15_000);
+const LEASE_RETRY_MS = intervalMs(setting('BOT_LEASE_RETRY_MS'), 15_000);
 
 /**
  * A command older than this is confirmed and not answered. Coming back from an
  * afternoon of downtime should not fire an afternoon of replies at once, and a
  * `/watch` from four hours ago is not a request for a report now.
  */
-const MAX_AGE_S = Number(process.env.MYAAVE_BOT_MAX_AGE_S) || 600;
+const MAX_AGE_S = Number(setting('BOT_MAX_AGE_S')) || 600;
 
 // Added to the clock and written as a date, which throws past year 275760, so
 // bounded the same way.
 //
 // And at least a minute: the price it quotes may be up to five minutes old
 // (see `watchMessage`), and a chat message more often than that is noise.
-const WATCH_MS = Math.max(intervalMs(process.env.MYAAVE_WATCH_MS, 1_200_000), 60_000);
+const WATCH_MS = Math.max(intervalMs(setting('WATCH_MS'), 1_200_000), 60_000);
 
 /**
  * The interval in words, for /help and the /watch reply alike. Rounded to whole
@@ -96,7 +97,7 @@ const MAX_PER_BATCH = 10;
 const BACKOFF_MIN_MS = 1000;
 const BACKOFF_MAX_MS = 60_000;
 
-const API = (process.env.MYAAVE_TELEGRAM_URL || 'https://api.telegram.org').replace(/\/+$/, '');
+const API = (setting('TELEGRAM_URL') || 'https://api.telegram.org').replace(/\/+$/, '');
 
 /** A pid alone is recycled, so a restart could look like the previous holder. */
 const ME = `${os.hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
@@ -597,7 +598,7 @@ export function startBotPoller() {
   if (running) return;
 
   if (OFF) {
-    console.log('Bot commands are off: MYAAVE_BOT_OFF is set.');
+    console.log(`Bot commands are off: ${settingName('BOT_OFF')} is set.`);
     return;
   }
   const { configured, chatName, reason } = telegramConfig();

@@ -42,9 +42,10 @@ when that happens.
 
 ### 2. Update nginx's Content-Security-Policy
 
-The landing page's theme toggle script changed, so its hash changed. Until nginx
-lists the new one, browsers block the toggle on `/` and on the 404 page; the rest of
-those pages still works.
+Both inline scripts on the landing page changed on 20 Nov (the theme follows the
+system live, and is saved under the new `ethroundtrip-theme` key), so both their
+hashes changed. Until nginx lists the new ones, browsers block the theme on `/` and
+on the 404 page; the rest of those pages still works.
 
 Find the line:
 
@@ -52,20 +53,16 @@ Find the line:
 sudo grep -rn "Content-Security-Policy" /etc/nginx/
 ```
 
-In its `script-src`, the hashes must be:
+In its `script-src`, the hashes must be exactly these two:
 
 ```
-'sha256-idlxi/vmZQzRC4UbiGOUSbMaK2QEuIqX4WVbMpag3Bk='
-'sha256-kcXx8jXteMac68iTMfAVKtZtTinxIOw7WtqSERKYMCY='
+'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs='
+'sha256-ncgLIggzLhNYlxt5z2CZJ809QJpZbeGZCmKby9xkDfk='
 ```
 
-- The first is already there; leave it.
-- Add the second. It changed again on 20 Nov, when the toggle learned to follow
-  the system theme live: if you had already added
-  `'sha256-dzz2SlaFkPbn1IgItsnpY44ZeCgGSoyVsQVpQEPQtPk='`, replace it with this one.
-- Remove these two old ones (or leave them; they do no harm):
-  - `'sha256-4gctYiGTReoQs9WljWvM7zE5fYNvf1ArhhVsTPQedWU='`
-  - `'sha256-0khB/vQfDtt4wssJcCymFCpQnpQAFWWDyDOe2sacm6I='`
+Remove any other `sha256-` hash in that list. They are all older versions of
+these two scripts and no longer match anything (they do no harm if left, but
+nothing needs them): `idlxi...`, `dzz2...`, `kcXx...`, `4gct...`, `0khB...`.
 
 Then:
 
@@ -81,7 +78,28 @@ System Settings: the open landing page and the app should follow.
 The hashes nginx must list are pinned in `scripts/check-calc.mjs` (`CSP_PINNED`).
 `npm run check` fails if a page's inline script stops matching them.
 
-### 3. Update the bot's `/` menu in Telegram
+### 3. Rename the settings in the service file (when convenient)
+
+Settings are now `ETHROUNDTRIP_*`. The old `MYAAVE_*` names keep working, so nothing
+breaks if you skip this; the startup log lists any still in use:
+
+```bash
+sudo journalctl -u <the service> -n 20 | grep "Old setting names"
+```
+
+To rename them, edit the unit (`sudo systemctl edit --full <the service>`, or the
+`Environment=` lines wherever they live), change each `MYAAVE_` to `ETHROUNDTRIP_`
+(for example `MYAAVE_DB` to `ETHROUNDTRIP_DB`), then:
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart <the service>
+```
+
+Do the same in any cron line that runs `backupDatabase.sh` with `MYAAVE_DB` or
+`MYAAVE_BACKUP_DIR`. The ledger file keeps its name, `data/myaave.db`; nothing is
+moved.
+
+### 4. Update the bot's `/` menu in Telegram
 
 Send `/setcommands` to @BotFather, pick the bot, and paste:
 
@@ -94,7 +112,7 @@ unwatch - stop the price updates
 help - what this bot can do
 ```
 
-### 4. Quick check after the deploy
+### 5. Quick check after the deploy
 
 - `/app` loads. The header shows ETH and BTC, a row each.
 - A new trade offers Aave, Ether.fi and Morpho.
@@ -127,18 +145,7 @@ help - what this bot can do
 
 ## To build next
 
-Ideas that came up on 20 Nov and were left for later, not bugs:
-
-- **320px phones:** in the app, the BTC ticker row wraps at 320px and the header
-  (195px) is taller than the 180px scroll offset; the table's first 15px sit under it
-  after a page turn.
-- **Optional rename of internal names:** `MYAAVE_*` settings, `myaave-*` browser
-  storage keys and the `myaave` package name still carry the old brand (the logo
-  files and the checks' temp folder were renamed on 20 Nov). Renaming them needs the old names kept as a fallback, and the VPS
-  service file updated.
-- **Statement PDF and assets:** the Statement has no By asset table, because its
-  fullest year already fills the A4 page to within a few points. Adding one means
-  making room first (a narrower By month, or a second page).
+Nothing is waiting: every idea from 20 Nov was built that day.
 
 ## Known limits and loose ends
 

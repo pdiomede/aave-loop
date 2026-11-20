@@ -22,14 +22,15 @@
  */
 import { db, prepare } from './db.js';
 import { parseAmount, MARKETS } from './lib/calc.js';
+import { setting, settingName } from './env.js';
 
 // The variables keep the names they had when this priced ETH alone, so an
 // existing config.env or service file goes on working; they now cover BTC too.
-const PRICE_URL = (process.env.MYAAVE_ETH_URL || 'https://api.coingecko.com/api/v3').replace(
+const PRICE_URL = (setting('ETH_URL') || 'https://api.coingecko.com/api/v3').replace(
   /\/+$/,
   '',
 );
-const OFFLINE = process.env.MYAAVE_ETH_OFFLINE === '1';
+const OFFLINE = setting('ETH_OFFLINE') === '1';
 
 /** CoinGecko's id for each market. */
 const COIN_ID = { ETH: 'ethereum', BTC: 'bitcoin' };
@@ -50,7 +51,7 @@ const MARKETS_PATH =
 
 /**
  * A fixed price, for trying the alert path without waiting for the market to
- * move. `MYAAVE_ETH_PRICE` fixes ETH and `MYAAVE_BTC_PRICE` fixes BTC; a fixed
+ * move. `ETHROUNDTRIP_ETH_PRICE` fixes ETH and `ETHROUNDTRIP_BTC_PRICE` fixes BTC; a fixed
  * market is never asked for, whatever the other does.
  *
  * Read like any typed amount and held to the same limits as a fetched price.
@@ -59,8 +60,9 @@ const MARKETS_PATH =
  * setting at all, so the app went to the live network without a word. A value
  * that does not pass is now said out loud and ignored.
  */
-function fixedFrom(name) {
-  const raw = process.env[name];
+function fixedFrom(key) {
+  const raw = setting(key);
+  const name = settingName(key);
   if (raw == null || raw === '') return null;
   const n = parseAmount(raw);
   const problem = n === null ? 'is not a number' : validate(n) ? 'is not a usable price' : null;
@@ -71,7 +73,7 @@ function fixedFrom(name) {
   return n;
 }
 
-const FIXED = { ETH: fixedFrom('MYAAVE_ETH_PRICE'), BTC: fixedFrom('MYAAVE_BTC_PRICE') };
+const FIXED = { ETH: fixedFrom('ETH_PRICE'), BTC: fixedFrom('BTC_PRICE') };
 
 // Longer than the 2.5s fx.js allows itself. That one can be asked four times
 // for a single save, so its timeouts multiply; this is asked once, and the

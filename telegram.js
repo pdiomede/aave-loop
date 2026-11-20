@@ -8,8 +8,9 @@
  * same thing forever and retrying it is just noise in the group's stead.
  */
 import { telegramConfig } from './config.js';
+import { setting } from './env.js';
 
-const API = (process.env.MYAAVE_TELEGRAM_URL || 'https://api.telegram.org').replace(/\/+$/, '');
+const API = (setting('TELEGRAM_URL') || 'https://api.telegram.org').replace(/\/+$/, '');
 
 // Longer than a price lookup. This runs on a timer nobody is waiting on, and
 // a message worth sending is worth waiting a moment for.

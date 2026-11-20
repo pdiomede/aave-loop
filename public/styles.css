@@ -606,8 +606,12 @@ a.brand {
 @media (max-width: 760px) {
   #table-mount,
   #alerts-mount {
-    /* Taller again for the second ticker row, BTC under ETH. */
-    scroll-margin-top: 180px;
+    /* Taller again for the second ticker row, BTC under ETH - and taller
+       still when a row wraps, so it is the header's own height, measured
+       (`--header-h`, kept by app.js), with 180px until the page has run: a
+       fixed 180 left the table's first 15px under a 195px header after a
+       page turn. */
+    scroll-margin-top: calc(var(--header-h, 172px) + 8px);
   }
 }
 
@@ -2745,5 +2749,21 @@ th[aria-sort="ascending"] .th-sort__caret {
 
   .bar {
     width: 55%;
+  }
+}
+
+/* The narrowest phones. A six-figure BTC with two-digit moves - "$123,456.78",
+   "24h -11.4%", "7d -13.6%" - came to 290px against the 288 a 320px screen
+   leaves, so its 7d badge took a line of its own and the header grew from 168
+   to 195px. Tighter badges and gaps make 276 of it; the row still wraps past
+   that rather than overflow, and the scroll offset follows the header. */
+@media (max-width: 360px) {
+  .ticker__row {
+    column-gap: 4px;
+  }
+
+  .ticker__chip {
+    gap: 4px;
+    padding: 2px 6px;
   }
 }

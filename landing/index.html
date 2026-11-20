@@ -45,7 +45,7 @@
       // Applied before first paint so a dark session never flashes white. Same
       // key the ledger uses, so the choice carries between the two pages.
       try {
-        const saved = localStorage.getItem('myaave-theme');
+        const saved = localStorage.getItem('ethroundtrip-theme') || localStorage.getItem('myaave-theme');
         if (saved) document.documentElement.dataset.theme = saved;
       } catch (e) {}
     </script>
@@ -280,7 +280,8 @@
           document.documentElement.dataset.theme = theme;
           document.getElementById('theme-icon').innerHTML = theme === 'dark' ? SUN : MOON;
           try {
-            localStorage.setItem('myaave-theme', theme);
+            localStorage.setItem('ethroundtrip-theme', theme);
+            localStorage.removeItem('myaave-theme');
           } catch (e) {
             /* private browsing, the toggle simply will not persist */
           }
@@ -293,7 +294,7 @@
         let current = document.documentElement.getAttribute('data-theme');
         let stored = null;
         try {
-          stored = localStorage.getItem('myaave-theme');
+          stored = localStorage.getItem('ethroundtrip-theme') || localStorage.getItem('myaave-theme');
         } catch (e) {}
         if (!stored) {
           try {
@@ -315,7 +316,7 @@
           window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (e) {
             if (picked) return;
             try {
-              if (localStorage.getItem('myaave-theme')) return;
+              if (localStorage.getItem('ethroundtrip-theme') || localStorage.getItem('myaave-theme')) return;
             } catch (err) {}
             const theme = e.matches ? 'dark' : 'light';
             document.documentElement.dataset.theme = theme;

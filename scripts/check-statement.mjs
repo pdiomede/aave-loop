@@ -216,6 +216,8 @@ check('a full year - twelve months, every coin, a warning - still fits one page'
       month: String(i + 1).padStart(2, '0'),
       currency,
       ...fx,
+      // Half of them cbBTC, so By asset draws both of its rows.
+      ...(i % 2 ? { asset: 'cbbtc', buy_eth: 1.2, sell_eth: 1.2 } : {}),
     });
   });
   // Closed without a rate, so the warning line and every chip are drawn.
@@ -224,6 +226,18 @@ check('a full year - twelve months, every coin, a warning - still fits one page'
   assert.equal(pdf.match(/\/Type \/Page\b(?!s)/g).length, 1);
   for (const m of ['Jan 2026', 'Jun 2026', 'Dec 2026']) assert.ok(shows(pdf, m), m);
   for (const c of coins) assert.ok(shows(pdf, c), c);
+  for (const a of ['ETH', 'cbBTC', 'By currency and asset']) assert.ok(shows(pdf, a), a);
+});
+
+check('By asset: a row per asset, its figures adding up to the totals', () => {
+  // At 0%, repaid at par: net gain = proceeds - loan - swap costs.
+  // ETH: 11,000 - 10,000 - 2 - 1 = 997.00. cbBTC: 21,000 - 20,000 - 3 - 2 = 995.00.
+  const eth = trade({ loan: 10000, proceeds: 11000, buyGas: 2, sellGas: 1, month: '04' });
+  const btc = trade({ loan: 20000, proceeds: 21000, buyGas: 3, sellGas: 2, month: '05', asset: 'cbbtc', buy_eth: 0.2, sell_eth: 0.2 });
+  const pdf = build([eth, btc]);
+  for (const s of ['ASSET', 'ETH', 'cbBTC', '$10,000.00', '$20,000.00', '+$997.00', '+$995.00', '+$1,992.00']) {
+    assert.ok(shows(pdf, s), s);
+  }
 });
 
 check('a wrapped tile sub-line never ends on its separator dot', () => {

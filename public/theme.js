@@ -16,7 +16,8 @@
 (function () {
   var theme = null;
   try {
-    theme = localStorage.getItem('myaave-theme');
+    // The old key too, from before 20 Nov 2026, so a saved choice carries over.
+    theme = localStorage.getItem('ethroundtrip-theme') || localStorage.getItem('myaave-theme');
   } catch (e) {}
   try {
     if (!theme) theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';

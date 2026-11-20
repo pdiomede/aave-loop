@@ -521,12 +521,14 @@ check('a trade dated after today is derived on its own day', () => {
 // fix shipped and never ran. If a check below fails on purpose, the new hash
 // has to go into nginx's Content-Security-Policy line too, and then here.
 const CSP_PINNED = [
-  // The theme read before first paint, on both pages.
-  'sha256-idlxi/vmZQzRC4UbiGOUSbMaK2QEuIqX4WVbMpag3Bk=',
+  // The theme read before first paint, on both pages, under the
+  // ethroundtrip-theme key and the old myaave-theme one.
+  'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs=',
   // The theme toggle, the same on both pages: storage and the system theme
-  // get a try each (a dark system with storage blocked turned light), and it
-  // follows the system live while nobody has chosen.
-  'sha256-kcXx8jXteMac68iTMfAVKtZtTinxIOw7WtqSERKYMCY=',
+  // get a try each (a dark system with storage blocked turned light), it
+  // follows the system live while nobody has chosen, and it saves under the
+  // new key.
+  'sha256-ncgLIggzLhNYlxt5z2CZJ809QJpZbeGZCmKby9xkDfk=',
 ];
 
 const inlineScriptHashes = (file) => {
