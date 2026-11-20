@@ -12,6 +12,8 @@
  * look like two different figures.
  */
 
+import { assetMeta } from './lib/calc.js';
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** A dash, not a zero, for a figure nobody measured. */
@@ -34,6 +36,14 @@ const fixed = (v, dp) =>
 
 export const n2 = (v) => fixed(v, 2);
 export const n4 = (v) => fixed(v, 4);
+
+/**
+ * A quantity of a trade's asset to that asset's own decimals (`ASSET_META.dp`):
+ * 4 for ETH, 8 for cbBTC. `t` is the trade, or anything with its `asset`.
+ * `units` is the figure alone, for a column whose ticker sits beside it.
+ */
+export const units = (v, t) => fixed(v, assetMeta(t).dp);
+export const qty = (v, t) => `${units(v, t)} ${assetMeta(t).ticker}`;
 
 /** The same "20 Sep 2026" the interface shows, so the two read alike. */
 export function fmtDate(iso) {

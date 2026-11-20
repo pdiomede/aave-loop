@@ -1,8 +1,8 @@
 # ETH Roundtrip
 
-Track leveraged trade cycles on Aave and Ether.fi: borrow a stablecoin, buy ETH, sell it, repay the loan, and see what the round trip actually earned.
+Track leveraged trade cycles on Aave and Ether.fi: borrow a stablecoin, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned.
 
-A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH to four places. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
+A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH to four places and cbBTC to eight. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
 
 ## Run
 
@@ -24,30 +24,30 @@ A trade starts with the borrow; each stage is added as it happens.
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
 | Borrow | platform (Aave or Ether.fi), date, currency, amount, APR, gas fee (optional) | `OPEN` |
-| Buy ETH | date, amount spent, ETH received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
-| Sell ETH | date, ETH sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
+| Buy | asset (ETH or cbBTC), date, amount spent, amount received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
+| Sell | date, amount sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
 | Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
 
 Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank Aave lend or unstake fee means none was paid.
 
 - **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on.
-- **Stats** shows performance for all platforms and, in cards that fold open, for Aave and Ether.fi alone; By Platform splits the tab by platform; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
+- **Stats** shows performance for all platforms and, in cards that fold open, for Aave and Ether.fi alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
 - **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
 - **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.
-- **Open positions**, in the header, estimates what the open trades would make if closed today, at the current ETH price and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
+- **Open positions**, in the header, estimates what the open trades would make if closed today, at the current price of what each trade holds (ETH, or BTC for cbBTC) and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
 
 ## The math
 
 | Figure | Formula |
 | --- | --- |
-| ETH buy / sell price | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
+| Buy / sell price (per ETH or cbBTC) | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
 | Gross gain | `sell_amount - buy_amount * (sell_eth / buy_eth)` |
 | Accrued interest | `borrow_amount * apr% * days / 365` |
 | Fees | the six stage fees, in dollars |
 | Net gain | `gross_gain - interest_paid - fees` |
 | Annualized | `net_gain_usd / borrow_usd * 365 / days` |
-| Estimate, holding | `buy_eth * eth_price_now - (buy_amount + accrued_interest) * rate_today - fees` |
-| Estimate, sold | `(gross_gain - accrued_interest) * rate_today - fees`, plus any ETH still held at today's price less its cost |
+| Estimate, holding | `buy_eth * market_price_now - (buy_amount + accrued_interest) * rate_today - fees` |
+| Estimate, sold | `(gross_gain - accrued_interest) * rate_today - fees`, plus anything still held at today's price less its cost |
 
 Gross gain uses the cost of the ETH actually sold, so a profitable partial exit is never reported as a loss. The return is annualized: a 3 day trade netting 7.2% reads 876%. Every amount, conversion and fee is taken to the cent as printed, so each card and total adds up from its lines.
 
@@ -71,9 +71,9 @@ A loan cost can be negative: if the euro fell, the loan was cheaper in dollars t
 
 ## Price alerts
 
-While a trade holds ETH, the **Bought ETH** card has a bell. It takes one goal price and shows the message in full before saving. A goal above today's ETH price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it.
+While a trade holds ETH or cbBTC, the **Bought** card has a bell. It takes one goal price and shows the message in full before saving. The goal is a price of the trade's market: ETH's for an ETH trade, BTC's for a cbBTC one. A goal above today's price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it, and changing the trade's asset closes it.
 
-The price comes from CoinGecko, without a key, every fifteen minutes, and only while an alert is armed. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling the ETH closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
+The prices come from CoinGecko, ETH and BTC in one request, without a key, every fifteen minutes, and only while an alert is armed. cbBTC is valued at BTC's price. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
 
 ## Bot commands
 
@@ -81,20 +81,20 @@ The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat i
 
 | Command | Returns |
 | --- | --- |
-| `/price` | ETH now, with 24h, 7d and 30d change |
-| `/holding` | each trade still holding ETH, with its estimated gain, the total and what it is worth; one sold in part is listed with the ETH it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds no ETH and is not listed |
-| `/summary` | realized net gain, blended annualized, closed trades, open positions |
-| `/watch` / `/unwatch` | the price every twenty minutes in the chat that asked, sent only while a trade holds ETH, or stop. One watch at a time: `/watch` from the other chat moves it there |
+| `/price` | ETH and BTC now, each with 24h, 7d and 30d change |
+| `/holding` | each trade still holding ETH or cbBTC, with its estimated gain at its own market's price, and a total per asset with what it is worth; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
+| `/summary` | realized net gain, blended annualized, closed trades, open positions, and the ETH and cbBTC held |
+| `/watch` / `/unwatch` | the ETH and BTC prices every twenty minutes in the chat that asked, sent only while a trade holds ETH or cbBTC, or stop. One watch at a time: `/watch` from the other chat moves it there |
 
 `/help`, `/start` and anything unrecognised list the commands. A `@name` suffix, capitals and arguments are fine. Commands are read by long polling, so nothing needs to be reachable from the internet; two copies of the app share one reader by a lease. `/watch` survives a restart.
 
 Telegram draws the Menu button only in a private chat. To get it, set `TELEGRAM_CHAT_ID` to your own user id, or keep the group and set `TELEGRAM_OWNER_ID` too; alerts still go to the group alone. To fill the `/` menu, send `/setcommands` to [@BotFather](https://t.me/BotFather) and paste:
 
 ```
-price - ETH price now, with 24h, 7d and 30d change
-holding - trades still holding ETH, one line each
-summary - realized gain, annualized, closed and open
-watch - send the price every 20 minutes
+price - ETH and BTC prices now, with 24h, 7d and 30d change
+holding - trades still holding ETH or cbBTC, one line each
+summary - realized gain, annualized, closed, open and held
+watch - send the ETH and BTC prices every 20 minutes
 unwatch - stop the price updates
 help - what this bot can do
 ```
@@ -133,7 +133,7 @@ The format is `KEY=value` per line, with `#` comments, an optional `export ` and
 landing/       public page, served by nginx
 server.js      Express API and static host
 db.js          SQLite connection and schema
-fx.js eth.js   exchange rates and the ETH price, cached
+fx.js prices.js  exchange rates and the ETH and BTC prices, cached
 telegram.js    sending one message
 alerts.js      price alerts and their timer
 bot.js         reading and answering commands

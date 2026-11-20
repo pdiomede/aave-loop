@@ -21,11 +21,17 @@ import {
   cents,
   ethHeldNow,
   PLATFORM_META,
+  ASSETS,
+  ASSET_META,
+  MARKETS,
+  assetOf,
+  marketOf,
+  priceFor,
 } from './lib/calc.js';
-import { ethPrice, ethStatus } from './eth.js';
+import { marketPrices, priceStatus } from './prices.js';
 import { resolveRate } from './fx.js';
 import { alertPollMs } from './alerts.js';
-import { n4, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
+import { units, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
 /**
  * Telegram refuses a message over 4096 characters, counted after its HTML is
@@ -48,39 +54,86 @@ function ageWords(ms) {
   return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
-export function priceText(quote) {
-  if (!quote || !Number.isFinite(quote.price)) {
-    const why = ethStatus().lastError || 'No price has come back yet.';
-    return `Could not get the ETH price.\n${escHtml(why)}`;
+/**
+ * Every market's price, ETH then BTC, a block each. `quotes` is `{ ETH, BTC }`
+ * as `marketPrices` answers it. A market with no price is named once at the
+ * end with the reason, rather than leaving the other's figure unsaid.
+ */
+export function priceText(quotes) {
+  const blocks = [];
+  const missing = [];
+  for (const market of MARKETS) {
+    const quote = quotes?.[market];
+    if (!quote || !Number.isFinite(quote.price)) {
+      missing.push(market);
+      continue;
+    }
+
+    const lines = [`<b>${market} ${escHtml(usd(quote.price))}</b>`];
+
+    // Only the windows that came back. CoinGecko leaves one null now and then,
+    // and a row of dashes says less than a shorter row.
+    const windows = [
+      ['24h', quote.change24h],
+      ['7d', quote.change7d],
+      ['30d', quote.change30d],
+    ].filter(([, v]) => Number.isFinite(v));
+
+    if (windows.length) {
+      lines.push(windows.map(([label, v]) => `${label} ${escHtml(pct1(v))}`).join('   '));
+    }
+
+    // The same threshold the alert window uses to call a price stale. Below it
+    // nothing is said, because the age of a fresh figure is not news.
+    if (Number.isFinite(quote.ageMs) && quote.ageMs > alertPollMs) {
+      lines.push(`<i>Last fetched ${escHtml(ageWords(quote.ageMs))} ago.</i>`);
+    }
+
+    blocks.push(lines.join('\n'));
   }
 
-  const lines = [`<b>ETH ${escHtml(usd(quote.price))}</b>`];
-
-  // Only the windows that came back. CoinGecko leaves one null now and then,
-  // and a row of dashes says less than a shorter row.
-  const windows = [
-    ['24h', quote.change24h],
-    ['7d', quote.change7d],
-    ['30d', quote.change30d],
-  ].filter(([, v]) => Number.isFinite(v));
-
-  if (windows.length) {
-    lines.push(windows.map(([label, v]) => `${label} ${escHtml(pct1(v))}`).join('   '));
+  if (missing.length) {
+    const why = priceStatus().lastError || 'No price has come back yet.';
+    blocks.push(`Could not get the ${missing.join(' or ')} price.\n${escHtml(why)}`);
   }
 
-  // The same threshold the alert window uses to call a price stale. Below it
-  // nothing is said, because the age of a fresh figure is not news.
-  if (Number.isFinite(quote.ageMs) && quote.ageMs > alertPollMs) {
-    lines.push(`<i>Last fetched ${escHtml(ageWords(quote.ageMs))} ago.</i>`);
-  }
-
-  return lines.join('\n');
+  return blocks.join('\n\n');
 }
+
+/**
+ * What the rows hold of each asset, in `ASSETS` order: `[{ asset, ticker,
+ * market, total }]`, assets with nothing held left out.
+ *
+ * Each row's quantity is added as it prints, to its asset's own decimals, so a
+ * total is the sum of the rows under it: 1.23455 and 2.23455 ETH print 1.2346
+ * and 2.2346, and summed raw they were headed 3.4691. Kept per asset, because
+ * ETH and cbBTC added together are a figure in no coin.
+ */
+function heldTotals(rows) {
+  const sums = new Map();
+  for (const t of rows) {
+    const asset = assetOf(t);
+    const { dp } = ASSET_META[asset];
+    const held = ethHeldNow(derive(t, derivedOn(t)));
+    // In units of the last printed place: ten-thousandths of an ETH,
+    // hundred-millionths (satoshis) of a cbBTC.
+    const printed = Math.round(Number(units(held, t).replace(/,/g, '')) * 10 ** dp);
+    sums.set(asset, (sums.get(asset) ?? 0) + printed);
+  }
+  return ASSETS.filter((a) => sums.get(a) > 0).map((asset) => {
+    const { ticker, market, dp } = ASSET_META[asset];
+    return { asset, ticker, market, total: sums.get(asset) / 10 ** dp };
+  });
+}
+
+/** "3.4691 ETH", a total from `heldTotals`, to its asset's decimals. */
+const totalText = (h) => `${units(h.total, { asset: h.asset })} ${h.ticker}`;
 
 /* ----------------------------------------------------------------- holding */
 
 /**
- * The trades still holding ETH, with the alert on each where there is one.
+ * The trades still holding ETH or cbBTC, with the alert on each where there is
+ * one.
  *
  * Not every open position: a trade whose ETH is all sold but whose loan is not
  * repaid is open - /summary and the page count it - and holds no ETH, so it is
@@ -111,22 +164,26 @@ const selectHolding = () =>
 const heldRows = () => selectHolding().all().filter((t) => ethHeldNow(derive(t, derivedOn(t))) > 0);
 
 /**
- * `fxNow` is today's rate per borrowed coin, the one the page's Open positions
- * tile uses, so a euro position reads the same figure in the chat as on the
- * page (see `estimatedGainUsd`).
+ * `prices` is `{ ETH, BTC }` in dollars, and each row is valued at its own
+ * asset's market (`priceFor`): a cbBTC position at BTC, never at ETH. `ages` is
+ * how old each of those prices is. `fxNow` is today's rate per borrowed coin,
+ * the one the page's Open positions tile uses, so a euro position reads the
+ * same figure in the chat as on the page (see `estimatedGainUsd`).
  */
-export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
+export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   if (!rows.length) return 'Nothing is being held right now.';
-
-  const hasPrice = Number.isFinite(price);
-  // In ten-thousandths of an ETH, as the rows print (see below).
-  let eth = 0;
+  const priceOf = (t) => priceFor(t, prices);
+  // The markets the rows are valued at, in `MARKETS` order.
+  const markets = MARKETS.filter((m) => rows.some((t) => marketOf(t) === m));
   // In whole cents as each row prints it (see `cents` in lib/calc.js), so the
   // Unrealised total is the sum of the gains listed under it. Summed raw, three
   // rows of +$96.71 sat under a total of +$290.14.
   let gain = 0;
   let gainKnown = 0;
-  let unpriced = 0;
+  // Two different absences, kept apart so each is named for what it is: a row
+  // whose market has no price, and a row whose exchange rate is not known.
+  let noRate = 0;
+  const noPrice = new Map();
   let gassed = 0;
   const marked = new Set();
   // What the euro's move since each purchase did to the total, for the same
@@ -142,14 +199,13 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
   const cells = rows.map((t) => {
     const d = derive(t, derivedOn(t));
     const held = ethHeldNow(d);
-    // Added as each row prints it, to four places, so the header's total is
-    // the sum of the rows under it: 1.23455 and 2.23455 ETH print 1.2346 and
-    // 2.2346, and summed raw they were headed 3.4691.
-    eth += Math.round(Number(n4(held).replace(/,/g, '')) * 1e4);
 
-    const g = hasPrice ? estimatedGainUsd(t, d, price, fxNow) : null;
-    if (g === null) unpriced += 1;
-    else {
+    const price = priceOf(t);
+    const g = price === null ? null : estimatedGainUsd(t, d, price, fxNow);
+    if (g === null) {
+      if (price === null) noPrice.set(marketOf(t), (noPrice.get(marketOf(t)) ?? 0) + 1);
+      else noRate += 1;
+    } else {
       gain += cents(g);
       gainKnown += 1;
       if (Number.isFinite(d.feesUsd)) gassed += 1;
@@ -172,9 +228,11 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
       // Where the trade runs. A trade from before it was asked for has none,
       // and a dash says so rather than calling it Aave.
       platform: PLATFORM_META[t.platform]?.label ?? MISSING,
-      eth: n4(held),
+      // To the asset's own decimals, its ticker in a column of its own.
+      qty: units(held, t),
+      ticker: ASSET_META[assetOf(t)].ticker,
       // A trade whose exchange rate has not been fetched has no dollar price
-      // per ETH, and a dash is the honest answer rather than a euro figure
+      // per unit, and a dash is the honest answer rather than a euro figure
       // wearing a dollar sign.
       paid: Number.isFinite(d.buyPriceUsd) ? usd(d.buyPriceUsd) : MISSING,
       gain: g === null ? MISSING : signedUsd(g),
@@ -188,7 +246,8 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
   const w = (key) => Math.max(...cells.map((c) => c[key].length));
   const wId = w('id');
   const wPlatform = w('platform');
-  const wEth = w('eth');
+  const wQty = w('qty');
+  const wTicker = w('ticker');
   const wPaid = w('paid');
   const wGain = w('gain');
   const wDays = w('days');
@@ -198,7 +257,9 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
       // "paid" sits at a fixed column with the figure padded after it, so the
       // dollar amounts line up under each other and a missing one is a dash in
       // the same place rather than a word adrift.
-      `${padRight(c.id, wId)}  ${padRight(c.platform, wPlatform)}  ${padLeft(c.eth, wEth)} ETH  paid ${padLeft(c.paid, wPaid)}  ` +
+      // On a ledger of ETH alone the ticker column is "ETH" every time, and
+      // the line reads exactly as it did before cbBTC.
+      `${padRight(c.id, wId)}  ${padRight(c.platform, wPlatform)}  ${padLeft(c.qty, wQty)} ${padRight(c.ticker, wTicker)}  paid ${padLeft(c.paid, wPaid)}  ` +
       // The bell goes last on purpose: an emoji is one character but takes
       // about two cells, so any column after it would sit crooked.
       `${padLeft(c.gain, wGain)}  ${padLeft(c.days, wDays)}${c.bell ? `  ${c.bell}` : ''}`,
@@ -207,24 +268,37 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
   // The tags are ours; only the values are escaped, and escaped where they are
   // interpolated rather than by a pass over the finished line, which would have
   // to be taught to leave the tags alone.
-  const ethTotal = eth / 1e4;
-  const worth = hasPrice ? ` · ${escHtml(usd(ethTotal * price))} at ${escHtml(usd(price))}` : '';
-  const head = [
-    `<b>Holding ${rows.length} trade${rows.length === 1 ? '' : 's'}</b> · ${escHtml(n4(ethTotal))} ETH${worth}`,
-  ];
+  // One total per asset held, each at its own market's price. A ledger of one
+  // asset keeps it on the title line, as it always read; two take a line each,
+  // since a single line carrying both ran past a phone's width.
+  const totals = heldTotals(rows).map((h) => {
+    const p = prices?.[h.market];
+    const worth = Number.isFinite(p) ? ` · ${escHtml(usd(h.total * p))} at ${escHtml(usd(p))}` : '';
+    return `${escHtml(totalText(h))}${worth}`;
+  });
+  const title = `<b>Holding ${rows.length} trade${rows.length === 1 ? '' : 's'}</b>`;
+  const head = totals.length === 1 ? [`${title} · ${totals[0]}`] : [title, ...totals];
   // A price the service could not refresh is the cached one, possibly hours
   // old, and every figure below is worked out at it. /price said so; this
-  // valued the positions at it in silence. Same threshold and words.
-  if (hasPrice && Number.isFinite(ageMs) && ageMs > alertPollMs) {
-    head.push(`<i>At the price last fetched ${escHtml(ageWords(ageMs))} ago.</i>`);
+  // valued the positions at it in silence. Same threshold and words, naming
+  // the market when there are two.
+  for (const m of markets) {
+    const age = ages?.[m];
+    if (!Number.isFinite(prices?.[m]) || !Number.isFinite(age) || age <= alertPollMs) continue;
+    const which = markets.length > 1 ? `${m} price` : 'price';
+    head.push(`<i>At the ${which} last fetched ${escHtml(ageWords(age))} ago.</i>`);
   }
 
+  const unpricedCount = [...noPrice.values()].reduce((a, b) => a + b, 0);
   if (gainKnown > 0) {
     // Never a total over a subset without saying so. A gain missing a term is
-    // not a smaller gain, it is a wrong one.
-    const caveat = unpriced
-      ? ` (${unpriced} without an exchange rate ${unpriced === 1 ? 'is' : 'are'} not counted)`
-      : '';
+    // not a smaller gain, it is a wrong one. Each absence named for what it is.
+    const left = [
+      ...(noRate ? [`${noRate} without an exchange rate`] : []),
+      ...[...noPrice].map(([m, n]) => `${n} without a ${m} price`),
+    ];
+    const n = noRate + unpricedCount;
+    const caveat = left.length ? ` (${left.join(', ')} ${n === 1 ? 'is' : 'are'} not counted)` : '';
     // The estimate takes the fees already paid off too, and a figure has to
     // be described by what was actually taken from it: "after interest" alone
     // under a total that is also after fees named one deduction and hid one.
@@ -237,14 +311,14 @@ export function holdingText(rows, price, fxNow = {}, { ageMs = null } = {}) {
     head.push(
       `Unrealised ${escHtml(signedUsd(gain / 100))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
     );
-  } else if (unpriced) {
-    // Two different absences. With no ETH price every row is unpriced, a
+  } else if (noRate || unpricedCount) {
+    // Two different absences. With no ETH price every ETH row is unpriced, a
     // dollar coin included, and blaming the exchange rate sat above a table
     // printing that trade's purchase price in dollars.
     head.push(
-      hasPrice
-        ? 'No exchange rate yet, so the gain is not known in dollars.'
-        : 'No ETH price right now, so the gain is not known.',
+      unpricedCount
+        ? `No ${[...noPrice.keys()].join(' or ')} price right now, so the gain is not known.`
+        : 'No exchange rate yet, so the gain is not known in dollars.',
     );
   }
 
@@ -274,9 +348,10 @@ function fit(lines, budget) {
 
 /**
  * The four figures the page shows above the table, from the same function the
- * page uses, so the two cannot drift apart.
+ * page uses, so the two cannot drift apart - and under them what is held of
+ * each asset, from `holdingTotals`, valued at its own market's price.
  */
-export function summaryText(s) {
+export function summaryText(s, held = []) {
   const rows = [
     [
       'Realized net gain',
@@ -301,6 +376,13 @@ export function summaryText(s) {
           }`
         : '0',
     ],
+    // ETH and cbBTC held now, a line each, totalled as /holding totals them.
+    // Only an asset something is held of: a "cbBTC held: 0" line on an ETH
+    // ledger would say nothing.
+    ...held.map((h) => [
+      `${h.ticker} held`,
+      `${totalText(h)}${Number.isFinite(h.price) ? ` (${usd(h.total * h.price)})` : ''}`,
+    ]),
   ];
 
   // Inside a `pre` for the same reason the holdings table is: Telegram draws
@@ -323,10 +405,10 @@ export function helpText(every = '20 minutes') {
   return [
     '<b>ETH Roundtrip</b>',
     '',
-    '/price - ETH now, with 24h, 7d and 30d change',
-    '/holding - trades still holding ETH, one line each',
-    '/summary - realized gain, annualized, closed and open',
-    `/watch - send the price every ${every}`,
+    '/price - ETH and BTC now, with 24h, 7d and 30d change',
+    '/holding - trades still holding ETH or cbBTC, one line each',
+    '/summary - realized gain, annualized, closed, open and held',
+    `/watch - send the ETH and BTC prices every ${every}`,
     '/unwatch - stop the price updates',
   ].join('\n');
 }
@@ -337,7 +419,7 @@ const CLOSED = 'The ledger is not open.';
 
 /** Someone is waiting on this one, so a minute old is fresh enough. */
 export async function priceMessage() {
-  return priceText(await ethPrice());
+  return priceText(await marketPrices());
 }
 
 /**
@@ -346,8 +428,8 @@ export async function priceMessage() {
  * call at all.
  */
 /**
- * How many trades still hold ETH, by the same test /holding and the alerts
- * use. /watch reports only while this is above zero: the price every twenty
+ * How many trades still hold ETH or cbBTC, by the same test /holding uses.
+ * /watch reports only while this is above zero: the prices every twenty
  * minutes is for deciding when to sell, and with nothing held there is
  * nothing to decide. Null when the ledger cannot be read, so a caller can
  * tell "none" from "unknown".
@@ -363,7 +445,7 @@ export function holdingCount() {
 }
 
 export async function watchMessage() {
-  return priceText(await ethPrice({ maxAgeMs: 300_000 }));
+  return priceText(await marketPrices({ maxAgeMs: 300_000 }));
 }
 
 export async function holdingMessage() {
@@ -377,13 +459,16 @@ export async function holdingMessage() {
     console.error('Could not read the open positions:', err.message);
     return 'Could not read the ledger just now. Try again in a moment.';
   }
-  // Asked for even with nothing held, so the answer names the price it used.
-  const quote = await ethPrice();
-  const price = quote?.price ?? null;
+  // Only the markets held: an ETH-only ledger has no reason to wait on BTC.
+  const markets = [...new Set(rows.map(marketOf))];
+  const quotes = markets.length ? await marketPrices({ markets }) : {};
+  const prices = Object.fromEntries(MARKETS.map((m) => [m, quotes[m]?.price ?? null]));
+  const ages = Object.fromEntries(MARKETS.map((m) => [m, quotes[m]?.ageMs ?? null]));
   // Not asked for without a price: every figure is a dash then, and today's
   // rate is provisional until the ECB publishes, so asking goes to the network
   // and held the reply back for nothing.
-  return holdingText(rows, price, Number.isFinite(price) ? await ratesToday(rows) : {}, { ageMs: quote?.ageMs });
+  const priced = markets.some((m) => Number.isFinite(prices[m]));
+  return holdingText(rows, prices, priced ? await ratesToday(rows) : {}, { ages });
 }
 
 /**
@@ -412,12 +497,23 @@ async function ratesToday(rows) {
  * Named for the message rather than the figures, because `lib/calc.js` already
  * exports a `summaryReport` that means something else.
  */
-export function summaryMessage() {
+export async function summaryMessage() {
   if (!db.open) return CLOSED;
+  let summary;
+  let held;
   try {
-    return summaryText(summarize(prepare('SELECT * FROM trades').all()));
+    summary = summarize(prepare('SELECT * FROM trades').all());
+    held = heldTotals(heldRows());
   } catch (err) {
     console.error('Could not read the ledger for a summary:', err.message);
     return 'Could not read the ledger just now. Try again in a moment.';
   }
+  // The price of each market something is held in, to value it; a market the
+  // service cannot price leaves the quantity standing alone.
+  const markets = [...new Set(held.map((h) => h.market))];
+  const quotes = markets.length ? await marketPrices({ markets }) : {};
+  return summaryText(
+    summary,
+    held.map((h) => ({ ...h, price: quotes[h.market]?.price ?? null })),
+  );
 }

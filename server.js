@@ -19,6 +19,11 @@ import {
   asPrinted,
   CURRENCIES,
   PLATFORMS,
+  ASSETS,
+  ASSET_META,
+  MARKETS,
+  assetMeta,
+  marketOf,
   FX_STAGES,
   STATUS,
 } from './lib/calc.js';
@@ -32,7 +37,7 @@ import {
   stopFxRefresher,
 } from './fx.js';
 import { telegramConfig, reportConfig } from './config.js';
-import { ethPrice, cachedEthPrice, ethStatus } from './eth.js';
+import { marketPrices, marketPrice, cachedMarketPrice, cachedMarketPrices, priceStatus } from './prices.js';
 import { sendTelegramMessage } from './telegram.js';
 import {
   armedAlerts,
@@ -46,6 +51,7 @@ import {
   stopAlertPoller,
   alertSweepDone,
   closeUnwatched,
+  closeForAssetChange,
   freshPrice,
 } from './alerts.js';
 import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
@@ -248,7 +254,7 @@ function toDate(value, field, label) {
  * Only keys actually present are returned, so PATCH can send one stage.
  * A key sent as null or '' clears that column, which is how a stage is undone.
  */
-function normalise(body, { requireBorrow }) {
+function normalise(body, { requireBorrow, asset = null }) {
   const out = {};
   const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
 
@@ -285,16 +291,28 @@ function normalise(body, { requireBorrow }) {
     }
   }
 
+  // ETH or cbBTC, by id in any case. Never blank: the column is NOT NULL and a
+  // purchase is always of something. Absent on a new trade, it starts on ETH
+  // as the picker does (the column's default).
+  if (has('asset')) {
+    const a = typeof body.asset === 'string' ? body.asset.trim().toLowerCase() : '';
+    if (!ASSETS.includes(a)) throw new BadRequest('Pick an asset.', 'asset');
+    out.asset = a;
+  }
+  // The quantities are named for the asset they count: the one this request
+  // sets, else the trade's own (`asset`, read by the caller), else ETH.
+  const ticker = ASSET_META[out.asset ?? (ASSETS.includes(asset) ? asset : ASSETS[0])].ticker;
+
   dateField('buy_date', 'Purchase date');
   numericField('buy_amount', 'Purchase amount');
-  numericField('buy_eth', 'ETH purchased');
+  numericField('buy_eth', `${ticker} purchased`);
   numericField('buy_gas_usd', SWAP_FEE, { allowZero: true });
-  // Optional: not every loop supplies the ETH on Aave, so blank is accepted.
+  // Optional: not every loop supplies the ETH (or cbBTC) on Aave, so blank is accepted.
   numericField('buy_lend_gas_usd', 'Lending gas fee', { allowZero: true });
 
   dateField('sell_date', 'Sale date');
   numericField('sell_amount', 'Sale amount');
-  numericField('sell_eth', 'ETH sold');
+  numericField('sell_eth', `${ticker} sold`);
   numericField('sell_gas_usd', SWAP_FEE, { allowZero: true });
   numericField('sell_unstake_gas_usd', 'Unstaking gas fee', { allowZero: true });
 
@@ -340,6 +358,7 @@ function normalise(body, { requireBorrow }) {
 
 /** A stage cannot be dated before the loan that funded it. */
 function checkChronology(row) {
+  const ticker = assetMeta(row).ticker;
   const order = [
     ['buy_date', 'The purchase'],
     ['sell_date', 'The sale'],
@@ -360,10 +379,10 @@ function checkChronology(row) {
   // API enforces the same order, otherwise a trade can reach states the maths
   // has no answer for, such as repaid without ever having been sold.
   if (row.sell_date != null && row.buy_date == null) {
-    throw new BadRequest('Record the ETH purchase before the sale.', 'sell_date');
+    throw new BadRequest(`Record the ${ticker} purchase before the sale.`, 'sell_date');
   }
   if (row.repay_date != null && row.sell_date == null) {
-    throw new BadRequest('Record the ETH sale before the repayment.', 'repay_date');
+    throw new BadRequest(`Record the ${ticker} sale before the repayment.`, 'repay_date');
   }
 
   // Those checks only look at the dates. Clearing `buy_amount` or `sell_eth`
@@ -373,14 +392,14 @@ function checkChronology(row) {
   // amounts are there too.
   const st = stages(row);
   if (st.sold && !st.bought) {
-    throw new BadRequest('Record the ETH purchase before the sale.', 'buy_amount');
+    throw new BadRequest(`Record the ${ticker} purchase before the sale.`, 'buy_amount');
   }
   if (st.repaid && !st.sold) {
-    throw new BadRequest('Record the ETH sale before the repayment.', 'sell_amount');
+    throw new BadRequest(`Record the ${ticker} sale before the repayment.`, 'sell_amount');
   }
 
   if (row.sell_eth != null && row.buy_eth != null && row.sell_eth > row.buy_eth * SELL_OVER_BUY) {
-    throw new BadRequest('That is more than 10% above the ETH you bought.', 'sell_eth');
+    throw new BadRequest(`That is more than 10% above the ${ticker} you bought.`, 'sell_eth');
   }
 
   if (row.repay_amount != null && row.borrow_amount != null) {
@@ -437,21 +456,23 @@ function checkSwapFee(patch, row) {
 }
 
 /**
- * The ETH price a purchase or sale implies has to be one ETH could trade at
- * (`priceInRange`). Scoped to the stages this request writes, like
- * `checkSwapFee`, so a row saved before the check existed is not refused an
- * unrelated edit.
+ * The price a purchase or sale implies, per ETH or per cbBTC, has to be one it
+ * could trade at (`priceInRange`). Scoped to the stages this request writes,
+ * like `checkSwapFee`, so a row saved before the check existed is not refused
+ * an unrelated edit - and to a change of asset, which changes what the price
+ * is a price of.
  */
-function checkEthPrice(patch, row) {
+function checkUnitPrice(patch, row) {
+  const ticker = assetMeta(row).ticker;
   for (const stage of ['buy', 'sell']) {
     const [amountKey, ethKey] = [`${stage}_amount`, `${stage}_eth`];
-    if (!(amountKey in patch || ethKey in patch)) continue;
+    if (!(amountKey in patch || ethKey in patch || 'asset' in patch)) continue;
     if (row[amountKey] == null || row[ethKey] == null) continue;
     const price = row[amountKey] / row[ethKey];
     if (!priceInRange(price)) {
       const shown = price.toLocaleString('en-US', { maximumSignificantDigits: 4 });
       throw new BadRequest(
-        `That is ${shown} ${row.borrow_currency} per ETH. Check the amount and the ETH.`,
+        `That is ${shown} ${row.borrow_currency} per ${ticker}. Check the amount and the ${ticker}.`,
         ethKey,
       );
     }
@@ -516,9 +537,12 @@ app.post('/api/trades', async (req, res, next) => {
     // Built over both lists before the INSERT names them, or better-sqlite3
     // refuses the statement for a parameter it was never handed.
     const row = Object.fromEntries([...FIELDS, ...FX_COLUMNS].map((f) => [f, patch[f] ?? null]));
+    // Named, because the INSERT names every column: a NULL would not fall back
+    // to the column's default, it would fail NOT NULL.
+    row.asset = patch.asset ?? ASSETS[0];
     checkChronology(row);
     checkSwapFee(patch, row);
-    checkEthPrice(patch, row);
+    checkUnitPrice(patch, row);
     Object.assign(row, await fillFxColumns(row));
 
     const now = new Date().toISOString();
@@ -539,7 +563,9 @@ app.patch('/api/trades/:id', async (req, res, next) => {
     if (id === null) return res.status(404).json({ error: 'Trade not found.' });
     // Validate the body before queueing, so a bad request is refused at once
     // rather than after waiting behind someone else's rate lookup.
-    const patch = normalise(req.body || {}, { requireBorrow: false });
+    // The trade's asset only names the fields in an error ("cbBTC purchased
+    // must be a number"); the checks below run on the row as read in the lock.
+    const patch = normalise(req.body || {}, { requireBorrow: false, asset: selectOne.get(id)?.asset });
 
     const row = await withTradeLock(id, async () => {
       // The lock only orders writers in this process. The other copy of the
@@ -560,7 +586,7 @@ app.patch('/api/trades/:id', async (req, res, next) => {
         const merged = { ...current, ...patch };
         checkChronology(merged);
         checkSwapFee(patch, merged);
-        checkEthPrice(patch, merged);
+        checkUnitPrice(patch, merged);
 
         // An edit can invalidate a rate that was right when it was stored. Clear
         // those first, then look up replacements, so the write carries the change
@@ -572,10 +598,20 @@ app.patch('/api/trades/:id', async (req, res, next) => {
         const write = { ...patch, ...stale, ...fresh };
         const keys = Object.keys(write);
 
-        const written = prepare(
-          `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at ` +
-            'WHERE id = @id AND updated_at IS @seen',
-        ).run({ ...write, updated_at: new Date().toISOString(), id: current.id, seen: current.updated_at });
+        // A change of asset ends the armed alert in the same transaction as
+        // the write: its goal is a price in the other market, and a sweep
+        // claiming it between the two would send "BTC reached your $3,000.00
+        // goal" off ETH's figure. The claim re-reads the status, so after this
+        // commits it finds nothing to send.
+        const assetChanged = 'asset' in patch && patch.asset !== current.asset;
+        const written = db.transaction(() => {
+          const info = prepare(
+            `UPDATE trades SET ${keys.map((k) => `${k} = @${k}`).join(', ')}, updated_at = @updated_at ` +
+              'WHERE id = @id AND updated_at IS @seen',
+          ).run({ ...write, updated_at: new Date().toISOString(), id: current.id, seen: current.updated_at });
+          if (info.changes === 1 && assetChanged) closeForAssetChange(current.id);
+          return info;
+        }).immediate();
         if (written.changes !== 1) continue;
 
         // A sale just recorded ends the trade's alert, now rather than at the
@@ -675,11 +711,34 @@ app.post('/api/fx/backfill', async (req, res, next) => {
  * a long time to sit watching a ticker to find out whether it ticks. The page
  * refuses anything under thirty seconds whatever this says.
  */
-const ETH_TICKER_MS = intervalMs(process.env.MYAAVE_ETH_POLL_MS, 300_000);
+const PRICE_TICKER_MS = intervalMs(process.env.MYAAVE_ETH_POLL_MS, 300_000);
+
+/**
+ * One quote as the page reads it: the header ticker and the alert window take
+ * the same shape, so the two cannot come to show different figures for one
+ * price. `stale` is the threshold the alerts use, so the two never disagree
+ * about whether the figure on screen is old.
+ */
+function quoteView(quote) {
+  if (!quote) return { price: null, fetchedAt: null, stale: true, reason: priceStatus().lastError };
+  return {
+    price: quote.price,
+    fetchedAt: quote.fetchedAt,
+    ageMs: quote.ageMs,
+    stale: quote.ageMs > alertPollMs,
+    change1h: quote.change1h,
+    change24h: quote.change24h,
+    change7d: quote.change7d,
+  };
+}
+
+/** Every market's quote, `{ ETH, BTC }`, as `quoteView` gives each. */
+const pricesView = (quotes) => Object.fromEntries(MARKETS.map((m) => [m, quoteView(quotes[m])]));
 
 /**
  * Everything the alert window needs, in one call: whether there is anywhere to
- * send a message, what ETH last cost, and every alert keyed by its trade.
+ * send a message, what ETH and BTC last cost, and every alert keyed by its
+ * trade.
  *
  * `alerts` is the *armed* ones, keyed by trade, which is what the bell on a
  * card reads. A trade can have many alerts now that a fired one is kept, so a
@@ -701,7 +760,7 @@ app.get('/api/alerts', async (req, res, next) => {
     //
     // Its answer is used, rather than the cache read back after it: a write to
     // the cache that was refused left the window on a price from days before.
-    const quote = req.query.refresh === '1' ? await ethPrice() : cachedEthPrice();
+    const quotes = req.query.refresh === '1' ? await marketPrices() : cachedMarketPrices();
 
     const { configured, chatName, reason } = telegramConfig();
     res.json({
@@ -711,17 +770,7 @@ app.get('/api/alerts', async (req, res, next) => {
       // for one price: opening the bell refreshes at a tighter freshness than
       // the ticker polls at, so the window showed $3,333 while the header
       // beside it still said $3,000.
-      eth: quote
-        ? {
-            price: quote.price,
-            fetchedAt: quote.fetchedAt,
-            ageMs: quote.ageMs,
-            stale: quote.ageMs > alertPollMs,
-            change1h: quote.change1h,
-            change24h: quote.change24h,
-            change7d: quote.change7d,
-          }
-        : { price: null, fetchedAt: null, stale: true, reason: ethStatus().lastError },
+      prices: pricesView(quotes),
       alerts: armedAlerts(),
     });
   } catch (err) {
@@ -730,7 +779,9 @@ app.get('/api/alerts', async (req, res, next) => {
 });
 
 /**
- * What ETH costs, for the ticker in the page header.
+ * What ETH and BTC cost, for the ticker in the page header: `{ pollMs, prices:
+ * { ETH, BTC } }`, one quote per market in the shape `quoteView` gives. It was
+ * /api/eth while ETH was the only one.
  *
  * Its own route rather than a field on /api/alerts, which is the same argument
  * that split the alert log out below: that one carries the armed-alert map and
@@ -740,38 +791,18 @@ app.get('/api/alerts', async (req, res, next) => {
  *
  * `maxAgeMs` is the refresh interval the page polls at, so a cached price is
  * served without a fetch and this endpoint reaches the price service at most
- * once in five minutes however many tabs are open - `ethPrice` shares one
+ * once in five minutes however many tabs are open - `marketPrices` shares one
  * request between concurrent callers and caches the answer on disk, and the
  * alert sweep asks on the same window. Going past the free tier's limit would
  * not just stop the ticker: a 429 parks the whole module for ten minutes and
  * takes the alert sweep's price lookups with it.
  */
-app.get('/api/eth', async (_req, res, next) => {
+app.get('/api/prices', async (_req, res, next) => {
   try {
-    const quote = await ethPrice({ maxAgeMs: ETH_TICKER_MS });
+    const quotes = await marketPrices({ maxAgeMs: PRICE_TICKER_MS });
     // `pollMs` is served rather than written into the page, so the cadence the
     // browser polls at and the freshness this endpoint enforces are one number.
-    if (!quote) {
-      return res.json({
-        price: null,
-        fetchedAt: null,
-        stale: true,
-        pollMs: ETH_TICKER_MS,
-        reason: ethStatus().lastError,
-      });
-    }
-    res.json({
-      pollMs: ETH_TICKER_MS,
-      price: quote.price,
-      fetchedAt: quote.fetchedAt,
-      ageMs: quote.ageMs,
-      // The same threshold /api/alerts uses, so the two never disagree about
-      // whether the figure on screen is old.
-      stale: quote.ageMs > alertPollMs,
-      change1h: quote.change1h,
-      change24h: quote.change24h,
-      change7d: quote.change7d,
-    });
+    res.json({ pollMs: PRICE_TICKER_MS, prices: pricesView(quotes) });
   } catch (err) {
     next(err);
   }
@@ -800,7 +831,7 @@ app.get('/api/alerts/log', (_req, res) => res.json({ alerts: alertLog() }));
  * removed a different trade's alert and answered 204. This way it 404s.
  */
 /**
- * A goal ETH could plausibly be asked to reach, in dollars. Under a dollar was
+ * A goal ETH or BTC could plausibly be asked to reach, in dollars. Under a dollar was
  * saved and armed - "fell to your $0.00 goal", a goal that never fires - and
  * the preview rendered goals above the ceiling that the save then refused.
  */
@@ -812,8 +843,9 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     const trade = id === null ? undefined : selectOne.get(id);
     if (!trade) return res.status(404).json({ error: 'Trade not found.' });
 
+    const { ticker } = assetMeta(trade);
     if (derive(trade).status !== STATUS.HOLDING) {
-      throw new BadRequest('A price alert only applies while the ETH is held.', 'goal_price');
+      throw new BadRequest(`A price alert only applies while the ${ticker} is held.`, 'goal_price');
     }
 
     // The same parser the browser uses, so "3,000" cannot mean one thing in
@@ -821,16 +853,18 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     // To the cent, as every place that shows a goal prints it: kept whole,
     // 3449.996 was shown as $3,450.00 and did not fire with ETH at $3,450.00
     // from below, so the goal on screen was not the goal being watched.
-    const goal = asPrinted(toNumber(req.body?.goal_price, 'goal_price', 'ETH goal price'));
+    // A goal is a price in the trade's market: BTC's for a cbBTC trade.
+    const market = marketOf(trade);
+    const goal = asPrinted(toNumber(req.body?.goal_price, 'goal_price', `${market} goal price`));
     if (!goalInRange(goal)) {
       throw new BadRequest('That looks like a slipped digit. The price is in dollars.', 'goal_price');
     }
 
     // Before the save, not after: the direction is decided from this price, so
     // a goal set while the last quote is hours old would be read against the
-    // wrong side of the market. `ethPrice` never throws and falls back to the
-    // cache, so an unreachable service costs a moment and nothing else.
-    const quote = await ethPrice();
+    // wrong side of the market. `marketPrice` never throws and falls back to
+    // the cache, so an unreachable service costs a moment and nothing else.
+    const quote = await marketPrice(market);
 
     // Asked again after the wait, which can be seconds: a sale recorded in the
     // meantime still had a goal saved on it - an armed alert on a sold trade -
@@ -838,7 +872,12 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     const live = selectOne.get(id);
     if (!live) return res.status(404).json({ error: 'Trade not found.' });
     if (derive(live).status !== STATUS.HOLDING) {
-      throw new BadRequest('A price alert only applies while the ETH is held.', 'goal_price');
+      throw new BadRequest(`A price alert only applies while the ${ticker} is held.`, 'goal_price');
+    }
+    // Nor across a change of asset meanwhile: the price read above was the
+    // other market's, and the goal was typed against it.
+    if (marketOf(live) !== market) {
+      throw new BadRequest('The trade changed while the alert was being saved. Try again.', 'goal_price');
     }
     // A stale quote is no price: the direction comes from what was paid, as
     // it does when no price could be had at all (`freshPrice`).
@@ -941,7 +980,7 @@ app.get('/api/trades/:id/alert/preview', (req, res) => {
   // The live price only settles which way the alert reads; the message itself
   // is written at the goal, because that is the position it will describe when
   // it goes out. Quoting today's price in it read as a contradiction.
-  res.json({ text: previewMessage(trade, goal, cachedEthPrice()?.price ?? null) });
+  res.json({ text: previewMessage(trade, goal, cachedMarketPrice(marketOf(trade))?.price ?? null) });
 });
 
 app.delete('/api/trades/:id', (req, res) => {
@@ -1019,7 +1058,7 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   reportConfig();
   // Alerts left armed on trades sold before alerts were closed on a sale.
   const closed = closeUnwatched();
-  if (closed) console.log(`Closed ${closed} alert${closed === 1 ? '' : 's'} on trades no longer holding ETH.`);
+  if (closed) console.log(`Closed ${closed} alert${closed === 1 ? '' : 's'} on trades no longer holding what they bought.`);
   startAlertPoller();
   startBotPoller();
   startFxRefresher();

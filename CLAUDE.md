@@ -62,7 +62,7 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | --- | --- |
 | `MYAAVE_DB` | database file. Always set it when testing. |
 | `MYAAVE_FX_OFFLINE=1` / `MYAAVE_ETH_OFFLINE=1` | no network lookups at all |
-| `MYAAVE_ETH_PRICE=3450` | a fixed ETH price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning |
+| `MYAAVE_ETH_PRICE=3450` / `MYAAVE_BTC_PRICE=97000` | a fixed ETH / BTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
 | `MYAAVE_BOT_OFF=1` | no Telegram long-poll |
 | `MYAAVE_FX_URL` / `MYAAVE_ETH_URL` / `MYAAVE_TELEGRAM_URL` | point at a mock |
 | `MYAAVE_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
@@ -140,10 +140,10 @@ drift between a hand-written SQL predicate and `stages()`.
 `estimatedGainUsd(t, d, price, fxNow)` is the same for an open position's estimate:
 the header's Open positions tile (`openGainsUsd`), the table's `est` figures and their
 sort, Telegram's `/holding` and the alert message all print it, so one trade never
-reads two ways. `/holding` lists only trades still holding ETH (`ethHeldNow`), a
+reads two ways. `/holding` lists only trades still holding ETH or cbBTC (`ethHeldNow`), a
 part-sold one with what it kept; a trade sold in full and not repaid is open (the
-tile and `/summary` count it) but not in `/holding`. It takes the ETH price and
-today's rate per coin as arguments rather
+tile and `/summary` count it) but not in `/holding`. It takes the price of the
+trade's market (`priceFor`) and today's rate per coin as arguments rather
 than fetching them, which is what keeps it in `lib/`. It is the one place an open
 position is marked to today's exchange rate; `derive`'s own figures never are.
 
@@ -162,7 +162,7 @@ coins) and throws rather than draw past the bottom margin, so a layout change th
 overflows fails `npm run check`. It is ASCII throughout - text beyond it as octal
 escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
-`fx.js`, `eth.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
+`fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
 `report.js` and `format.js` sit at the root **because they are server-only** — the
 browser is served `lib/` wholesale. `format.js` duplicates some of `public/app.js`'s
 formatters on purpose: the browser's escape their output for `innerHTML`, which would
@@ -200,7 +200,7 @@ copy; this is mostly a dev-machine state, but the code holds for both. This is w
 - both copies run the hourly rate refresher (`startFxRefresher` in `fx.js`), which
   is harmless: the backfill re-reads each row and writes the same rate, in an
   immediate transaction so it waits on the busy timeout instead of failing at once;
-- cache reads and writes in `fx.js` / `eth.js` swallow database errors — a statement
+- cache reads and writes in `fx.js` / `prices.js` swallow database errors — a statement
   can be refused while the connection is open, and a cache that cannot be read is a
   miss, not a failure.
 
@@ -219,7 +219,7 @@ none, and saving a new goal over it closes it as `failed` with its reason rather
 than deleting it. The Alerts table's Fired at reads `firedAt`, not the status, so
 such a row shows when and where its goal was reached.
 
-`ethPrice` falls back to the cache whatever its age when the service fails, so
+`marketPrices` falls back to the cache whatever its age when the service fails, so
 `freshPrice(quote)` (`alerts.js`) is the gate: a fresh goal fires only on a price
 under two refreshes old, and a goal saved meanwhile takes its direction from the
 purchase price. Goals are stored to the cent (`asPrinted`), the figure every view
@@ -275,8 +275,34 @@ asked for has none, which shows as not recorded, never as Aave.
 it through `summaryReport().byPlatform`, built by the same `groupBuckets` loop as
 `byCurrency`, with a not-recorded row so the rows still add up to the totals; the
 per-platform Performance cards are `summaryReport` over that platform's trades. They
-and the three breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
+and the four breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
 start closed, and keep their open/closed state in localStorage (`myaave-stats-open`).
+
+### Assets and markets
+
+A trade buys ETH or cbBTC: `ASSETS` / `ASSET_META` in `lib/calc.js`, stored lowercase
+in `trades.asset`, `NOT NULL DEFAULT 'eth'` because ETH was the only choice before it
+(a fact, unlike the platform). `assetOf(t)` reads it, ETH for a row that names none.
+`buy_eth` / `sell_eth` and `derive`'s `ethHeld` / `retainedEth` / `costOfSoldEth` keep
+their names and hold units of the trade's asset; the CSV heads them `buy_qty` /
+`sell_qty`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC), and
+every "as printed" sum of quantities (`/holding`, `/summary`) uses it per asset and
+never adds two assets together.
+
+Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC']`, and cbBTC's
+`market` is BTC. `prices.js` (was `eth.js`) fetches both in one CoinGecko request,
+reads each coin by its id, and caches a row per market in `market_price` (which
+replaced the single-row `eth_price`, left in place for an older copy). A partial
+answer caches what came back without the cooldown, so a missing BTC never holds ETH
+back. Callers pass a `{ ETH, BTC }` map (`openGainsUsd`, `holdingText`) and pick a
+trade's price with `priceFor(t, prices)`. An alert's goal is a price of its market,
+stored on the alert (`alerts.market`, NULL = ETH); a PATCH that changes the asset
+closes the armed alert in the same transaction, and the sweep skips any goal whose
+market is not the trade's. The asset picker sits in the Bought card's heading and
+joins the stage form by `form=`, as the new trade's platform does; `applyAsset`
+redraws the form's fields for a pick. Stats' By asset is `summaryReport().byAsset`,
+with a row for loans that bought nothing yet. The Statement PDF has no By asset: its
+worst case fills the A4 page to within a few points.
 
 ### Rules the code holds itself to
 

@@ -32,6 +32,8 @@ import {
   statsYear,
   statsYears,
   summarize,
+  assetOf,
+  priceFor,
 } from '../lib/calc.js';
 import { tradesCsv, csvFileName } from '../lib/csv.js';
 
@@ -261,7 +263,7 @@ check('a loan with nothing bought holds no position to value', () => {
 /* ------------------------------------------------------------ the header */
 
 check('openGainsUsd sums the open positions and skips the rest', () => {
-  const g = openGainsUsd([closed({ id: 3 }), sold({ id: 2 }), held({ id: 1 })], PRICE, {}, AS_OF);
+  const g = openGainsUsd([closed({ id: 3 }), sold({ id: 2 }), held({ id: 1 })], { ETH: PRICE }, {}, AS_OF);
   assert.deepEqual(g.rows.map((r) => r.id), [1, 2]);
   // The lines as printed: 34,500 - 30,000 - 98.6301 - 8 = 4,393.37 held, and
   // 33,000 - 30,000 - 98.6301 - 12 = 2,889.37 sold. The total is their sum.
@@ -270,18 +272,18 @@ check('openGainsUsd sums the open positions and skips the rest', () => {
 });
 
 check('openGainsUsd: no ETH price, no total, rather than the sold ones alone', () => {
-  const g = openGainsUsd([held({ id: 1 }), sold({ id: 2 })], null, {}, AS_OF);
+  const g = openGainsUsd([held({ id: 1 }), sold({ id: 2 })], {}, {}, AS_OF);
   assert.equal(g.total, null);
   assert.equal(g.missing, 1);
 });
 
 check('openGainsUsd: no ETH price is fine when nothing depends on it', () => {
-  const g = openGainsUsd([sold({ id: 2 })], null, {}, AS_OF);
+  const g = openGainsUsd([sold({ id: 2 })], {}, {}, AS_OF);
   near(g.total, 2889.37, 'total'); // 33,000 - 30,000 - 98.6301 - 12, to the cent
 });
 
 check('openGainsUsd: an unknown position is missing, never a zero', () => {
-  const g = openGainsUsd([held({ id: 1 }), held({ id: 2, ...eur(null) })], PRICE, {}, AS_OF);
+  const g = openGainsUsd([held({ id: 1 }), held({ id: 2, ...eur(null) })], { ETH: PRICE }, {}, AS_OF);
   near(g.total, 4393.37, 'total'); // 34,500 - 30,000 - 98.6301 - 8, to the cent
   assert.equal(g.missing, 1);
 });
@@ -469,7 +471,7 @@ check('a half cent is a cent in a total, as the page prints it', () => {
 check('the header\'s estimate is the sum of the positions under it', () => {
   // Held 1 ETH bought for 1,000 at 0%, fee 0.996, ETH at 1,100: 99.004 each.
   const held1 = (id) => ({ ...cent(id, '09'), sell_date: null, sell_amount: null, sell_eth: null, repay_date: null, repay_amount: null });
-  const g = openGainsUsd([held1(1), held1(2)], 1100, {}, AS_OF);
+  const g = openGainsUsd([held1(1), held1(2)], { ETH: 1100 }, {}, AS_OF);
   assert.equal(g.total, 198);
 });
 
@@ -670,6 +672,68 @@ check('a euro loan cost splits into interest and currency rows that add up to it
   near(d.loanCostUsd, -77.45, 'loan cost');
   near(d.interestPaidUsd, 45.56, 'of which interest');
   near(d.principalFxUsd, -123.01, 'of which currency');
+});
+
+/* ------------------------------------------------------------------ assets */
+
+// The same loan, all 30,000 spent on 0.3 cbBTC - 100,000 a coin - with the
+// same $3 + $5 of gas. cbBTC is valued at BTC's price.
+const btc = (over = {}) => held({ asset: 'cbbtc', buy_eth: 0.3, ...over });
+
+check('a trade that names no asset bought ETH; cbBTC is valued at BTC', () => {
+  assert.equal(assetOf({}), 'eth');
+  assert.equal(assetOf({ asset: 'doge' }), 'eth');
+  assert.equal(assetOf({ asset: 'cbbtc' }), 'cbbtc');
+  assert.equal(derive(btc(), AS_OF).asset, 'cbbtc');
+  assert.equal(priceFor(btc(), { ETH: 3450, BTC: 97000 }), 97000);
+  assert.equal(priceFor(held(), { ETH: 3450, BTC: 97000 }), 3450);
+  assert.equal(priceFor(btc(), { ETH: 3450 }), null);
+});
+
+check('openGainsUsd values each position at its own market', () => {
+  const g = openGainsUsd([held({ id: 1 }), btc({ id: 2 })], { ETH: 3450, BTC: 97000 }, {}, AS_OF);
+  // ETH: 34,500 - 30,000 - 98.63 - 8 = 4,393.37. cbBTC: 0.3 x 97,000 is
+  // 29,100.00, less the same 30,000, 98.63 and 8: -1,006.63. Marked at ETH's
+  // price the cbBTC would have read 1,035 - 30,106.63 = -29,071.63.
+  assert.deepEqual(g.rows.map((r) => r.id), [1, 2]);
+  near(g.rows[1].gain, -1006.63, 'cbBTC position');
+  near(g.total, 4393.37 - 1006.63, 'total');
+});
+
+check('openGainsUsd: no BTC price leaves the total unknown, not the ETH alone', () => {
+  const g = openGainsUsd([held({ id: 1 }), btc({ id: 2 })], { ETH: 3450 }, {}, AS_OF);
+  assert.equal(g.total, null);
+  assert.equal(g.missing, 1);
+  near(g.rows[0].gain, 4393.37, 'the ETH position still has its figure');
+});
+
+check('By asset splits the tab by what was bought, and its rows add up', () => {
+  const none = { id: 9, borrow_date: '2026-09-01', borrow_amount: 30000, borrow_currency: 'USDT', borrow_apr: 4, borrow_gas_usd: 3, asset: 'cbbtc' };
+  const r = summaryReport([closed({ id: 3 }), btc({ id: 4, sell_date: '2026-09-20', sell_amount: 33000, sell_eth: 0.3, sell_gas_usd: 4, repay_date: '2026-10-01', repay_amount: 30000 + INTEREST, repay_gas_usd: 0 }), none], AS_OF);
+  // A loan with nothing bought is in no asset's row, whatever its column
+  // holds, but in a row of its own.
+  assert.deepEqual(r.byAsset.map((b) => b.asset), ['eth', 'cbbtc', null]);
+  // Each closed trade: 33,000 - 30,000 - 98.63 interest - $12 of gas = 2,889.37.
+  near(r.byAsset[0].netGain, 2889.37, 'ETH');
+  near(r.byAsset[1].netGain, 2889.37, 'cbBTC');
+  assert.equal(r.byAsset[2].netGain, null);
+  assert.equal(r.byAsset[2].open, 1);
+  near(r.byAsset.reduce((a, b) => a + b.borrowed, 0), r.totalBorrowed, 'borrowed adds up');
+  near(r.byAsset[0].netGain + r.byAsset[1].netGain, r.netGain, 'net gain adds up');
+});
+
+check('the CSV names the asset after the platform, and its quantity in full', () => {
+  const sat = { ...flat(1), id: 1, platform: 'aave', asset: 'cbbtc', buy_eth: 0.01234567, sell_eth: 0.01234567 };
+  const open = { id: 2, borrow_date: '2026-09-01', borrow_amount: 1000, borrow_currency: 'USDC', borrow_apr: 4, asset: 'eth' };
+  const { head, rows, at } = csvRows([sat, open]);
+  assert.equal(head.indexOf('asset'), head.indexOf('platform') + 1);
+  assert.ok(!head.includes('buy_eth'), 'a cbBTC quantity is not headed ETH');
+  const row = rows.find((r) => at(r, 'id') === '1');
+  assert.equal(at(row, 'asset'), 'cbbtc');
+  assert.equal(at(row, 'buy_qty'), '0,01234567');
+  assert.equal(at(row, 'sell_qty'), '0,01234567');
+  // Nothing bought: the picker's ETH is not a fact about the trade.
+  assert.equal(at(rows.find((r) => at(r, 'id') === '2'), 'asset'), '');
 });
 
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);

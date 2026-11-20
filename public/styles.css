@@ -290,22 +290,31 @@ a.brand {
 /* ---------------------------------------------------------------- ticker */
 
 /*
- * What ETH costs, in the header. `.nav` carries `margin-right: auto`, so this
- * and the theme toggle sit together on the right with nothing else to say.
+ * What ETH and BTC cost, in the header, a row each. `.nav` carries
+ * `margin-right: auto`, so this and the theme toggle sit together on the right
+ * with nothing else to say.
  *
  * Empty until a price arrives, and hidden while it is, so a price service that
- * never answers leaves a header that looks exactly as it did before.
+ * never answers leaves a header that looks exactly as it did before. Two rows
+ * of 11.5px badges come to about 44px, inside the 58px header.
  */
 .ticker {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
 .ticker:empty {
   display: none;
+}
+
+.ticker__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .ticker__price {
@@ -579,7 +588,8 @@ a.brand {
 @media (max-width: 760px) {
   #table-mount,
   #alerts-mount {
-    scroll-margin-top: 150px;
+    /* Taller again for the second ticker row, BTC under ETH. */
+    scroll-margin-top: 180px;
   }
 }
 
@@ -853,6 +863,55 @@ a.brand {
 .field.is-invalid .coin-select__trigger {
   border-color: var(--negative);
   box-shadow: 0 0 0 3px var(--negative-soft);
+}
+
+/* What a trade bought, beside "Bought" in the card's heading: the picker
+   while the form is open, the logo and ticker once it is saved. It takes the
+   name's auto margin, so it sits against the name and Edit stays right. */
+.stage__head:has(.stage__asset, .stage__asset-badge) .stage__name {
+  margin-right: 0;
+}
+
+.stage__asset,
+.stage__asset-badge {
+  margin-right: auto;
+}
+
+.stage__asset {
+  width: 128px;
+  min-width: 0;
+}
+
+.stage__asset .coin-select__trigger {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  font-size: 13px;
+}
+
+.stage__asset-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 3px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* On a white disc with a hairline ring, in both themes: ETH's logo is grey on
+   transparent and all but vanished on the dark surface. The padding keeps
+   the diamond's points inside the circle. `.coin.asset-art` because the
+   picker's art also carries `.coin--art`, which comes later and clears the
+   background. */
+.coin.asset-art,
+.asset-mark {
+  box-sizing: border-box;
+  padding: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--hairline);
+  object-fit: contain;
 }
 
 /* The new trade's heading: "New trade: borrow on [platform]". The title keeps
@@ -1151,16 +1210,15 @@ a.brand {
   border-radius: 50%;
 }
 
-.eth-cell {
+.asset-cell {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   justify-content: flex-end;
 }
 
-.eth-mark {
+.asset-mark {
   flex: none;
-  border-radius: 50%;
 }
 
 .row__stack {
@@ -2464,9 +2522,7 @@ th[aria-sort="ascending"] .th-sort__caret {
   .ticker {
     order: 4;
     width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    column-gap: 8px;
+    align-items: stretch;
     row-gap: 6px;
     /* The header goes full bleed at this width - `.header__inner`'s padding
        shorthand drops the 16px `.shell` gives every other block - and a logo or
@@ -2476,7 +2532,16 @@ th[aria-sort="ascending"] .th-sort__caret {
     padding: 0 16px;
   }
 
-  .ticker__chip[data-window="1h"],
+  /* Each market's row wraps, for the reason given above. */
+  .ticker__row {
+    flex-wrap: wrap;
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+
+  /* 7d comes back, 1h stays off. With all three, each of the two rows wrapped
+     its last badge onto a line of its own - BTC's price is the wider one - and
+     the sticky header grew to 222px of a 812px phone. Two badges fit a row. */
   .ticker__chip[data-window="7d"] {
     display: inline-flex;
   }

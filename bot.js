@@ -306,8 +306,8 @@ async function textFor(command, from = null) {
       // The reports go to the chat that asked (`tickWatch`), so "here" is
       // where they will arrive.
       setWatch(true, from);
-      return `${await watchMessage()}\n\n<i>Watching. The price every ${WATCH_EVERY} here until /unwatch${
-        holdingCount() === 0 ? ', sent while a trade holds ETH - none does now' : ''
+      return `${await watchMessage()}\n\n<i>Watching. The prices every ${WATCH_EVERY} here until /unwatch${
+        holdingCount() === 0 ? ', sent while a trade holds ETH or cbBTC - none does now' : ''
       }.</i>`;
     case 'unwatch':
       setWatch(false);

@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict';
 import { parseAmount } from '../lib/calc.js';
-import { sanitizeNumeric, validateField, contextFrom, unitOf } from '../lib/input.js';
+import { sanitizeNumeric, validateField, contextFrom, unitOf, labelOf } from '../lib/input.js';
 
 let passed = 0;
 function check(name, fn) {
@@ -200,6 +200,40 @@ check('the platform is required, one of Aave or Ether.fi, and kept as a word', (
   assert.equal(validateField('platform', 'aave'), null);
   assert.equal(validateField('platform', 'EtherFi'), null);
   assert.equal(contextFrom({}, { platform: 'etherfi' }).platform, 'etherfi');
+});
+
+check('the asset is required, ETH or cbBTC, and kept as a word', () => {
+  assert.equal(validateField('asset', ''), 'Asset is required.');
+  assert.equal(validateField('asset', 'doge'), 'Pick an asset.');
+  assert.equal(validateField('asset', 'cbbtc'), null);
+  assert.equal(validateField('asset', 'ETH'), null);
+  assert.equal(contextFrom({}, { asset: 'cbbtc' }).asset, 'cbbtc');
+});
+
+check('a cbBTC trade names its fields and its messages for cbBTC, and its goal for BTC', () => {
+  const t = { asset: 'cbbtc', borrow_currency: 'USDC' };
+  assert.equal(labelOf('buy_eth', t), 'cbBTC purchased');
+  assert.equal(labelOf('sell_eth', t), 'cbBTC sold');
+  assert.equal(labelOf('goal_price', t), 'BTC goal price');
+  assert.equal(validateField('buy_eth', '', t), 'cbBTC purchased is required.');
+  assert.equal(validateField('goal_price', '', t), 'BTC goal price is required.');
+  // 30,000 for 0.01 is 3,000,000 a coin: a slipped digit, named per cbBTC.
+  assert.equal(
+    validateField('buy_eth', '0.01', { ...t, buy_amount: 30000 }),
+    'That is 3,000,000 USDC per cbBTC. Check the amount and the cbBTC.',
+  );
+  // Quantities to cbBTC's own eight places, as the card prints them.
+  assert.equal(
+    validateField('sell_eth', '0.5', { ...t, buy_eth: 0.01234567 }),
+    'That is more than 10% above the 0.01234567 cbBTC you bought.',
+  );
+  assert.equal(
+    validateField('buy_eth', '0.001', { ...t, buy_amount: 100, sell_eth: 0.01234567 }),
+    'You already sold 0.01234567 cbBTC.',
+  );
+  // An ETH trade reads exactly as it did.
+  assert.equal(labelOf('buy_eth', {}), 'ETH purchased');
+  assert.equal(labelOf('goal_price', {}), 'ETH goal price');
 });
 
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);

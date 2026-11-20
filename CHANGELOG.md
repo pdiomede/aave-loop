@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [2.1.8] - 2026-11-20
+
+### Added
+
+- **A loop can buy cbBTC as well as ETH.** The Bought card has an asset picker in its heading, starting on ETH; the form's labels, unit and hints follow it, and Bought and Sold show the asset's logo and ticker once saved. Every existing trade is ETH.
+- **cbBTC is valued at BTC's price**, fetched with ETH's in one CoinGecko request. Estimates, Open positions and the table's Net gain mark each trade at its own market.
+- **The header shows BTC under ETH**, each with its 1h, 24h and 7d change.
+- **Price alerts on cbBTC trades**, set and judged in BTC: "BTC reached your $100,000.00 goal". Changing a trade's asset closes its armed alert.
+- **Telegram covers BTC:** `/price` and `/watch` send both prices, `/holding` lists cbBTC rows with a total per asset, and `/summary` says what is held of each. Paste the new command list from the README into BotFather.
+- **Stats has a By asset table**, beside By Platform; its rows add up to the totals.
+
+### Changed
+
+- **The trades table's ETH column is Amount**, each quantity with its asset's logo: ETH to four places, cbBTC to eight.
+- **The CSV has an `asset` column after `platform`,** and `buy_eth` / `sell_eth` are now `buy_qty` / `sell_qty`.
+- **`/api/eth` is now `/api/prices`**, answering `{ pollMs, prices: { ETH, BTC } }`. `MYAAVE_BTC_PRICE` fixes BTC as `MYAAVE_ETH_PRICE` fixes ETH.
+
 ## [2.1.7] - 2026-11-13
 
 ### Fixed

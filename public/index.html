@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ETH Roundtrip</title>
-    <meta name="description" content="Track Aave stablecoin borrow, ETH buy and sell, and repay cycles." />
+    <meta name="description" content="Track Aave stablecoin borrow, ETH or cbBTC buy and sell, and repay cycles." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -35,12 +35,12 @@
           <a class="nav__link" href="#alerts" data-view="alerts">Alerts</a>
         </nav>
         <!--
-          What ETH costs, written from JS. In the header rather than in the hero
+          What ETH and BTC cost, a row each, written from JS. In the header rather than in the hero
           because the header is outside the three view sections, so one ticker
           serves every tab. aria-live is off on purpose: a figure that rewrites
           itself every few minutes must not interrupt whatever is being read.
         -->
-        <div class="ticker" id="eth-ticker" aria-live="off"></div>
+        <div class="ticker" id="price-ticker" aria-live="off"></div>
         <button class="btn btn--icon" id="theme-toggle" type="button" title="Switch theme">
           <span class="sr-only">Switch theme</span>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true" id="theme-icon"></svg>
@@ -53,7 +53,7 @@
         <div>
           <h1 class="hero__title">Leverage trades</h1>
           <p class="hero__sub">
-            Borrow a stablecoin, buy ETH, sell it, repay the loan.<br />
+            Borrow a stablecoin, buy ETH or cbBTC, sell it, repay the loan.<br />
             Every cycle and its return, kept in one place.
           </p>
         </div>
@@ -119,7 +119,7 @@
     <footer class="footer">
       <div class="shell footer__inner">
         <span class="footer__line">
-          &copy; 2026 &middot; <span id="version">v2.1.7</span> - Built by
+          &copy; 2026 &middot; <span id="version">v2.1.8</span> - Built by
           <a href="https://pdiomede.com" target="_blank" rel="noopener noreferrer">Paolo Diomede</a>
         </span>
       </div>

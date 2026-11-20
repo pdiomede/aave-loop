@@ -12,6 +12,12 @@ import {
   CURRENCY_META,
   PLATFORMS,
   PLATFORM_META,
+  ASSETS,
+  ASSET_META,
+  MARKETS,
+  assetOf,
+  marketOf,
+  priceFor,
   FX_STAGES,
   isUsdPegged,
   gasKey,
@@ -39,10 +45,10 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
-// Money is always shown to the cent and ETH always to four places, so that
-// columns line up and a rounded figure never hides a real difference.
+// Money is always shown to the cent and a quantity always to its asset's own
+// places - four for ETH, eight for cbBTC (`ASSET_META.dp`) - so that columns
+// line up and a rounded figure never hides a real difference.
 const USD_DP = 2;
-const ETH_DP = 4;
 
 function amount(v, dp) {
   return Math.abs(v).toLocaleString('en-US', {
@@ -75,7 +81,7 @@ function signedUsd(v) {
 /**
  * A stablecoin amount carries its own ticker instead of a dollar sign. The
  * cards are all denominated in the coin that was borrowed, so "32,000.00 USDT"
- * reads in one line. Prices stay in dollars, since ETH is quoted in dollars.
+ * reads in one line. Prices stay in dollars, since ETH and BTC are quoted in dollars.
  */
 function money(v, currency) {
   if (!isNum(v)) return '';
@@ -87,13 +93,18 @@ function signedMoney(v, currency) {
   return `${printsZero(v, USD_DP) ? '' : v < 0 ? '-' : '+'}${amount(v, USD_DP)} ${currency}`;
 }
 
-function ethQty(v) {
-  return isNum(v) ? amount(v, ETH_DP) : '';
+/** A quantity of `t`'s asset, to its own decimals, without the ticker. */
+function assetQty(v, t) {
+  return isNum(v) ? amount(v, ASSET_META[assetOf(t)].dp) : '';
 }
 
-function eth(v) {
-  return isNum(v) ? `${ethQty(v)} ETH` : '';
+/** The same with the ticker: "0.01234567 cbBTC". */
+function assetAmount(v, t) {
+  return isNum(v) ? `${assetQty(v, t)} ${ASSET_META[assetOf(t)].ticker}` : '';
 }
+
+/** The asset's ticker, "ETH" or "cbBTC". */
+const tickerOf = (t) => ASSET_META[assetOf(t)].ticker;
 
 function pct(v, digits = 2) {
   if (!isNum(v)) return '';
@@ -215,7 +226,7 @@ const hintHead = (label, tip, cls = '') =>
  */
 const TIPS = {
   netGain:
-    'What closed trades made: the ETH sale, less the purchase, the loan cost and gas. ' +
+    'What closed trades made: the sale, less the purchase, the loan cost and gas. ' +
     'Trades still waiting on a rate are left out.',
   avgPct:
     'Return on the capital used, weighted by loan size and days held. ' +
@@ -231,7 +242,7 @@ const TIPS = {
   avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
     "Every fee on this tab's trades, open ones too: the borrow and repay gas, the swaps' costs and fees, " +
-    'and the gas to lend and unstake the ETH. Unrecorded ones are counted below.',
+    'and the gas to lend and unstake the ETH or cbBTC. Unrecorded ones are counted below.',
   best:
     "The largest dollar result among closed trades that have one. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
@@ -259,6 +270,14 @@ const TIPS = {
     netGain: 'Dollar result of closed trades on this platform, after gas.',
     avgPct: 'Closed trades on this platform, blended by loan size and days held.',
   },
+  asset: {
+    asset: 'What the loan bought. A loan with nothing bought yet has no asset, and its own row.',
+    closed: 'Repaid trades that bought this.',
+    open: 'Trades that bought this, not yet repaid.',
+    borrowed: 'Everything borrowed to buy this, open and closed, in dollars.',
+    netGain: 'Dollar result of closed trades that bought this, after gas.',
+    avgPct: 'Closed trades that bought this, blended by loan size and days held.',
+  },
   month: {
     month: 'The month the loan was repaid, which is when the gain became real.',
     trades: 'Trades closed this month with a dollar result.',
@@ -270,15 +289,15 @@ const TIPS = {
   alerts: {
     trade:
       'The trade the goal is on. A new goal replaces one not yet reached, and adds a row otherwise; a reached goal still waiting to be sent is kept, as FAILED.',
-    goal: 'The ETH price to wait for, in USD.',
+    goal: "The price to wait for, in USD: ETH's for an ETH trade, BTC's for a cbBTC one.",
     direction:
-      "Set when saved, against ETH's price at that moment. A goal above it waits for a rise; below it, for a fall.",
+      "Set when saved, against the market's price at that moment. A goal above it waits for a rise; below it, for a fall.",
     status:
       'ARMED: still watched. FIRED: goal reached. FAILED: not delivered - three failed tries, or replaced by a new goal before it went. ' +
-      'CLOSED: the trade stopped holding ETH (sold, or the purchase undone), so it is no longer watched. ' +
+      'CLOSED: the trade stopped holding what it bought (sold, or the purchase undone), or its asset changed, so it is no longer watched. ' +
       '"not sent": reached, but not delivered. Under ARMED it goes once Telegram takes it; under FIRED, FAILED or CLOSED it will not.',
     suspended:
-      'No ETH held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
+      'Nothing held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',
     firedAt: 'When the goal was reached, and at what price. A dash until it is.',
   },
@@ -352,7 +371,9 @@ function platformMark(p) {
 
 const RATE_MISSING = `<span class="chip chip--warn" data-tip="${esc(TIPS.noRate)}">no rate</span>`;
 
-const ethMark = `<img class="eth-mark" src="/eth.svg" alt="" width="15" height="15" />`;
+/** The asset's logo, small and decorative: its ticker is always written beside it. */
+const assetMark = (t, size = 15) =>
+  `<img class="asset-mark" src="${ASSET_META[assetOf(t)].art}" alt="" width="${size}" height="${size}" />`;
 
 /* ------------------------------------------------------- sorting + paging */
 
@@ -376,7 +397,10 @@ const STATUS_ORDER = { OPEN: 0, HOLDING: 1, SOLD: 2, CLOSED: 3 };
  */
 const SORT_KEYS = {
   trade: (t) => t.borrow_date,
-  eth: (t) => t.buy_eth,
+  // Quantities of two assets are not one scale - 0.1 cbBTC is worth more than
+  // 8 ETH - so the column groups by asset first, ETH then cbBTC, and sorts by
+  // quantity within each. The key keeps its old name so a saved sort survives.
+  eth: (t) => (isNum(t.buy_eth) ? [ASSETS.indexOf(assetOf(t)), t.buy_eth] : null),
   buy: (t, d) => d.buyPriceUsd,
   sell: (t, d) => d.sellPriceUsd,
   days: (t, d) => d.days,
@@ -387,7 +411,7 @@ const SORT_KEYS = {
 
 const SORT_LABELS = {
   trade: 'Trade date',
-  eth: 'ETH',
+  eth: 'Amount',
   buy: 'Buy price',
   sell: 'Sell price',
   days: 'Days',
@@ -411,8 +435,8 @@ function loadSort() {
 const STATS_OPEN_KEY = 'myaave-stats-open';
 
 // Every Stats card that folds: one Performance card per platform, and the
-// three breakdown tables. A key no longer here is dropped on load.
-const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-currency', 'by-month'];
+// four breakdown tables. A key no longer here is dropped on load.
+const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-asset', 'by-currency', 'by-month'];
 
 function loadStatsOpen() {
   try {
@@ -467,7 +491,15 @@ function sortedTrades() {
     if (va === null && vb === null) return b.id - a.id;
     if (va === null) return 1;
     if (vb === null) return -1;
-    const cmp = typeof va === 'string' ? (va < vb ? -1 : va > vb ? 1 : 0) : va - vb;
+    const cmp = Array.isArray(va)
+      ? va[0] - vb[0] || va[1] - vb[1]
+      : typeof va === 'string'
+        ? va < vb
+          ? -1
+          : va > vb
+            ? 1
+            : 0
+        : va - vb;
     // Ties break on id so the order is stable and a re-render never reshuffles
     // rows that compare equal.
     return cmp === 0 ? b.id - a.id : dir === 'asc' ? cmp : -cmp;
@@ -630,24 +662,25 @@ const state = {
   statsOpen: loadStatsOpen(),
   page: 1,
   // Price alerts, keyed by trade id, plus what the server knows about where an
-  // alert would go and what ETH last cost. All three are fetched once at boot
-  // and kept in step by the writes themselves, so a card can read them
-  // synchronously while it renders.
+  // alert would go and what ETH and BTC last cost (`{ ETH, BTC }`). All three
+  // are fetched once at boot and kept in step by the writes themselves, so a
+  // card can read them synchronously while it renders.
   alerts: {},
   alertConfig: null,
-  ethPrice: null,
+  alertPrices: {},
   // Every alert ever set, for the Alerts view. Null until that view has been
   // opened once, which is what lets the table tell "not fetched yet" from
   // "there are none".
   alertLog: null,
   alertLogError: null,
   alertsPage: 1,
-  // What ETH costs, for the ticker in the header. Deliberately not `ethPrice`
-  // above: that one belongs to the alert window, is refreshed on its own by
-  // `loadAlerts({ refresh: true })`, and arrives through a call that also
-  // rewrites `state.alerts`. Polling for a header figure through that would put
-  // a second writer on the armed-alert map for no reason.
-  eth: null,
+  // What ETH and BTC cost, `{ ETH, BTC }`, for the ticker in the header and
+  // every estimate. Deliberately not `alertPrices` above: that one belongs to
+  // the alert window, is refreshed on its own by `loadAlerts({ refresh: true
+  // })`, and arrives through a call that also rewrites `state.alerts`. Polling
+  // for a header figure through that would put a second writer on the
+  // armed-alert map for no reason.
+  prices: {},
   // Today's exchange rate per borrowed coin that is not a dollar, for the
   // estimate under Open positions and nothing else: no stored figure is ever
   // converted with it. Filled by `loadFxNow`.
@@ -727,7 +760,7 @@ async function loadTrades() {
  *
  * `/api/trades` is fetched again after every single write, and an alert is
  * read by one card on one row; taxing every load for it would be the wrong
- * trade. The configuration and the ETH price have no home on a trade row at
+ * trade. The configuration and the prices have no home on a trade row at
  * all, and this is the only call that needs them.
  *
  * Nothing here is refetched after a save. The write answers with the alert it
@@ -738,12 +771,12 @@ async function loadAlerts({ refresh = false } = {}) {
   const body = await api(`/api/alerts${refresh ? '?refresh=1' : ''}`);
   state.alerts = body.alerts || {};
   state.alertConfig = body.config || null;
-  state.ethPrice = body.eth || null;
-  // The same quote, so the header cannot disagree with the window in front of
+  state.alertPrices = body.prices || {};
+  // The same quotes, so the header cannot disagree with the window in front of
   // it. Opening the bell asks for a price no more than a minute old while the
   // ticker settles for five, so this call is regularly the fresher of the two
   // - and the header was left showing the older figure until its next poll.
-  adoptEthQuote(body.eth);
+  adoptQuotes(body.prices);
 }
 
 /**
@@ -790,51 +823,69 @@ async function loadAlertLog() {
   }
 }
 
-/* ----------------------------------------------------------- eth ticker */
+/* --------------------------------------------------------- price ticker */
 
 /**
- * What ETH costs, in the header, on every tab.
+ * What ETH and BTC cost, in the header, on every tab.
  *
  * Its own endpoint and its own slice of state. `/api/alerts` carries the armed
  * alert map and the Telegram configuration and has no change windows on it at
  * all, so polling that for a price would fetch three things to read one - and
  * would put a repeating writer on `state.alerts`, which has no sequence guard.
  */
-let ethSeq = 0;
-let ethTimer = null;
+let priceSeq = 0;
+let priceTimer = null;
 
 /** The cadence the server asks for; replaced by the figure it serves. */
-let ethPollMs = 300_000;
+let pricePollMs = 300_000;
 
-/** When the figure on screen was fetched, for deciding whether to ask again. */
-let ethQuoteAt = 0;
+/** When the figures on screen were fetched, for deciding whether to ask again. */
+let quotesAt = 0;
+
+/** What `t`'s market costs now, from the ticker's quotes, or null. */
+const priceNow = (t) => {
+  const p = state.prices[marketOf(t)]?.price;
+  return isNum(p) ? p : null;
+};
+
+/** `{ ETH, BTC }` as plain numbers, for `openGainsUsd`. */
+const priceMap = () => Object.fromEntries(MARKETS.map((m) => [m, state.prices[m]?.price ?? null]));
 
 /**
- * Take a quote from whichever call brought it, keeping the newer of the two.
+ * Take each market's quote from whichever call brought it, keeping the newer.
  *
- * Both `/api/eth` and `/api/alerts` read the same server-side cache, so they
+ * Both `/api/prices` and `/api/alerts` read the same server-side cache, so they
  * agree - except at boot, where they are in flight together and the first may
  * go to the price service while the second answers from the cache it has not
  * refreshed yet. Letting the older one land last put the header back to the
- * price it had a moment earlier.
+ * price it had a moment earlier. Market by market, since one can come back
+ * while the other does not.
  */
-function adoptEthQuote(quote) {
-  if (!quote) return;
-  // A priced quote is never replaced by an unpriced one. On a database with no
-  // cached price yet, /api/alerts reads the cache and answers with nothing
-  // while /api/eth goes and fetches - so whichever way round the two land, the
-  // figure wins over the blank.
-  if (!isNum(quote.price) && isNum(state.eth?.price)) return;
-  const at = Date.parse(quote.fetchedAt ?? '');
-  const held = Date.parse(state.eth?.fetchedAt ?? '');
-  if (Number.isFinite(at) && Number.isFinite(held) && at < held) return;
-  state.eth = quote;
-  ethQuoteAt = Date.now();
+function adoptQuotes(quotes) {
+  if (!quotes) return;
+  let changed = false;
+  for (const market of MARKETS) {
+    const quote = quotes[market];
+    if (!quote) continue;
+    const mine = state.prices[market];
+    // A priced quote is never replaced by an unpriced one. On a database with
+    // no cached price yet, /api/alerts reads the cache and answers with nothing
+    // while /api/prices goes and fetches - so whichever way round the two land,
+    // the figure wins over the blank.
+    if (!isNum(quote.price) && isNum(mine?.price)) continue;
+    const at = Date.parse(quote.fetchedAt ?? '');
+    const held = Date.parse(mine?.fetchedAt ?? '');
+    if (Number.isFinite(at) && Number.isFinite(held) && at < held) continue;
+    state.prices[market] = quote;
+    changed = true;
+  }
+  if (!changed) return;
+  quotesAt = Date.now();
   renderTicker();
-  // The Open positions tile values held ETH at this price, so a new quote
-  // moves its estimate, and the first one is what fills it in at all. Only
-  // once the tiles are up: a quote landing before the trades would otherwise
-  // draw a ledger of zeros that the trades then replace.
+  // The Open positions tile values what is held at these prices, so a new
+  // quote moves its estimate, and the first one is what fills it in at all.
+  // Only once the tiles are up: a quote landing before the trades would
+  // otherwise draw a ledger of zeros that the trades then replace.
   if (document.getElementById('hero-stats')?.childElementCount) renderHeroStats();
   refreshEstimateCells();
 }
@@ -842,7 +893,7 @@ function adoptEthQuote(quote) {
 /**
  * Pick up rates the server filled in by itself (`startFxRefresher` in fx.js).
  *
- * Rides the ETH poll, at most every fifteen minutes, and only while some trade
+ * Rides the price poll, at most every fifteen minutes, and only while some trade
  * is waiting on a rate - missing, or a stand-in the ECB may have replaced.
  * Redrawn only when a rate actually changed, and not under someone's hands
  * (`underUsersHands`): what is on screen stays, and the next render draws the
@@ -869,13 +920,13 @@ async function pickUpServerRates() {
   render();
 }
 
-async function loadEth() {
-  const seq = ++ethSeq;
+async function loadPrices() {
+  const seq = ++priceSeq;
   try {
-    const body = await api('/api/eth');
-    if (seq !== ethSeq) return;
-    if (Number.isFinite(body?.pollMs) && body.pollMs >= 30_000) ethPollMs = body.pollMs;
-    adoptEthQuote(body);
+    const body = await api('/api/prices');
+    if (seq !== priceSeq) return;
+    if (Number.isFinite(body?.pollMs) && body.pollMs >= 30_000) pricePollMs = body.pollMs;
+    adoptQuotes(body?.prices);
     // Rides the same poll, so a tab left open past the ECB's publication
     // picks today's rate up. It throttles itself to every half hour.
     loadFxNow().catch(() => {});
@@ -891,13 +942,13 @@ async function loadEth() {
      * is where the age is stated, and a service that has stopped answering is
      * precisely when the age stops being what it was and starts mattering.
      */
-    if (seq === ethSeq) renderTicker();
+    if (seq === priceSeq) renderTicker();
   }
 }
 
 /**
  * Today's rate for every coin an open position was borrowed in, so the estimate
- * under Open positions can mark a euro loan the way it marks the ETH: at today's
+ * under Open positions can mark a euro loan the way it marks the ETH or BTC: at today's
  * figure.
  *
  * The server resolves it, from the ECB's daily rate it already caches - there
@@ -951,42 +1002,45 @@ const TICKER_WINDOWS = [
   ['7d', 'change7d'],
 ];
 
+/**
+ * A row per market, ETH over BTC, each with its own windows. A market with no
+ * price has no row; with neither the mount is emptied, and it is `display:
+ * none` while it is empty, so a price that never arrives leaves no gap behind.
+ */
 function renderTicker() {
-  const mount = document.getElementById('eth-ticker');
+  const mount = document.getElementById('price-ticker');
   if (!mount) return;
 
-  const q = state.eth;
-  // Nothing at all rather than a placeholder: the element is `display: none`
-  // while it is empty, so a price that never arrives leaves no gap behind.
-  if (!q || !isNum(q.price)) {
-    mount.innerHTML = '';
-    mount.removeAttribute('title');
-    return;
-  }
+  const rows = MARKETS.map((market) => [market, state.prices[market]])
+    .filter(([, q]) => q && isNum(q.price))
+    .map(([market, q]) => {
+      // Every space in here is real, not indentation: the gaps between these
+      // are drawn by flex, so with the markup packed tight the whole row reads
+      // as `ETH: $3,000.001h+1.4%24h-1.5%` when it is copied, and to a screen
+      // reader. Flex drops whitespace between items and trims it inside them,
+      // so none of it reaches the screen.
+      const chips = TICKER_WINDOWS.filter(([, key]) => isNum(q[key]))
+        .map(
+          ([label, key]) =>
+            `<span class="ticker__chip ticker__chip--${pctClass(q[key], 1)}" data-window="${label}"><span class="ticker__win">${label}</span> ${signedPct(q[key], 1)}</span>`,
+        )
+        .join(' ');
+      // A native title, not the CSS tooltip: this is a footnote nobody needs
+      // and the bubble would be drawn over the page on every hover of the
+      // header.
+      //
+      // It states the age rather than promising a cadence. "Updates every few
+      // minutes" is not something this can know: a hidden tab is not polling,
+      // and a price service that has stopped answering leaves the figure where
+      // it is. Measured from the timestamp against the clock now, not from the
+      // `ageMs` the server put in the reply: that figure was true when it was
+      // written and goes stale sitting in a tab, which is exactly the case the
+      // title is for.
+      const title = `${market} price, fetched ${ageWords(Date.now() - Date.parse(q.fetchedAt ?? ''))} ago.`;
+      return `<div class="ticker__row" data-market="${market}" title="${esc(title)}"><span class="ticker__price">${market}: ${usd(q.price)}</span> ${chips}</div>`;
+    });
 
-  // Every space in here is real, not indentation: the gaps between these are
-  // drawn by flex, so with the markup packed tight the whole row reads as
-  // `ETH: $3,000.001h+1.4%24h-1.5%` when it is copied, and to a screen reader.
-  // Flex drops whitespace between items and trims it inside them, so none of
-  // it reaches the screen.
-  const chips = TICKER_WINDOWS.filter(([, key]) => isNum(q[key]))
-    .map(
-      ([label, key]) =>
-        `<span class="ticker__chip ticker__chip--${pctClass(q[key], 1)}" data-window="${label}"><span class="ticker__win">${label}</span> ${signedPct(q[key], 1)}</span>`,
-    )
-    .join(' ');
-
-  mount.innerHTML = `<span class="ticker__price">ETH: ${usd(q.price)}</span> ${chips}`;
-  // A native title, not the CSS tooltip: this is a footnote nobody needs and
-  // the bubble would be drawn over the page on every hover of the header.
-  //
-  // It states the age rather than promising a cadence. "Updates every few
-  // minutes" is not something this can know: a hidden tab is not polling, and
-  // a price service that has stopped answering leaves the figure where it is.
-  // Measured from the timestamp against the clock now, not from the `ageMs`
-  // the server put in the reply: that figure was true when it was written and
-  // goes stale sitting in a tab, which is exactly the case the title is for.
-  mount.title = `ETH price, fetched ${ageWords(Date.now() - Date.parse(q.fetchedAt ?? ''))} ago.`;
+  mount.innerHTML = rows.join('');
 }
 
 /** "12 minutes", and "less than a minute" for one that has only just landed. */
@@ -1008,19 +1062,19 @@ function ageWords(ms) {
  * down when the tab goes away and a fresh figure is fetched the moment it comes
  * back, which is also when it is most likely to be out of date.
  */
-function startEthPoller() {
-  stopEthPoller();
+function startPricePoller() {
+  stopPricePoller();
   if (document.visibilityState === 'hidden') return;
-  ethTimer = setInterval(loadEth, ethPollMs);
+  priceTimer = setInterval(loadPrices, pricePollMs);
 }
 
-function stopEthPoller() {
-  clearInterval(ethTimer);
-  ethTimer = null;
+function stopPricePoller() {
+  clearInterval(priceTimer);
+  priceTimer = null;
 }
 
-/** Whether the figure on screen has been there longer than the poll interval. */
-const ethQuoteDue = () => Date.now() - ethQuoteAt >= ethPollMs;
+/** Whether the figures on screen have been there longer than the poll interval. */
+const quotesDue = () => Date.now() - quotesAt >= pricePollMs;
 
 /* ----------------------------------------------------- input and validation */
 
@@ -1070,8 +1124,18 @@ const platformFace = (p) => {
     : '<span class="coin-select__placeholder">Pick a platform</span>';
 };
 
+// What a trade bought: its logo and its ticker. Never empty - a purchase
+// starts on ETH, which is what every trade before the choice bought.
+const assetFace = (a) => {
+  const meta = ASSET_META[a] ?? ASSET_META[ASSETS[0]];
+  return (
+    `<img class="coin coin--art coin--sm asset-art" src="${meta.art}" alt="" width="20" height="20" />` +
+    `<span class="coin-select__ticker">${esc(meta.ticker)}</span>`
+  );
+};
+
 // What each kind of picker draws on its button and in its list.
-const FACES = { coin: coinFace, platform: platformFace };
+const FACES = { coin: coinFace, platform: platformFace, asset: assetFace };
 const faceOf = (box) => FACES[box.dataset.kind] ?? coinFace;
 
 const CHECK_SVG = `<svg class="coin-select__check" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -1339,24 +1403,58 @@ function borrowFields(t = {}, { platform = false } = {}) {
   </div>`;
 }
 
+/**
+ * The asset picker, for the Bought card's heading while its form is open. Its
+ * input belongs to that form through `form=`, as the new trade's platform
+ * does, so FormData, the draft, the validation and the input handler all see
+ * it. `value` is what the form holds now, which a draft can have moved off the
+ * saved asset.
+ */
+function assetHeadPicker(t, formId, value = assetOf(t)) {
+  return `<div class="field stage__asset" data-field="asset" data-field-of="${formId}">
+    ${coinSelect({ id: `f-asset-${t.id}`, name: 'asset', value, options: ASSETS, req: ' aria-required="true"', kind: 'asset', form: formId, label: 'Asset bought' })}
+  </div>`;
+}
+
+/** The asset a filled Bought or Sold card is about, logo and ticker, read only. */
+const assetBadge = (t) =>
+  `<span class="stage__asset-badge">${assetMark(t, 18)}<span>${esc(tickerOf(t))}</span></span>`;
+
+// Every label, unit, tip and placeholder here is the asset's: `t.asset` is the
+// picked one while the form is open (`applyAsset`), the saved one otherwise.
 function buyFields(t) {
+  const { ticker, placeholder } = ASSET_META[assetOf(t)];
   return `<div class="grid">
-    ${field({ name: 'buy_date', label: 'Purchase date', tip: 'Day you swapped the loan into ETH.', type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
+    ${field({ name: 'buy_date', label: 'Purchase date', tip: `Day you swapped the loan into ${ticker}.`, type: 'date', value: t.buy_date || t.borrow_date, autofocus: true })}
     ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Stablecoins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
-    ${field({ name: 'buy_eth', label: 'ETH purchased', tip: 'ETH received from the swap.', type: 'number', value: t.buy_eth ?? '', suffix: 'ETH', placeholder: '8.0773' })}
-    ${gasField(t, 'buy_gas_usd', SWAP_FEE, 'What the swap into ETH cost, in USD: gas plus any swap or aggregator fee.', true)}
-    ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', 'Gas paid to supply the ETH to the lending platform, in USD. Optional.')}
+    ${field({ name: 'buy_eth', label: `${ticker} purchased`, tip: `${ticker} received from the swap.`, type: 'number', value: t.buy_eth ?? '', suffix: ticker, placeholder })}
+    ${gasField(t, 'buy_gas_usd', SWAP_FEE, `What the swap into ${ticker} cost, in USD: gas plus any swap or aggregator fee.`, true)}
+    ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', `Gas paid to supply the ${ticker} to the lending platform, in USD. Optional.`)}
   </div>`;
 }
 
 function sellFields(t) {
+  const { ticker } = ASSET_META[assetOf(t)];
   return `<div class="grid">
-    ${field({ name: 'sell_date', label: 'Sale date', tip: 'Day you swapped the ETH back.', type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
+    ${field({ name: 'sell_date', label: 'Sale date', tip: `Day you swapped the ${ticker} back.`, type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
     ${field({ name: 'sell_amount', label: 'Amount received', tip: 'Stablecoins received from the sale.', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
-    ${field({ name: 'sell_eth', label: 'ETH sold', tip: 'ETH swapped back to stablecoins.', type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: 'ETH' })}
-    ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', 'Gas paid to withdraw the ETH from the lending platform, in USD. Optional.')}
-    ${gasField(t, 'sell_gas_usd', SWAP_FEE, 'What the swap out of ETH cost, in USD: gas plus any swap or aggregator fee.', true)}
+    ${field({ name: 'sell_eth', label: `${ticker} sold`, tip: `${ticker} swapped back to stablecoins.`, type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: ticker })}
+    ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', `Gas paid to withdraw the ${ticker} from the lending platform, in USD. Optional.`)}
+    ${gasField(t, 'sell_gas_usd', SWAP_FEE, `What the swap out of ${ticker} cost, in USD: gas plus any swap or aggregator fee.`, true)}
   </div>`;
+}
+
+/**
+ * Redraw the Bought form's fields for the asset now picked in its heading,
+ * keeping everything typed: "cbBTC purchased", its unit, its placeholder and
+ * the tips all follow the pick before anything is saved. The fields are
+ * rebuilt rather than patched, so no label can be left behind in the old
+ * asset's words.
+ */
+function applyAsset(form, trade) {
+  const grid = form.querySelector('.grid');
+  if (!grid || form.dataset.stageForm !== 'buy') return;
+  grid.outerHTML = buyFields({ ...trade, ...payloadOf(form) });
 }
 
 function suggestedRepayOn(t, dateISO) {
@@ -1464,7 +1562,7 @@ function refreshHints(form, trade, stage) {
 
   if (stage === 'buy') {
     set('buy_eth', isNum(d.buyPrice)
-      ? `ETH price ${previewPrice(d.buyPriceUsd, d.buyPrice)}${isNum(d.buyPriceUsd) ? '' : asSaved}`
+      ? `${tickerOf(merged)} price ${previewPrice(d.buyPriceUsd, d.buyPrice)}${isNum(d.buyPriceUsd) ? '' : asSaved}`
       : '');
   }
 
@@ -1485,7 +1583,7 @@ function refreshHints(form, trade, stage) {
       ? signedUsd(d.grossGainUsd)
       : signedMoney(d.grossGain, c);
     set('sell_amount', isNum(d.sellPrice)
-      ? `ETH price ${previewPrice(d.sellPriceUsd, d.sellPrice)}${
+      ? `${tickerOf(merged)} price ${previewPrice(d.sellPriceUsd, d.sellPrice)}${
           // Its own line: run on after the price, it was wider than a stage
           // card and ran off the edge.
           isNum(d.grossGain) ? `<br>Gross ${gross}` : ''
@@ -1559,7 +1657,7 @@ function refreshHints(form, trade, stage) {
 const alertFor = (id) => state.alerts?.[id] ?? null;
 
 /**
- * The summary row the Bought ETH card grows once an alert is set.
+ * The summary row the Bought card grows once an alert is set.
  *
  * Armed only, because `state.alerts` is armed only. A fired or failed alert
  * lives in the Alerts view; the card is about what is being waited for.
@@ -1573,7 +1671,8 @@ function alertRow(row, t, d) {
   // even a way to clear it from here.
   if (!d.stages.bought || d.stages.sold) return '';
   const a = alertFor(t.id);
-  return a ? row('Alert', `${usd(a.goalPrice)} goal`) : '';
+  // The goal is a price of the market, which for cbBTC is BTC, so it says so.
+  return a ? row('Alert', `${marketOf(t)} ${usd(a.goalPrice)} goal`) : '';
 }
 
 const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1582,9 +1681,9 @@ const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" st
   </svg>`;
 
 /**
- * The bell, beside Edit on the Bought ETH card.
+ * The bell, beside Edit on the Bought card.
  *
- * Shown only while the ETH is held, which is the only time a target price is
+ * Shown only while the asset is held, which is the only time a target price is
  * a question: before the purchase there is nothing to watch and after the sale
  * there is nothing to decide. That is the same test `derive` applies to call a
  * trade HOLDING, written from the stage flags the card already has.
@@ -1592,7 +1691,7 @@ const BELL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" st
 function alertBell(t, d) {
   if (!d.stages.bought || d.stages.sold) return '';
   const a = alertFor(t.id);
-  const label = a ? `Price alert at ${usd(a.goalPrice)}` : 'Set a price alert';
+  const label = a ? `Price alert at ${marketOf(t)} ${usd(a.goalPrice)}` : 'Set a price alert';
 
   return `<button class="btn btn--ghost btn--sm alert-bell ${a ? 'is-armed' : ''}" type="button"
     data-alert-trade="${t.id}" aria-label="${esc(label)}" title="${esc(label)}">${BELL_SVG}</button>`;
@@ -1602,8 +1701,10 @@ function alertBell(t, d) {
 
 const STAGES = [
   { key: 'borrow', name: 'Borrowed', done: (s) => s.borrowed, fields: (t) => borrowFields(t, { platform: true }) },
-  { key: 'buy', name: 'Bought ETH', done: (s) => s.bought, fields: buyFields },
-  { key: 'sell', name: 'Sold ETH', done: (s) => s.sold, fields: sellFields },
+  // What was bought is in the card's heading - a picker on Bought while it is
+  // being filled in, the asset's logo and ticker once it is - not in the name.
+  { key: 'buy', name: 'Bought', done: (s) => s.bought, fields: buyFields },
+  { key: 'sell', name: 'Sold', done: (s) => s.sold, fields: sellFields },
   { key: 'repay', name: 'Repaid', done: (s) => s.repaid, fields: repayFields },
 ];
 
@@ -1695,11 +1796,11 @@ function stageSummary(stage, t, d) {
       return (
         row('Date', fmtDate(t.buy_date)) +
         row2('Spent', money(t.buy_amount, c), fxNote(d.buyUsd, d.fx.buy)) +
-        row('Bought', eth(t.buy_eth), '', 'stage__row--gap') +
-        // ETH is quoted in dollars, so this column is converted. Dividing a
-        // euro amount by a quantity of ETH gives euros per ETH, which this
-        // used to print under a dollar sign.
-        row('ETH price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING) +
+        row('Bought', assetAmount(t.buy_eth, t), '', 'stage__row--gap') +
+        // ETH and cbBTC are quoted in dollars, so this column is converted.
+        // Dividing a euro amount by a quantity of ETH gives euros per ETH,
+        // which this used to print under a dollar sign.
+        row(`${tickerOf(t)} price`, isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING) +
         // Only when there is one. A card that says "Alert: none" on every
         // trade nobody set one on is four words of noise per row.
         alertRow(row, t, d) +
@@ -1710,10 +1811,12 @@ function stageSummary(stage, t, d) {
       return (
         row('Date', fmtDate(t.sell_date)) +
         row2('Received', money(t.sell_amount, c), fxNote(d.sellUsd, d.fx.sell)) +
-        row('Sold', eth(t.sell_eth), '', 'stage__row--gap') +
-        row('ETH price', isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : RATE_MISSING) +
-        (d.isPartialSale ? row2('Cost of ETH sold', money(d.costOfSoldEth, c), fxNote(d.costOfSoldEthUsd, d.fx.buy)) : '') +
-        (d.isPartialSale ? row('Still held', eth(d.retainedEth)) : '') +
+        row('Sold', assetAmount(t.sell_eth, t), '', 'stage__row--gap') +
+        row(`${tickerOf(t)} price`, isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : RATE_MISSING) +
+        (d.isPartialSale
+          ? row2(`Cost of ${tickerOf(t)} sold`, money(d.costOfSoldEth, c), fxNote(d.costOfSoldEthUsd, d.fx.buy))
+          : '') +
+        (d.isPartialSale ? row('Still held', assetAmount(d.retainedEth, t)) : '') +
         // No single rate to name: the proceeds are converted at the sale's
         // rate and the cost basis at the purchase's, so quoting the sale rate
         // here invited a reader to multiply by it and get a different number.
@@ -1775,9 +1878,12 @@ function stageCard(stage, t, d) {
   const done = stage.done(d.stages);
   const editing = state.editing && state.editing.id === t.id && state.editing.stage === stage.key;
 
+  // An id, so the asset picker in the heading can join the form by `form=`.
+  // Stable across re-renders, like `submitKey`, which reads it first.
+  const formId = `stage-${t.id}-${stage.key}`;
   let body;
   if (editing) {
-    body = `<form data-stage-form="${stage.key}" data-trade="${t.id}" novalidate>
+    body = `<form id="${formId}" data-stage-form="${stage.key}" data-trade="${t.id}" novalidate>
       ${stage.fields(t)}
       ${actions('Save', `data-cancel-stage`)}
     </form>`;
@@ -1793,6 +1899,7 @@ function stageCard(stage, t, d) {
     <header class="stage__head">
       <span class="stage__marker">&#10003;</span>
       <span class="stage__name">${stage.name}</span>
+      ${stageAsset(stage.key, t, d, editing, formId)}
       ${
         editing || !canEdit
           ? ''
@@ -1802,6 +1909,18 @@ function stageCard(stage, t, d) {
     </header>
     ${body}
   </article>`;
+}
+
+/**
+ * What the Bought and Sold headings say was bought: the picker while Bought is
+ * being filled in, and the asset's logo and ticker on either card once the
+ * purchase is recorded. Nothing before then - "Bought ETH" over "Not yet."
+ * would state a choice nobody has made.
+ */
+function stageAsset(key, t, d, editing, formId) {
+  if (key === 'buy' && editing) return assetHeadPicker(t, formId);
+  if ((key === 'buy' || key === 'sell') && d.stages.bought) return assetBadge(t);
+  return '';
 }
 
 /** A stage only opens once the one before it is filled in. */
@@ -1817,11 +1936,11 @@ function prerequisiteMet(key, s) {
 /**
  * The figure the Net gain column shows: the result once there is one,
  * otherwise the same estimate as the header's Open positions tile, at today's
- * ETH price and exchange rate. The sort reads it too, so the column orders by
- * what is on screen.
+ * price of the trade's market - ETH, or BTC for cbBTC - and exchange rate. The
+ * sort reads it too, so the column orders by what is on screen.
  */
 function shownGain(t, d) {
-  return isNum(d.netGainUsd) ? d.netGainUsd : estimatedGainUsd(t, d, state.eth?.price, state.fxNow);
+  return isNum(d.netGainUsd) ? d.netGainUsd : estimatedGainUsd(t, d, priceNow(t), state.fxNow);
 }
 
 function gainCellHtml(t, d) {
@@ -1839,20 +1958,21 @@ function gainCellHtml(t, d) {
   // A trade with nothing to estimate keeps the old rule, once the ETH is sold.
   const dash = '<span class="muted">-</span>';
   if (hasEstimate(d)) {
-    if (estimateNeedsPrice(d) && !isNum(state.eth?.price)) return dash;
+    if (estimateNeedsPrice(d) && priceNow(t) === null) return dash;
     return d.fxComplete ? dash : RATE_MISSING;
   }
   return d.stages.sold && !d.fxComplete ? RATE_MISSING : dash;
 }
 
 /**
- * The server closes a trade's armed alert when the save leaves it holding no
- * ETH (`closeUnwatched` in alerts.js). The same here, so the bell and the
- * Alerts list agree with it without a reload.
+ * The server closes a trade's armed alert when the save leaves it holding
+ * nothing (`closeUnwatched` in alerts.js), or changes what it bought
+ * (`closeForAssetChange`): the goal was a price of the other market. The same
+ * here, so the bell and the Alerts list agree with it without a reload.
  */
-function closeAlertsOnSale(id) {
+function closeAlertsOnSale(id, { assetChanged = false } = {}) {
   const t = state.trades.find((x) => x.id === id);
-  if (!t || isNum(derive(t).ethHeld)) return;
+  if (!t || (isNum(derive(t).ethHeld) && !assetChanged)) return;
   if (!state.alerts[id]) return;
   delete state.alerts[id];
   if (state.alertLog) {
@@ -1983,9 +2103,11 @@ function tradeRow(t, index, total) {
         </span>
       </div>
     </td>
-    <td data-label="ETH" class="num">${
+    <td data-label="Amount" class="num">${
+      // The logo says which asset; the ticker is there for a screen reader
+      // and on hover, since 0.10000000 and 8.0773 are not one scale.
       isNum(t.buy_eth)
-        ? `<span class="eth-cell">${ethMark}${ethQty(t.buy_eth)}</span>`
+        ? `<span class="asset-cell" title="${esc(tickerOf(t))}">${assetMark(t)}${assetQty(t.buy_eth, t)}<span class="sr-only"> ${esc(tickerOf(t))}</span></span>`
         : '<span class="muted">-</span>'
     }</td>
     <td data-label="Buy price" class="num">${isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : '<span class="muted">-</span>'}</td>
@@ -2042,14 +2164,20 @@ function restoreDraft(draft) {
     const input = form.elements[name];
     if (input && input.value !== value) input.value = value;
   }
+  // An asset picked but not saved: the fields were drawn for the saved one,
+  // so they are drawn again for the pick, with the values just put back.
+  const trade = state.trades.find((t) => t.id === draft.id);
+  if (trade && draft.values.asset && draft.values.asset !== assetOf(trade)) applyAsset(form, trade);
   // The amount's ticker is drawn from the saved trade, and only the input
   // handler ever updated it. A currency changed in the form and then carried
   // across a re-render came back labelled with the old coin, beside a hint
   // already in the new one.
   const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');
   if (unit && draft.values.borrow_currency) unit.textContent = draft.values.borrow_currency;
-  // And the currency picker, whose button is drawn from the saved trade too.
-  for (const box of form.querySelectorAll('[data-coin-select]')) syncCoinSelect(box);
+  // And the pickers, whose buttons are drawn from the saved trade too - the
+  // asset's among them, in the heading outside the form.
+  const outside = form.id ? document.querySelectorAll(`[data-field-of="${form.id}"] [data-coin-select]`) : [];
+  for (const box of [...form.querySelectorAll('[data-coin-select]'), ...outside]) syncCoinSelect(box);
   const repay = form.querySelector('input[name="repay_amount"]');
   if (repay && !draft.auto) delete repay.dataset.auto;
   return true;
@@ -2215,7 +2343,7 @@ function summaryCard(title, body, note = '') {
 
 /**
  * A card whose body can be folded away: the per-platform Performance cards and
- * the three breakdown tables on Stats.
+ * the four breakdown tables on Stats.
  * The head is one button carrying `aria-expanded`, so the whole bar is the
  * target and a keyboard reaches it like any other button. Toggled in place by
  * `toggleCollapse`, not by a re-render, and remembered by `key`.
@@ -2279,6 +2407,43 @@ function platformTable(rows) {
         .map(
           (r) => `<tr>
         <td data-label="Platform">${platformLabel(r.platform, r.missingFx ? ` ${RATE_MISSING}` : '')}</td>
+        <td data-label="Closed" class="num">${r.closed || dash}</td>
+        <td data-label="Open" class="num">${r.open || dash}</td>
+        <td data-label="Borrowed" class="num">${isNum(r.borrowed) ? usd(r.borrowed) : dash}</td>
+        <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain) || dash}</td>
+        <td data-label="Avg annualized" class="num ${pctClass(r.avgPct)}">${pct(r.avgPct) || dash}</td>
+      </tr>`,
+        )
+        .join('')}
+    </tbody>
+  </table>`;
+}
+
+/**
+ * By asset: the tab's trades split by what the loan bought, ETH or cbBTC, in
+ * the shape of By Platform and built by the same loop (`byAsset` in
+ * lib/calc.js). A loan with nothing bought yet has a row of its own, so the
+ * rows add up to Total borrowed. Dollars only, as By Platform is.
+ */
+function assetTable(rows) {
+  if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
+  const label = (a, extra) =>
+    a === null
+      ? `<span class="row__asset"><span class="platform-mark" aria-hidden="true"><span class="platform-mark__none"></span></span><span class="muted">Nothing bought yet</span>${extra}</span>`
+      : `<span class="row__asset">${assetMark({ asset: a }, 18)}<span>${esc(ASSET_META[a].ticker)}</span>${extra}</span>`;
+  return `<table class="table table--flush">
+    <thead>
+      <tr>
+        ${hintHead('Asset', TIPS.asset.asset)}${hintHead('Closed', TIPS.asset.closed)}
+        ${hintHead('Open', TIPS.asset.open)}${hintHead('Borrowed', TIPS.asset.borrowed)}
+        ${hintHead('Net gain', TIPS.asset.netGain)}${hintHead('Avg annualized', TIPS.asset.avgPct)}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (r) => `<tr>
+        <td data-label="Asset">${label(r.asset, r.missingFx ? ` ${RATE_MISSING}` : '')}</td>
         <td data-label="Closed" class="num">${r.closed || dash}</td>
         <td data-label="Open" class="num">${r.open || dash}</td>
         <td data-label="Borrowed" class="num">${isNum(r.borrowed) ? usd(r.borrowed) : dash}</td>
@@ -2743,10 +2908,11 @@ function renderStatsView() {
     });
   }).join('');
 
-  // The three breakdown tables fold too, closed until opened, so the page
+  // The four breakdown tables fold too, closed until opened, so the page
   // opens on the overview and Performance rather than a long scroll of tables.
   const breakdownCards = [
     ['by-platform', 'By Platform', platformTable(r.byPlatform)],
+    ['by-asset', 'By asset (All Platforms)', assetTable(r.byAsset)],
     ['by-currency', 'By currency (All Platforms)', currencyTable(r.byCurrency)],
     ['by-month', 'By month closed (All Platforms)', monthTable(r.byMonth, { closed: r.closedCount, valued: r.valuedCount })],
   ]
@@ -2834,21 +3000,24 @@ function statTiles(s, { open = true, estimate = false } = {}) {
  * The estimated gain under Open positions: the total, then each position.
  *
  * Worked out here rather than in `summarize`, which is a function of the trades
- * alone and must stay one: this needs what ETH costs now, and that is only in
- * `state.eth`. Open trades are all filed under the current year, so the Stats
+ * alone and must stay one: this needs what ETH and BTC cost now, and that is
+ * only in `state.prices`. Open trades are all filed under the current year, so the Stats
  * view's tile for this year reads the same figures from the whole ledger.
  *
- * The "no rate" chip only when there is a price. Without one every held trade
- * is unknown, a dollar loan included, and blaming the exchange rate would name
- * the wrong absence.
+ * The "no rate" chip only when every position that needs a price has one.
+ * Without its market's price a held trade is unknown, a dollar loan included,
+ * and blaming the exchange rate would name the wrong absence.
  */
 function openGainLines() {
-  const price = state.eth?.price;
-  const g = openGainsUsd(state.trades, price, state.fxNow);
+  const g = openGainsUsd(state.trades, priceMap(), state.fxNow);
   if (!g.rows.length) return [];
+  const priced = state.trades.every((t) => {
+    const d = derive(t);
+    return !estimateNeedsPrice(d) || priceNow(t) !== null;
+  });
   const fig = (v) => (isNum(v) ? `<span class="${gainClass(v)}">${signedUsd(v)}</span>` : '-');
   const lines = [
-    `Est. gain ${fig(g.total)}${g.missing && isNum(price) ? ` ${RATE_MISSING}` : ''}`,
+    `Est. gain ${fig(g.total)}${g.missing && priced ? ` ${RATE_MISSING}` : ''}`,
   ];
   // One position would only repeat the total above it. Two to a row, id and
   // figure in columns of their own: a flowing line wrapped after its separator
@@ -2881,9 +3050,12 @@ const ALERT_DIRECTION = { above: 'rises to', below: 'falls to' };
  */
 function alertLogRow(a) {
   const t = state.trades.find((x) => x.id === a.tradeId);
+  const d0 = t ? derive(t) : null;
   const trade = t
     ? `<span class="row__asset">${coin(t.borrow_currency)}<span class="row__stack">
-         <span>Trade #${t.id}</span><small>${fmtDate(t.borrow_date)}</small></span></span>`
+         <span>Trade #${t.id}</span><small>${fmtDate(t.borrow_date)}${
+           d0.stages.bought ? ` &middot; ${esc(tickerOf(t))}` : ''
+         }</small></span></span>`
     : `Trade #${a.tradeId}`;
 
   // Derived from the error rather than from the status, because the case that
@@ -2918,11 +3090,11 @@ function alertLogRow(a) {
           isNum(a.firedPrice) ? ` &middot; ${usd(a.firedPrice)}` : ''
         }</small>`;
 
-  // Armed, but on a trade that is no longer holding ETH, so the sweep passes
+  // Armed, but on a trade that is no longer holding anything, so the sweep passes
   // over it. Brief now: such an alert is closed by the next save or sweep (see
   // `closeUnwatched` in alerts.js), but until then ARMED on its own would claim
   // a watch that is not happening.
-  const st = t ? derive(t).stages : null;
+  const st = d0 ? d0.stages : null;
   const suspended =
     a.status === 'armed' && st && (!st.bought || st.sold)
       ? `<span class="cell-note"><span class="chip chip--warn" tabindex="0"
@@ -2935,7 +3107,7 @@ function alertLogRow(a) {
 
   return `<tr>
     <td data-label="Trade">${trade}</td>
-    <td data-label="Goal" class="num">${usd(a.goalPrice)}</td>
+    <td data-label="Goal" class="num"><span class="cell-stack">${usd(a.goalPrice)}<small class="cell-note">${esc(a.market ?? 'ETH')}</small></span></td>
     <td data-label="Direction">${ALERT_DIRECTION[a.direction] || esc(a.direction)}</td>
     <td data-label="Status"><span class="cell-stack"><span class="pill pill--${status}">${status}</span>${notSent}${suspended}</span></td>
     <td data-label="Set" class="num">${fmtDate(localDay(a.createdAt))}</td>
@@ -2962,7 +3134,7 @@ function renderAlerts() {
   if (state.alertLog.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No alerts yet</h3>
-      <p>Set a goal price from the bell on a trade that is still holding ETH.
+      <p>Set a goal price from the bell on a trade that is still holding ETH or cbBTC.
          Every alert is kept here, including the ones already sent.</p>
     </div>`;
     return;
@@ -3157,6 +3329,7 @@ async function submitStage(form) {
       method: 'PATCH',
       body: JSON.stringify(payloadOf(form)),
     });
+    const assetChanged = assetOf(updated) !== assetOf(trade);
     // Two stages of one trade can now be saved at once. The server writes them
     // in turn, and a reply overtaken on the way back by the later one must not
     // put the row back as it was before that write.
@@ -3178,7 +3351,7 @@ async function submitStage(form) {
     // while the row and its open detail vanish off the screen. `submitBorrow`
     // has done this since paging arrived; editing never did.
     state.page = pageOfTrade(id);
-    closeAlertsOnSale(id);
+    closeAlertsOnSale(id, { assetChanged });
     render();
     if (mine) {
       state.draft = null;
@@ -3189,7 +3362,10 @@ async function submitStage(form) {
     // Without this a new euro position sat at its stored rates until the
     // next ETH poll, five minutes on, then jumped.
     loadFxNow().catch(() => {});
-    toast(`${STAGES.find((s) => s.key === stage).name} saved.`);
+    // The asset a purchase or sale was of is in the card's heading now, not
+    // its name, so the toast says it: "Bought cbBTC saved."
+    const name = STAGES.find((s) => s.key === stage).name;
+    toast(`${stage === 'buy' || stage === 'sell' ? `${name} ${tickerOf(updated)}` : name} saved.`);
   } catch (err) {
     // On the form as it is now. A re-render while the save was away replaces
     // the one captured at the click, and the error went into that detached
@@ -3268,7 +3444,7 @@ async function submitBorrow(form) {
   done();
   toast(
     reloaded
-      ? 'Trade created. Add the ETH purchase next.'
+      ? 'Trade created. Add the purchase next.'
       : 'Trade created. The ledger could not be reloaded; it will catch up on the next change.',
   );
 }
@@ -3295,8 +3471,13 @@ function alertDialogBody(t, d, a) {
   const c = t.borrow_currency;
   const cfg = state.alertConfig;
   const goal = a ? String(a.goalPrice) : '';
+  // The goal is a price of the trade's market - BTC's for cbBTC - and the
+  // purchase price beside it is per unit of what was bought.
+  const market = marketOf(t);
+  const ticker = tickerOf(t);
+  const now = state.alertPrices?.[market]?.price;
 
-  // The figures the goal is being judged against: the Bought ETH card's, in
+  // The figures the goal is being judged against: the Bought card's, in
   // its order. Named for the purchase, because out of that card "Trade date"
   // and "Trade amount" read as the table's Trade date column - the borrow's -
   // and the two differ whenever the ETH was bought another day or for another
@@ -3304,24 +3485,24 @@ function alertDialogBody(t, d, a) {
   const rows = [
     ['Bought on', fmtDate(t.buy_date)],
     ['Spent', money(t.buy_amount, c)],
-    ['ETH purchase price', isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING],
-    ['ETH now', isNum(state.ethPrice?.price) ? usd(state.ethPrice.price) : '<span class="muted">not known yet</span>'],
+    [`${ticker} purchase price`, isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : RATE_MISSING],
+    [`${market} now`, isNum(now) ? usd(now) : '<span class="muted">not known yet</span>'],
   ]
     .map(([k, v]) => `<div class="stage__row"><dt>${k}</dt><dd>${v}</dd></div>`)
     .join('');
 
-  // Which way the alert reads is settled against ETH's current price, and with
-  // neither that nor a purchase price to compare against it can only read
-  // upward. Rare, and worth saying rather than leaving to be discovered.
+  // Which way the alert reads is settled against the market's current price,
+  // and with neither that nor a purchase price to compare against it can only
+  // read upward. Rare, and worth saying rather than leaving to be discovered.
   const noBasis =
-    !isNum(state.ethPrice?.price) && !isNum(d.buyPriceUsd)
-      ? `<p class="modal__note">The ETH price could not be fetched, so this will alert when ETH
+    !isNum(now) && !isNum(d.buyPriceUsd)
+      ? `<p class="modal__note">The ${market} price could not be fetched, so this will alert when ${market}
          <strong>rises</strong> to the goal.</p>`
       : '';
 
   const note = cfg?.configured
     ? `<p class="modal__note">We will send this to
-        <strong>${esc(cfg.chatName)}</strong> on Telegram once, when ETH reaches this price.
+        <strong>${esc(cfg.chatName)}</strong> on Telegram once, when ${market} reaches this price.
         It will read:</p>`
     : `<p class="modal__note"><span class="chip chip--warn">not connected</span>
         ${esc(cfg?.reason || 'Nothing is configured to send an alert.')}
@@ -3340,12 +3521,12 @@ function alertDialogBody(t, d, a) {
       <form data-alert-form="${t.id}" novalidate>
         ${field({
           name: 'goal_price',
-          label: 'ETH goal price',
-          tip: 'ETH price in USD that triggers the alert.',
+          label: `${market} goal price`,
+          tip: `${market} price in USD that triggers the alert.`,
           type: 'number',
           value: goal,
           prefix: '$',
-          placeholder: '3000',
+          placeholder: market === 'BTC' ? '100000' : '3000',
           autofocus: true,
         })}
         ${noBasis}
@@ -3462,7 +3643,8 @@ function refreshAlertPreview(id, { delay = 0 } = {}) {
 
 async function submitAlert(form) {
   const id = Number(form.dataset.alertForm);
-  if (!validateForm(form)) return;
+  // Against the trade, so a cbBTC trade's error names a "BTC goal price".
+  if (!validateForm(form, state.trades.find((t) => t.id === id) || {})) return;
   const done = beginSubmit(form);
   if (!done) return;
   try {
@@ -3787,9 +3969,9 @@ function wire() {
   // minutes. On the deployed app each of those goes through nginx and basic
   // auth to be told what the page already knew.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') return stopEthPoller();
-    if (ethQuoteDue()) loadEth();
-    startEthPoller();
+    if (document.visibilityState === 'hidden') return stopPricePoller();
+    if (quotesDue()) loadPrices();
+    startPricePoller();
     // The Alerts table is read when the view is opened, and a tab left on it
     // never read it again: an alert that fired meanwhile still said ARMED,
     // and its bell stayed lit. Coming back to it is a visit too.
@@ -4177,13 +4359,18 @@ function wire() {
       if (unit) unit.textContent = input.value;
     }
 
-    const stageForm = input.closest('[data-stage-form]');
+    // The form's own, not the input's: the Bought card's asset picker sits in
+    // the card's heading, outside its form, and `closest` on the input missed
+    // it - the pick changed nothing on screen.
+    const stageForm = form.closest('[data-stage-form]');
     if (!stageForm) {
       if (form.id === 'borrow-form') refreshHints(form, {}, 'borrow');
       return;
     }
     if (input.name === 'repay_amount' && e.isTrusted) delete input.dataset.auto;
     const trade = state.trades.find((t) => t.id === Number(stageForm.dataset.trade));
+    // Every label, unit and tip on the form follows the asset picked.
+    if (input.name === 'asset') applyAsset(stageForm, trade);
     refreshHints(stageForm, trade, stageForm.dataset.stageForm);
   });
 
@@ -4330,7 +4517,7 @@ async function boot() {
   // The header ticker is not awaited at all. It draws itself when it has
   // something to draw, and a price service that never answers must not hold up
   // a ledger that is already on disk. `loadEth` swallows its own failures.
-  loadEth().then(startEthPoller);
+  loadPrices().then(startPricePoller);
 
   try {
     await loadTrades();

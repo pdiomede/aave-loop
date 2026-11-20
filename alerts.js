@@ -1,9 +1,11 @@
 /**
- * Price alerts on a trade whose ETH is still held.
+ * Price alerts on a trade whose ETH - or cbBTC - is still held.
  *
  * A trade in HOLDING has one number that matters and it is not in the ledger:
- * where ETH is trading. An alert names the price you are waiting for, and a
- * timer here watches for it so nobody has to watch a chart.
+ * where its market is trading. An alert names the price you are waiting for,
+ * and a timer here watches for it so nobody has to watch a chart. The market is
+ * the trade's (`marketOf`): ETH for ETH, BTC for cbBTC, so a cbBTC goal is a
+ * BTC price and is judged against BTC alone.
  *
  * Two things in here are load bearing and neither is obvious.
  *
@@ -25,12 +27,22 @@
  * a partial unique index in db.js.
  */
 import { db, prepare } from './db.js';
-import { derive, derivedOn, estimatedGainUsd, estimatedGainPct, estimateRate, isUsdPegged, todayISO, intervalMs } from './lib/calc.js';
+import {
+  derive,
+  derivedOn,
+  estimatedGainUsd,
+  estimatedGainPct,
+  estimateRate,
+  isUsdPegged,
+  todayISO,
+  intervalMs,
+  marketOf,
+} from './lib/calc.js';
 import { resolveRate, cachedRate } from './fx.js';
-import { ethPrice } from './eth.js';
+import { marketPrices } from './prices.js';
 import { sendTelegramMessage } from './telegram.js';
 import { telegramConfig } from './config.js';
-import { n2, n4, fmtDate, signedUsd, signedPct2 } from './format.js';
+import { n2, qty, fmtDate, signedUsd, signedPct2 } from './format.js';
 
 /**
  * Fifteen minutes. The price is checked on a schedule rather than watched, and
@@ -99,9 +111,11 @@ export const HOLDING = `
       AND (t.sell_date IS NULL OR t.sell_amount IS NULL OR t.sell_eth IS NULL)
       AND (t.repay_date IS NULL OR t.repay_amount IS NULL OR t.repay_amount <= 0)`;
 
+// The trade's asset rides along, so the sweep judges each goal against its
+// own market.
 const selectArmed = () =>
   prepare(`
-    SELECT a.*, t.id AS t_id FROM alerts a
+    SELECT a.*, t.id AS t_id, t.asset AS t_asset FROM alerts a
     JOIN trades t ON t.id = a.trade_id
     WHERE a.status = 'armed' AND ${HOLDING}
   `);
@@ -137,6 +151,25 @@ export function closeUnwatched() {
   }
 }
 
+/**
+ * Close the armed alert on a trade whose asset has just changed, and answer how
+ * many. Its goal was a price in the other market - an ETH goal of $3,000 on
+ * what is now a cbBTC trade would read as BTC falling to $3,000 - so it is
+ * over, as a sale ends one, and the bell sets a new one. Called by the PATCH
+ * inside the transaction that writes the change, so no sweep can claim it in
+ * between.
+ *
+ * No `last_error`, as `closeUnwatched` writes none: the Alerts view reads that
+ * column as "not sent", which a goal never reached was not. One already
+ * reached and waiting on its send keeps the error it has, which is true.
+ */
+export function closeForAssetChange(tradeId) {
+  return prepare(`
+    UPDATE alerts SET status = 'closed', updated_at = @now
+    WHERE trade_id = @trade_id AND status = 'armed'
+  `).run({ trade_id: tradeId, now: new Date().toISOString() }).changes;
+}
+
 /** What the browser is told. The chat id and the token are never in here. */
 export const alertView = (row) =>
   row == null
@@ -152,7 +185,11 @@ export const alertView = (row) =>
         firedAt: row.fired_at,
         firedPrice: row.fired_price,
         lastError: row.last_error,
+        market: marketOfAlert(row),
       };
+
+/** The market an alert's goal is a price of; ETH for one saved before BTC. */
+export const marketOfAlert = (row) => row?.market ?? 'ETH';
 
 export const getAlertById = (id) => alertView(selectAlertById().get(id));
 
@@ -205,8 +242,9 @@ const reached = (alert, price) =>
   alert.direction === 'above' ? price >= alert.goal_price : price <= alert.goal_price;
 
 /**
- * Save the goal for a trade, replacing whatever was there. `price` is ETH's
- * current price, which decides the direction; null when it could not be had.
+ * Save the goal for a trade, replacing whatever was there. `price` is the
+ * current price of the trade's market, which decides the direction; null when
+ * it could not be had.
  */
 // Only a goal not yet reached. One that was reached and is waiting to be sent
 // - put back to armed with `fired_at` after a failed send - is history: the
@@ -229,9 +267,9 @@ const failReachedArmed = () =>
 const insertAlert = () =>
   prepare(`
     INSERT INTO alerts (trade_id, goal_price, direction, status, basis_price,
-                        fired_at, fired_price, attempts, last_error, created_at, updated_at)
+                        fired_at, fired_price, attempts, last_error, market, created_at, updated_at)
     VALUES (@trade_id, @goal_price, @direction, 'armed', @basis_price,
-            NULL, NULL, 0, NULL, @now, @now)
+            NULL, NULL, 0, NULL, @market, @now, @now)
   `);
 
 /**
@@ -252,8 +290,9 @@ const replaceArmed = db.transaction((p) => {
 });
 
 /**
- * Save the goal for a trade. `price` is ETH's current price, which decides the
- * direction; null when it could not be had.
+ * Save the goal for a trade. `price` is the current price of the trade's
+ * market (ETH's, or BTC's for cbBTC), which decides the direction; null when it
+ * could not be had.
  */
 export function saveAlert(trade, goalPrice, price = null) {
   const basis = referenceFor(trade, price);
@@ -262,6 +301,7 @@ export function saveAlert(trade, goalPrice, price = null) {
     goal_price: goalPrice,
     direction: directionFor(goalPrice, basis),
     basis_price: basis,
+    market: marketOf(trade),
     now: new Date().toISOString(),
   });
   return getAlertById(id);
@@ -309,6 +349,10 @@ export function deleteAllAlerts(through = null) {
 export function alertMessage(trade, alert, price, fxNow = {}) {
   const d = derive(trade, derivedOn(trade));
   const c = trade.borrow_currency;
+  // The goal is a price of the market, BTC for a cbBTC trade; the quantity is
+  // of the asset itself. The alert's own market when it has one, so a message
+  // says what the goal was set in.
+  const market = alert.market ?? marketOf(trade);
   // The price is only worth stating when it is not the goal, which it usually
   // is not: a check every quarter hour finds the market somewhere past it. In
   // the window, where the two are equal by construction, saying it twice read
@@ -318,10 +362,10 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
   const lines = [
     // "Reached" either way. "Fell to" read as bad news on a goal set below
     // the price, which is often the one somebody is waiting to buy at.
-    `ETH reached your $${n2(alert.goal_price)} goal${at}`,
+    `${market} reached your $${n2(alert.goal_price)} goal${at}`,
     '',
     `Trade #${trade.id}: borrowed ${n2(trade.borrow_amount)} ${c} on ${fmtDate(trade.borrow_date)}`,
-    `Bought: ${n4(trade.buy_eth)} ETH`,
+    `Bought: ${qty(trade.buy_eth, trade)}`,
   ];
 
   if (typeof d.buyPriceUsd === 'number') lines.push(`Purchase price: $${n2(d.buyPriceUsd)}`);
@@ -329,7 +373,7 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
   const value = [];
 
   // Worth stands on its own line, so it can still be stated on a trade whose
-  // rate is missing: what the ETH is worth needs no exchange rate, while the
+  // rate is missing: what the asset is worth needs no exchange rate, while the
   // gain underneath it is measured against a cost basis that does.
   if (Number.isFinite(d.ethHeld) && Number.isFinite(price)) {
     value.push(`Worth now: $${n2(d.ethHeld * price)}`);
@@ -366,7 +410,7 @@ export function alertMessage(trade, alert, price, fxNow = {}) {
       : moved === null
         ? ` (${c} at ${rate.toFixed(4)} today)`
         : ` (${c} at ${rate.toFixed(4)} today, bought at ${trade.buy_fx.toFixed(4)}: ${signedUsd(moved)})`;
-    // The same gain over what the ETH cost, signed the way the dollars are.
+    // The same gain over what the asset cost, signed the way the dollars are.
     const pct = estimatedGainPct(trade, d, price, fxNow);
     if (pct !== null) value.push(`Gain (%): ${signedPct2(pct)}`);
     value.push(`Gain ($): ${signedUsd(gain)} after $${n2(interestUsd)} interest${fees}${at}`);
@@ -391,7 +435,7 @@ export function previewMessage(trade, goalPrice, price = null) {
     // Written at the goal rather than at today's price: the message only goes
     // out once the goal is reached, so those are the figures it will carry.
     goalPrice,
-    // From the cache alone, like the ETH price beside it: this answers while
+    // From the cache alone, like the market price beside it: this answers while
     // the goal is being typed and must not wait on the network per keystroke.
     cachedRateToday(trade),
   );
@@ -445,7 +489,7 @@ const backToArmed = ({ counted }) =>
     WHERE id = @id
   `);
 
-async function fire(row, price) {
+async function fire(row, price, market) {
   const now = new Date().toISOString();
   // `last_error` is cleared here. A retry that succeeds writes nothing after
   // the claim, so the error from the attempt before it stayed on a delivered
@@ -458,7 +502,7 @@ async function fire(row, price) {
   // the alert: a goal message for a position that no longer existed.
   //
   // A retry keeps the time and price of the first claim. They say when the goal
-  // was reached, and the retry goes out later, at whatever ETH costs by then.
+  // was reached, and the retry goes out later, at whatever the market is by then.
   const claimed = prepare(`
     UPDATE alerts SET status = 'fired', fired_at = COALESCE(fired_at, @now),
       fired_price = COALESCE(fired_price, @price), last_error = NULL, updated_at = @now
@@ -477,7 +521,7 @@ async function fire(row, price) {
   const fxNow = Number.isFinite(today?.rate) ? { [trade.borrow_currency]: today.rate } : {};
   const sent = await sendTelegramMessage(alertMessage(trade, row, price, fxNow));
   if (sent.ok) {
-    console.log(`Alert on trade #${row.trade_id} sent: ETH at ${price}.`);
+    console.log(`Alert on trade #${row.trade_id} sent: ${market} at ${price}.`);
     return;
   }
 
@@ -557,7 +601,7 @@ async function fire(row, price) {
 const PRICE_FRESH_MS = 2 * Math.min(POLL_MS, 300_000);
 
 /**
- * The quote's price while it is fresh, else null. `ethPrice` falls back to the
+ * The quote's price while it is fresh, else null. `marketPrices` falls back to the
  * cache when the service fails - a 429 parks it for up to an hour, and the
  * network is gone after the Mac wakes - and the cache has no age limit, so a
  * goal was fired, and a message that cannot be unsent went out, on a price a
@@ -620,15 +664,27 @@ async function sweepOnce() {
     // sends it.
     if (!telegramConfig().configured) return { checked: armed.length, fired: 0 };
 
-    const quote = await ethPrice({ maxAgeMs: Math.min(POLL_MS, 300_000) });
-    if (!quote || !db.open) return { checked: armed.length, fired: 0 };
+    // Both markets in one request, and only when some armed goal is on each -
+    // a ledger with no cbBTC goal never makes BTC's price a reason to ask.
+    const markets = [...new Set(armed.map(marketOfAlert))];
+    const quotes = await marketPrices({ maxAgeMs: Math.min(POLL_MS, 300_000), markets });
+    if (!db.open) return { checked: armed.length, fired: 0 };
 
     let fired = 0;
     for (const row of armed) {
+      // Each goal against its own market. A BTC quote that could not be had
+      // holds back the cbBTC goals and nothing else.
+      const market = marketOfAlert(row);
+      // A goal set in one market on a trade now valued in the other is never
+      // judged: the PATCH that changed the asset closed it in the same
+      // transaction, so this only meets one written by something else.
+      if (market !== marketOf({ asset: row.t_asset })) continue;
+      const quote = quotes[market];
+      if (!quote) continue;
       // An armed row with a firing time already reached its goal and is only
       // waiting for the message to go through - after a send that failed, or
-      // while Telegram's setup was wrong - so it is sent whatever ETH costs
-      // now. Gated on the price like a fresh one, a send that timed out was
+      // while Telegram's setup was wrong - so it is sent whatever the market
+      // is now. Gated on the price like a fresh one, a send that timed out was
       // retried only if ETH happened to be past the goal again a quarter of an
       // hour later: a dip that came back never got its message, and the card
       // went on calling the alert armed. A goal saved afresh has none.
@@ -641,14 +697,18 @@ async function sweepOnce() {
       // as sent. One bad row should cost one message, not the rest of the
       // quarter hour.
       try {
-        await fire(row, quote.price);
+        await fire(row, quote.price, market);
         fired += 1;
       } catch (err) {
         console.error(`Alert ${row.id} on trade #${row.trade_id} failed:`, err.message);
       }
       if (!db.open) break;
     }
-    return { checked: armed.length, fired, price: quote.price };
+    return {
+      checked: armed.length,
+      fired,
+      prices: Object.fromEntries(Object.entries(quotes).map(([m, q]) => [m, q?.price ?? null])),
+    };
   } catch (err) {
     // A sweep is unattended. It must never be the thing that takes the
     // process down, so anything unexpected is logged and the timer carries on.

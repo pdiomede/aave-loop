@@ -51,14 +51,18 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // answers to sendMessage, [status, description]; empty means 200.
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
-const mock = { price: 3000, tg: [], sent: [], sentTo: [], updates: [] };
+const mock = { price: 3000, btc: 90000, tg: [], sent: [], sentTo: [], updates: [] };
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url.startsWith('/coins/markets')) {
-      return res.end(JSON.stringify([{ id: 'ethereum', current_price: mock.price }]));
+      // Both coins, whatever was asked, as CoinGecko answers a list of ids;
+      // a null `btc` leaves bitcoin out of the answer.
+      const coins = [{ id: 'ethereum', current_price: mock.price }];
+      if (mock.btc !== null) coins.push({ id: 'bitcoin', current_price: mock.btc });
+      return res.end(JSON.stringify(coins));
     }
     if (req.url.includes('/getUpdates')) {
       return res.end(JSON.stringify({ ok: true, result: mock.updates.splice(0) }));
@@ -114,6 +118,7 @@ const server = spawn(process.execPath, ['server.js'], {
     MYAAVE_DB: path.join(tmp, 'api.db'),
     MYAAVE_ETH_OFFLINE: '1',
     MYAAVE_ETH_PRICE: '3000',
+    MYAAVE_BTC_PRICE: '90000',
     MYAAVE_ALERT_POLL_MS: '3600000',
   },
   stdio: ['ignore', 'ignore', 'pipe'],
@@ -341,6 +346,55 @@ await check('Delete all deletes only up to the newest alert the page showed', as
   for (const t of [a, b]) await api('DELETE', `/api/trades/${t.id}`);
 });
 
+await check('/api/prices gives ETH and BTC, a quote each', async () => {
+  const r = await api('GET', '/api/prices');
+  assert.equal(r.data.prices.ETH.price, 3000);
+  assert.equal(r.data.prices.BTC.price, 90000);
+  assert.ok(r.data.pollMs >= 30_000);
+  assert.equal((await api('GET', '/api/alerts')).data.prices.BTC.price, 90000);
+});
+
+await check('a trade can buy cbBTC, and its errors and its alert speak cbBTC and BTC', async () => {
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: today, borrow_amount: '10000' }))).data;
+  assert.equal(t.asset, 'eth', 'a new trade starts on ETH');
+  const bought = { buy_date: today, buy_amount: '10000', buy_gas_usd: '1' };
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { asset: 'doge' })).data.error, 'Pick an asset.');
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { asset: '' })).data.error, 'Pick an asset.');
+  const bad = await api('PATCH', `/api/trades/${t.id}`, { asset: 'cbbtc', ...bought, buy_eth: 'x' });
+  assert.equal(bad.data.error, 'cbBTC purchased must be a number.');
+  const slip = await api('PATCH', `/api/trades/${t.id}`, { asset: 'cbbtc', ...bought, buy_eth: '0.001' });
+  assert.equal(slip.data.error, 'That is 10,000,000 USDC per cbBTC. Check the amount and the cbBTC.');
+  const r = await api('PATCH', `/api/trades/${t.id}`, { asset: 'cbbtc', ...bought, buy_eth: '0.1' });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.asset, 'cbbtc');
+  assert.equal(r.data.derived.buyPriceUsd, 100000, '10,000 for 0.1');
+
+  // Set against BTC at the fixed 90,000, not ETH at 3,000: a rise.
+  const a = (await api('PUT', `/api/trades/${t.id}/alert`, { goal_price: '95000' })).data;
+  assert.equal(a.direction, 'above');
+  assert.equal(a.basisPrice, 90000);
+  assert.equal(a.market, 'BTC');
+  // At $95,000: 0.1 worth $9,500, less the 10,000 spent and $1 of fees, no
+  // interest on a loan opened today.
+  const text = (await api('GET', `/api/trades/${t.id}/alert/preview?goal=95000`)).data.text;
+  assert.match(text, /^BTC reached your \$95,000\.00 goal\n/);
+  assert.match(text, /\nBought: 0\.10000000 cbBTC\n/);
+  assert.match(text, /\nWorth now: \$9,500\.00\n/);
+  assert.match(text, /Gain \(\$\): -\$501\.00 after \$0\.00 interest and \$1\.00 fees$/);
+
+  // A change of asset ends the goal, which was a BTC price, and not as "not sent".
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { asset: 'eth' })).status, 200);
+  const log = (await api('GET', '/api/alerts/log')).data.alerts.find((x) => x.id === a.id);
+  assert.equal(log.status, 'closed');
+  assert.equal(log.lastError, null);
+  assert.equal(log.market, 'BTC', 'still says what it was set in');
+  // The same asset sent again is no change, and leaves a new goal armed.
+  const again = (await api('PUT', `/api/trades/${t.id}/alert`, { goal_price: '120000' })).data;
+  await api('PATCH', `/api/trades/${t.id}`, { asset: 'eth', buy_gas_usd: '2' });
+  assert.equal((await api('GET', '/api/alerts')).data.alerts[t.id]?.id, again.id);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 server.kill('SIGTERM');
 await new Promise((r) => server.once('exit', r));
 if (process.exitCode && serverErr) warn(`server stderr:\n${serverErr}`);
@@ -488,17 +542,108 @@ await check('an alert waiting on its send closes when the trade sells', async ()
   assert.equal(mock.sent.length, 0);
 });
 
+await check('an answer with no BTC in it does not hold ETH back', async () => {
+  prepare(`UPDATE alerts SET status = 'closed' WHERE status = 'armed'`).run();
+  const alert = saveAlert(holding(), 2550, 2600); // below: waits for a fall
+  mock.btc = null;
+  await priceAt(2600);
+  await runAlertSweep();
+  assert.equal(getAlertById(alert.id).status, 'armed');
+  // The next ETH price is asked for as usual. Put to sleep for a minute over
+  // the missing coin, the sweep went on judging the goal at 2,600.
+  mock.sent.length = 0;
+  await priceAt(2540);
+  await runAlertSweep();
+  assert.equal(getAlertById(alert.id).status, 'fired');
+  assert.match(mock.sent[0] ?? '', /^ETH reached your \$2,550\.00 goal - now \$2,540\.00\n/);
+  mock.btc = 90000;
+});
+
+await check('a cbBTC goal is watched against BTC, not ETH', async () => {
+  // Only this goal armed, so nothing else answers the prices below.
+  prepare(`UPDATE alerts SET status = 'closed' WHERE status = 'armed'`).run();
+  const now = new Date().toISOString();
+  const id = prepare(`
+    INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr, borrow_gas_usd,
+                        buy_date, buy_amount, buy_eth, buy_gas_usd, asset, created_at, updated_at)
+    VALUES (@d, 10000, 'USDC', 4, 1, @d, 10000, 0.1, 3, 'cbbtc', @now, @now)
+  `).run({ d: today, now }).lastInsertRowid;
+  const alert = saveAlert(prepare('SELECT * FROM trades WHERE id = ?').get(id), 95000, 90000);
+  assert.equal(alert.direction, 'above');
+  assert.equal(alert.market, 'BTC');
+
+  // ETH far past the goal moves nothing.
+  mock.btc = 90000;
+  await priceAt(99000);
+  mock.sent.length = 0;
+  await runAlertSweep();
+  assert.equal(getAlertById(alert.id).status, 'armed');
+  assert.equal(mock.sent.length, 0);
+
+  mock.btc = 96000;
+  await priceAt(3000);
+  await runAlertSweep();
+  const a = getAlertById(alert.id);
+  assert.equal(a.status, 'fired');
+  assert.equal(a.firedPrice, 96000);
+  assert.equal(mock.sent.length, 1);
+  // Its lines add up to its Gain: 0.1 x 96,000 is $9,600, less the 10,000
+  // spent and $4 of fees, no interest today: -$404.00, -4.04% of 10,000.
+  assert.match(mock.sent[0], /^BTC reached your \$95,000\.00 goal - now \$96,000\.00\n/);
+  assert.match(mock.sent[0], /\nBought: 0\.10000000 cbBTC\n/);
+  assert.match(mock.sent[0], /\nWorth now: \$9,600\.00\nGain \(%\): -4\.04%\n/);
+  assert.match(mock.sent[0], /Gain \(\$\): -\$404\.00 after \$0\.00 interest and \$4\.00 fees$/);
+  prepare('DELETE FROM trades WHERE id = ?').run(id);
+});
+
 /* ------------------------------------------------------------- bot reports */
 
 const { holdingText, helpText } = await import('../report.js');
+
+await check('/price and /watch give ETH and BTC, and say which could not be had', async () => {
+  const { priceText, watchMessage } = await import('../report.js');
+  const text = await watchMessage();
+  assert.match(text, /^<b>ETH \$[\d,.]+<\/b>/);
+  assert.match(text, /\n\n<b>BTC \$[\d,.]+<\/b>/);
+  const one = priceText({ ETH: { price: 3000, ageMs: 0, change24h: 1.25 } });
+  assert.match(one, /^<b>ETH \$3,000\.00<\/b>\n24h \+1\.3%\n\nCould not get the BTC price\./);
+});
+
+await check('/holding values each asset at its own market and totals them apart', async () => {
+  const row = (id, asset, qty) => ({ id, asset, platform: 'aave', borrow_currency: 'USDC', borrow_amount: 10000,
+    borrow_apr: 4, borrow_date: today, buy_date: today, buy_amount: 10000, buy_eth: qty, buy_gas_usd: 2 });
+  const rows = [row(1, 'eth', 4), row(2, 'cbbtc', 0.1)];
+  const text = holdingText(rows, { ETH: 3000, BTC: 96000 }, {});
+  // A total line each: 4 ETH at 3,000 is $12,000, 0.1 cbBTC at 96,000 $9,600.
+  assert.match(text, /^<b>Holding 2 trades<\/b>\n4\.0000 ETH · \$12,000\.00 at \$3,000\.00\n0\.10000000 cbBTC · \$9,600\.00 at \$96,000\.00\n/);
+  // Each row at its own price, less $2 of fees and no interest today:
+  // +$1,998.00 and -$402.00, summed as printed.
+  assert.match(text, /\nUnrealised \+\$1,596\.00 after interest and fees\n/);
+  assert.match(text, /#2  Aave  0\.10000000 cbBTC  paid \$100,000\.00/);
+  // No BTC price: the cbBTC row is left out for that, not for a rate.
+  assert.match(holdingText(rows, { ETH: 3000 }, {}), /Unrealised \+\$1,998\.00 after interest and fees \(1 without a BTC price is not counted\)/);
+  assert.match(holdingText([row(2, 'cbbtc', 0.1)], { ETH: 3000 }, {}), /No BTC price right now, so the gain is not known\./);
+});
+
+await check('/summary says what is held of each asset, valued at its own market', async () => {
+  const { summaryText } = await import('../report.js');
+  const { summarize } = await import('../lib/calc.js');
+  const text = summaryText(summarize([]), [
+    { asset: 'eth', ticker: 'ETH', market: 'ETH', total: 4, price: 3000 },
+    { asset: 'cbbtc', ticker: 'cbBTC', market: 'BTC', total: 0.1, price: null },
+  ]);
+  assert.match(text, /\nETH held: +4\.0000 ETH \(\$12,000\.00\)\n/);
+  assert.match(text, /\ncbBTC held: +0\.10000000 cbBTC<\/pre>$/);
+  assert.doesNotMatch(summaryText(summarize([])), /held:/, 'nothing held, no line');
+});
 
 await check('/holding leaves out the euro move when a purchase rate is missing', async () => {
   // Two EURC positions of 10,000 on 4 ETH; only the first has its rate.
   const base = { borrow_date: today, borrow_amount: 10000, borrow_currency: 'EURC', borrow_apr: 0,
     buy_date: today, buy_amount: 10000, buy_eth: 4, buy_gas_usd: 0, borrow_gas_usd: 0, borrow_fx: 1.05 };
-  const both = holdingText([{ ...base, id: 1, buy_fx: 1.05 }, { ...base, id: 2 }], 3000, { EURC: 1.17 });
+  const both = holdingText([{ ...base, id: 1, buy_fx: 1.05 }, { ...base, id: 2 }], { ETH: 3000 }, { EURC: 1.17 });
   assert.doesNotMatch(both, /move since purchase/);
-  const one = holdingText([{ ...base, id: 1, buy_fx: 1.05 }], 3000, { EURC: 1.17 });
+  const one = holdingText([{ ...base, id: 1, buy_fx: 1.05 }], { ETH: 3000 }, { EURC: 1.17 });
   // 10,000 EURC from 1.05 to 1.17 is -$1,200.00 on the position.
   assert.match(one, /-\$1,200\.00 of it from the move since purchase/);
 });
@@ -510,7 +655,7 @@ await check('/holding: the Unrealised total is the sum of the rows as printed', 
   const from = new Date(Date.parse(today) - 30 * 86_400_000).toISOString().slice(0, 10);
   const row = (id) => ({ id, borrow_date: from, borrow_amount: 1000, borrow_currency: 'USDT', borrow_apr: 4,
     borrow_gas_usd: 0, buy_date: from, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 });
-  const text = holdingText([row(1), row(2), row(3)], 1100, {});
+  const text = holdingText([row(1), row(2), row(3)], { ETH: 1100 }, {});
   assert.equal(text.match(/\+\$96\.71/g)?.length, 3);
   assert.match(text, /Unrealised \+\$290\.13 /);
 });
@@ -518,7 +663,7 @@ await check('/holding: the Unrealised total is the sum of the rows as printed', 
 await check('/holding names each trade\'s platform, and a dash where none was recorded', async () => {
   const row = (id, platform) => ({ id, platform, borrow_date: today, borrow_amount: 1000, borrow_currency: 'USDT',
     borrow_apr: 0, borrow_gas_usd: 0, buy_date: today, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 });
-  const lines = holdingText([row(1, 'aave'), row(22, 'etherfi'), row(3, null)], 1100, {})
+  const lines = holdingText([row(1, 'aave'), row(22, 'etherfi'), row(3, null)], { ETH: 1100 }, {})
     .split('<pre>')[1].split('\n');
   // Padded to the widest name, so the ETH column still lines up.
   assert.match(lines[0], /^#1   Aave      1\.0000 ETH/);
@@ -549,8 +694,8 @@ await check('a trade repaid with no full sale is not held: its alert closes and 
 await check('/holding says when it is valued at an old price, as /price does', async () => {
   const row = { id: 1, platform: 'aave', borrow_date: today, borrow_amount: 1000, borrow_currency: 'USDT',
     borrow_apr: 0, borrow_gas_usd: 0, buy_date: today, buy_amount: 1000, buy_eth: 1, buy_gas_usd: 0 };
-  assert.match(holdingText([row], 1100, {}, { ageMs: 2 * 3_600_000 }), /At the price last fetched .+ ago\./);
-  assert.doesNotMatch(holdingText([row], 1100, {}, { ageMs: 1000 }), /last fetched/);
+  assert.match(holdingText([row], { ETH: 1100 }, {}, { ages: { ETH: 2 * 3_600_000 } }), /At the price last fetched .+ ago\./);
+  assert.doesNotMatch(holdingText([row], { ETH: 1100 }, {}, { ages: { ETH: 1000 } }), /last fetched/);
 });
 
 await check('/help says what /holding lists: trades still holding ETH', async () => {
@@ -661,7 +806,7 @@ await check('/watch reports go to the chat that asked, or to the group once that
   const held = holding();
   say(42, '/watch', 1);
   assert.deepEqual(await tick(), ['42']);
-  assert.match(mock.sent[0], /Watching\. The price every .+ here until \/unwatch\./);
+  assert.match(mock.sent[0], /Watching\. The prices every .+ here until \/unwatch\./);
 
   due();
   assert.deepEqual(await tick(), ['42'], 'the report goes where /watch was asked, not to the group');
@@ -709,7 +854,7 @@ await check('/holding counts a part-sold trade as holding what it kept, and its 
   // under the total names their sum as printed, -$2,414.90.
   const eur = (n, amt) => ({ id: n, borrow_currency: 'EURC', platform: 'aave', borrow_amount: amt, borrow_apr: 4,
     borrow_date: today, buy_date: today, buy_amount: amt, buy_eth: 3, buy_gas_usd: 2, borrow_fx: 1.0505, buy_fx: 1.0505 });
-  assert.match(holdingText([eur(1, 10002), eur(2, 10005.5)], 3000, { EURC: 1.1712 }), /-\$2,414\.90 of it from the move/);
+  assert.match(holdingText([eur(1, 10002), eur(2, 10005.5)], { ETH: 3000 }, { EURC: 1.1712 }), /-\$2,414\.90 of it from the move/);
 });
 
 await check('/holding heads its rows with their sum as printed, and fits Telegram however long', async () => {
@@ -717,13 +862,13 @@ await check('/holding heads its rows with their sum as printed, and fits Telegra
   const row = (id, eth, over = {}) => ({ id, platform: 'aave', borrow_currency: 'USDC', borrow_amount: 5000,
     borrow_apr: 4, borrow_date: today, buy_date: today, buy_amount: 5000, buy_eth: eth, buy_gas_usd: 2, ...over });
   // 1.23455 and 2.23455 print 1.2346 and 2.2346; summed raw they read 3.4691.
-  assert.match(holdingText([row(1, 1.23455), row(2, 2.23455)], 3000, {}), /3\.4692 ETH/);
+  assert.match(holdingText([row(1, 1.23455), row(2, 2.23455)], { ETH: 3000 }, {}), /3\.4692 ETH/);
 
   // 150 seven-figure euro positions at an hour-old price: every line above the
   // table at its longest. Counted as Telegram counts it, tags out.
   const big = Array.from({ length: 150 }, (_, i) => row(i + 1, 2.5, {
     borrow_currency: 'EURC', borrow_amount: 1234567.89, buy_amount: 1234567.89, borrow_fx: 1.0512, buy_fx: 1.0512 }));
-  const text = holdingText(big, 2999.99, { EURC: 1.1712 }, { ageMs: 3 * 3_600_000 });
+  const text = holdingText(big, { ETH: 2999.99 }, { EURC: 1.1712 }, { ages: { ETH: 3 * 3_600_000 } });
   const visible = text.replace(/<[^>]+>/g, '').replace(/&(?:lt|gt|amp);/g, '_').length;
   assert.ok(visible <= 4096, `${visible} characters`);
   assert.match(text, /and \d+ more<\/pre>$/);
