@@ -91,7 +91,7 @@ help - what this bot can do
 Ideas that came up on 20 Nov and were left for later, not bugs:
 
 - **Social preview images:** `landing/og4.png` still shows the
-  ETH-only story. Remake them to mention cbBTC and the three platforms, keeping
+  ETH-only story. Remake it to mention cbBTC and the three platforms, keeping
   1200x630.
 - **Back and Forward between views:** the app's nav uses `history.replaceState`, so
   Back leaves the app instead of returning to the previous view. Switch to
