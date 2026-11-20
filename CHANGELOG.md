@@ -83,6 +83,19 @@ Landing page:
 - **The 404 page has no empty band on a phone** and no empty navigation landmark, and its disclaimer names every platform.
 - **With browser storage blocked, a dark system gets the dark theme** on both pages, not light after showing dark. The toggle script changed, so nginx's CSP needs its new hash.
 
+API and forms:
+
+- **A figure past a trillion is refused:** one swap cost of 1e307 turned every total in the ledger null.
+- **An amount that prints as 0.00 is refused,** and the implied price is worked out from the amount as printed: 0.004 USDC for 0.000002 ETH saved as ETH bought at $0.00.
+- **Notes are cut at 2000 characters, never inside one;** an emoji split at the cut read back as three replacement marks.
+- **An unreadable config.env is reported with its error code,** not its full path on disk.
+
+Exchange rates:
+
+- **A stand-in rate is replaced once the real one can be had,** however long that takes; after four days without a refresh it stayed for good, unmarked.
+- **A rate more than six days older than its day is not used:** a lagging mirror's two-week-old rate was stored as final, for every day in between.
+- **A rate service answering with a web page is reported in words,** not with the start of the page.
+
 ## [2.1.7] - 2026-11-13
 
 ### Fixed

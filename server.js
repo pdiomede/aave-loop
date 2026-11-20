@@ -9,6 +9,7 @@ import {
   parseDate,
   parseAmount,
   priceInRange,
+  FIGURE_MAX,
   SELL_OVER_BUY,
   stages,
   reachedStages,
@@ -201,7 +202,7 @@ const REQUIRED_BORROW = [
   ['platform', 'Platform'],
 ];
 
-function toNumber(value, field, label, { allowZero = false } = {}) {
+function toNumber(value, field, label, { allowZero = false, money = false } = {}) {
   // Same parser the browser uses, so the two can no longer disagree about what
   // a value means: "1e5" was 15 in the form and 100000 here.
   const n = parseAmount(value);
@@ -212,6 +213,12 @@ function toNumber(value, field, label, { allowZero = false } = {}) {
       field,
     );
   }
+  if (n > FIGURE_MAX) throw new BadRequest('That looks like a slipped digit.', field);
+  // An amount of the coin is printed to the cent, and `derive` works from the
+  // printed figure, so one that prints as 0.00 is zero however it was typed:
+  // 0.004 USDC for 0.000002 ETH passed "greater than zero" and the price check
+  // on its raw figures, and was saved as ETH bought at $0.00.
+  if (money && cents(n) === 0) throw new BadRequest(`${label} must be at least 0.01.`, field);
   return n;
 }
 
@@ -267,7 +274,7 @@ function normalise(body, { requireBorrow, asset = null }) {
   };
 
   dateField('borrow_date', 'Borrow date');
-  numericField('borrow_amount', 'Borrow amount');
+  numericField('borrow_amount', 'Borrow amount', { money: true });
   // A promotional or incentivised borrow really can sit at 0%.
   numericField('borrow_apr', 'Borrow APR', { allowZero: true });
   // Gas can genuinely be nothing - a sponsored or batched transaction - so 0
@@ -303,20 +310,20 @@ function normalise(body, { requireBorrow, asset = null }) {
   const ticker = ASSET_META[out.asset ?? (ASSETS.includes(asset) ? asset : ASSETS[0])].ticker;
 
   dateField('buy_date', 'Purchase date');
-  numericField('buy_amount', 'Purchase amount');
+  numericField('buy_amount', 'Purchase amount', { money: true });
   numericField('buy_eth', `${ticker} purchased`);
   numericField('buy_gas_usd', SWAP_FEE, { allowZero: true });
   // Optional: not every loop supplies the ETH (or cbBTC) on Aave, so blank is accepted.
   numericField('buy_lend_gas_usd', 'Lending gas fee', { allowZero: true });
 
   dateField('sell_date', 'Sale date');
-  numericField('sell_amount', 'Sale amount');
+  numericField('sell_amount', 'Sale amount', { money: true });
   numericField('sell_eth', `${ticker} sold`);
   numericField('sell_gas_usd', SWAP_FEE, { allowZero: true });
   numericField('sell_unstake_gas_usd', 'Unstaking gas fee', { allowZero: true });
 
   dateField('repay_date', 'Repayment date');
-  numericField('repay_amount', 'Repaid amount');
+  numericField('repay_amount', 'Repaid amount', { money: true });
   numericField('repay_gas_usd', 'Repayment gas fee', { allowZero: true });
 
   if (has('notes')) {
@@ -325,7 +332,9 @@ function normalise(body, { requireBorrow, asset = null }) {
     if (!isBlank(body.notes) && typeof body.notes !== 'string') {
       throw new BadRequest('Notes must be text.', 'notes');
     }
-    out.notes = isBlank(body.notes) ? null : body.notes.slice(0, 2000);
+    // Cut by character, not by UTF-16 unit: `slice` split an emoji at the
+    // 2000th unit and stored half of it, which read back as three U+FFFD.
+    out.notes = isBlank(body.notes) ? null : Array.from(body.notes).slice(0, 2000).join('');
   }
 
   // Exchange rates are resolved here from a published source, never accepted
@@ -467,7 +476,8 @@ function checkUnitPrice(patch, row) {
     const [amountKey, ethKey] = [`${stage}_amount`, `${stage}_eth`];
     if (!(amountKey in patch || ethKey in patch || 'asset' in patch)) continue;
     if (row[amountKey] == null || row[ethKey] == null) continue;
-    const price = row[amountKey] / row[ethKey];
+    // From the amount as printed, as `derive` works out the price the card shows.
+    const price = asPrinted(row[amountKey]) / row[ethKey];
     if (!priceInRange(price)) {
       const shown = price.toLocaleString('en-US', { maximumSignificantDigits: 4 });
       throw new BadRequest(

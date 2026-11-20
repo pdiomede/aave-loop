@@ -26,13 +26,22 @@ import {
   isUsdPegged,
   isProvisionalFx,
   FX_STAGES,
-  FX_PROVISIONAL_DAYS,
   parseDate,
-  todayISO,
   intervalMs,
 } from './lib/calc.js';
 
 const DAY_MS = 86400000;
+
+/**
+ * How much older than its day a published rate may be and still be that day's
+ * rate. The ECB's longest gap is Easter: on the Tuesday morning after it, before
+ * the 16:00 publication, the newest rate is Thursday's, five days back. Without
+ * a limit a mirror that had fallen behind answered a weekday with a rate from
+ * one or two weeks before, and it was stored as final - `ecb`, not provisional,
+ * never asked about again - and cached for every day in between. A rate this
+ * stale is no answer: the stage stays without one and is asked about again.
+ */
+const MAX_RATE_LAG_DAYS = 6;
 
 const FX_URL = (process.env.MYAAVE_FX_URL || 'https://api.frankfurter.app').replace(/\/+$/, '');
 const OFFLINE = process.env.MYAAVE_FX_OFFLINE === '1';
@@ -181,6 +190,9 @@ function validate(rate, rateDate, wanted) {
   if (parseDate(rateDate) > parseDate(wanted)) {
     return `The rate came back dated ${rateDate}, after the ${wanted} it was asked about.`;
   }
+  if (parseDate(wanted) - parseDate(rateDate) > MAX_RATE_LAG_DAYS * DAY_MS) {
+    return `The newest rate the service had was from ${rateDate}, too long before the ${wanted} it was asked about.`;
+  }
   return null;
 }
 
@@ -190,7 +202,14 @@ async function getJson(path, timeoutMs = TIMEOUT_MS) {
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`The rate service answered ${res.status}.`);
-  return res.json();
+  // Not `res.json()` as it stands: a 200 that is not JSON - a portal's sign-in
+  // page - threw the parser's own message, which quotes the start of the body,
+  // and that went to the Fetch rates toast and /api/fx/rate as the reason.
+  try {
+    return await res.json();
+  } catch {
+    throw new Error('The rate service did not answer with rates.');
+  }
 }
 
 /**
@@ -295,7 +314,10 @@ export async function resolveRange(currency, fromISO, toISO) {
       }
       cursor += 1;
     }
-    if (carried) out.set(iso, carried);
+    // Carried no further than a published rate may lag its day: past that, a
+    // range that stops early (a mirror behind the ECB) filled every later day
+    // with its last rate, stored as final.
+    if (carried && ts - parseDate(carried.rateDate) <= MAX_RATE_LAG_DAYS * DAY_MS) out.set(iso, carried);
   }
 
   // One transaction for the whole span. A wide span is thousands of days, and
@@ -437,14 +459,44 @@ const writeFx = (columns) =>
  * different day than the transaction. Those are the trades entered before the
  * ECB had published, where a stand-in was used and the real rate exists now.
  */
+/**
+ * Whether a stage converted at a stand-in - a rate published before its day -
+ * is worth asking about again.
+ *
+ * Within the few days `isProvisionalFx` allows, always. Past them, while the
+ * cache has not settled the day: its row was fetched while the real rate could
+ * still arrive (`unconfirmed`), or it now holds another rate than the trade's.
+ * Judged by the day's age alone, a stand-in became final once no refresh had
+ * got through for four days - a laptop shut from Friday to Wednesday - and
+ * stayed, unmarked, with the real rate already in the cache; it is the failure
+ * `unconfirmed` fixed for the cache, left standing in the trade. The list stays
+ * finite: one answer after the window rewrites the cache row as settled, and a
+ * holiday's settles on the day before, as the trade already has it.
+ */
+function standInOpen(row, stage) {
+  const date = row[`${stage}_date`];
+  const fx = row[`${stage}_fx`];
+  const fxDate = row[`${stage}_fx_date`];
+  if (fx == null || typeof date !== 'string' || typeof fxDate !== 'string' || !(fxDate < date)) return false;
+  if (isProvisionalFx(date, fxDate)) return true;
+  const cached = cachedRate(row.borrow_currency, date);
+  return cached !== null && (unconfirmed(date, cached) || cached.rateDate !== fxDate || cached.rate !== fx);
+}
+
+/**
+ * The trades a refresh has work on: a stage with no rate, or one at a stand-in
+ * still open. Every stage ever converted at a stand-in is read, not only the
+ * last few days' - `standInOpen` decides - and the refresher asks this same
+ * list whether to run at all, so the two cannot disagree.
+ */
+function tradesToRefresh() {
+  return [...tradesMissingFx(), ...tradesWithSubstitutedFx('0000-01-01')].filter((row) =>
+    FX_STAGES.some((s) => (row[`${s}_fx`] == null ? row[`${s}_date`] != null : standInOpen(row, s))),
+  );
+}
+
 export async function backfillRates({ refresh = false } = {}) {
-  // The window the substituted list is bounded by has to be the same one
-  // `isProvisionalFx` applies, or the two disagree about which rows are worth
-  // asking about again.
-  const since = shiftDays(todayISO(), -FX_PROVISIONAL_DAYS);
-  const rows = refresh
-    ? [...tradesMissingFx(), ...tradesWithSubstitutedFx(since)]
-    : tradesMissingFx();
+  const rows = refresh ? tradesToRefresh() : tradesMissingFx();
 
   // The same row can appear in both lists.
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -459,9 +511,7 @@ export async function backfillRates({ refresh = false } = {}) {
   const targets = [];
   for (const row of byId.values()) {
     const stages = refresh
-      ? FX_STAGES.filter((s) => row[`${s}_date`] != null &&
-          (row[`${s}_fx`] == null ||
-            isProvisionalFx(row[`${s}_date`], row[`${s}_fx_date`])))
+      ? FX_STAGES.filter((s) => row[`${s}_date`] != null && (row[`${s}_fx`] == null || standInOpen(row, s)))
       : stagesNeedingRate(row);
     if (stages.length === 0) continue;
     targets.push({ row, stages });
@@ -589,8 +639,7 @@ export async function refreshRatesNow() {
   if (OFFLINE || refreshing || !db.open) return null;
   refreshing = true;
   try {
-    const since = shiftDays(todayISO(), -FX_PROVISIONAL_DAYS);
-    if (tradesMissingFx().length === 0 && tradesWithSubstitutedFx(since).length === 0) return null;
+    if (tradesToRefresh().length === 0) return null;
     const out = await backfillRates({ refresh: true });
     if (out.filled) console.log(`Exchange rates: filled in ${out.filled}.`);
     return out;

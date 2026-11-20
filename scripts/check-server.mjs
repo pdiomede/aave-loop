@@ -51,7 +51,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // answers to sendMessage, [status, description]; empty means 200.
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
-const mock = { price: 3000, btc: 90000, asked: 0, tg: [], sent: [], sentTo: [], updates: [] };
+const mock = { price: 3000, btc: 90000, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 } };
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
@@ -83,6 +83,34 @@ const mockServer = http.createServer((req, res) => {
       }
       res.statusCode = status;
       return res.end(JSON.stringify({ ok: false, error_code: status, description }));
+    }
+    // The rate service (Frankfurter), for the exchange-rate checks. A day is
+    // answered with the business day on or before it, as the ECB does; `fx`
+    // bends that: `stale` dates every one-day answer on that day, `rangeEnd`
+    // stops a range there, `holiday` is a weekday with no rate of its own and
+    // `html` answers with a portal's page.
+    const fxAsk = req.url.match(/^\/(\d{4}-\d{2}-\d{2})(?:\.\.(\d{4}-\d{2}-\d{2}))?\?/);
+    if (fxAsk) {
+      if (mock.fx.html) {
+        res.setHeader('Content-Type', 'text/html');
+        return res.end('<html><body>Sign in to the network</body></html>');
+      }
+      const published = (iso) => {
+        const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+        return wd !== 0 && wd !== 6 && iso !== mock.fx.holiday;
+      };
+      const back = (iso) => new Date(Date.parse(`${iso}T00:00:00Z`) - 86400000).toISOString().slice(0, 10);
+      if (!fxAsk[2]) {
+        let d = fxAsk[1];
+        while (!published(d)) d = back(d);
+        const date = mock.fx.stale ?? d;
+        return res.end(JSON.stringify({ base: 'EUR', date, rates: { USD: mock.fx.rate } }));
+      }
+      const rates = {};
+      for (let d = fxAsk[2]; d >= fxAsk[1]; d = back(d)) {
+        if (published(d) && (!mock.fx.rangeEnd || d <= mock.fx.rangeEnd)) rates[d] = { USD: mock.fx.rate };
+      }
+      return res.end(JSON.stringify({ base: 'EUR', rates }));
     }
     res.statusCode = 404;
     res.end('{}');
@@ -259,6 +287,55 @@ await check('a repayment below the principal is refused', async () => {
 await check('an exchange rate in a request is refused', async () => {
   const r = await api('PATCH', `/api/trades/${t1.id}`, { buy_fx: '2' });
   assert.equal(r.status, 400);
+});
+
+await check('a figure past a trillion is refused, so no total turns null', async () => {
+  // 1e307 in cents is Infinity, which JSON writes as null: one such fee made
+  // every total in /api/summary null.
+  const r = await api('POST', '/api/trades', { ...borrow(), ...buy, buy_gas_usd: 1e307 });
+  assert.equal(r.status, 400);
+  assert.equal(r.data.field, 'buy_gas_usd');
+  assert.equal((await api('POST', '/api/trades', borrow({ borrow_amount: '2000000000000' }))).status, 400);
+});
+
+await check('an amount that prints as 0.00 is refused', async () => {
+  // Saved, this was a holding trade bought at $0.00 an ETH.
+  const r = await api('POST', '/api/trades', {
+    ...borrow({ borrow_amount: '0.004' }),
+    buy_date: '2026-09-01',
+    buy_amount: '0.004',
+    buy_eth: '0.000002',
+    buy_gas_usd: '0',
+  });
+  assert.equal(r.status, 400);
+  assert.equal(r.data.field, 'borrow_amount');
+  const one = await api('POST', '/api/trades', borrow({ borrow_amount: '0.01' }));
+  assert.equal(one.status, 201);
+  await api('DELETE', `/api/trades/${one.data.id}`);
+});
+
+await check('notes are cut at 2000 characters, never inside one', async () => {
+  const r = await api('PATCH', `/api/trades/${t1.id}`, { notes: `a${'\u{1F600}'.repeat(2000)}` });
+  assert.equal(r.status, 200);
+  const chars = Array.from(r.data.notes);
+  assert.equal(chars.length, 2000);
+  assert.equal(chars.at(-1), '\u{1F600}');
+  await api('PATCH', `/api/trades/${t1.id}`, { notes: '' });
+});
+
+await check('a config.env that cannot be read is named without its path', async () => {
+  // Under a regular file, so reading it fails with ENOTDIR. The reason is
+  // served to the page, so the absolute path (a home folder, a user name)
+  // must stay in the log.
+  const file = path.join(tmp, 'not-a-folder');
+  fs.writeFileSync(file, '');
+  const out = execFileSync(
+    process.execPath,
+    ['--input-type=module', '-e', "const { telegramConfig } = await import('./config.js'); console.log(telegramConfig().reason)"],
+    { cwd: root, env: { ...process.env, ...isolated, MYAAVE_CONFIG: path.join(file, 'config.env') }, stdio: ['ignore', 'pipe', 'ignore'] },
+  ).toString();
+  assert.match(out, /config\.env could not be read \(ENOTDIR\)/);
+  assert.ok(!out.includes(tmp), out);
 });
 
 await check('amounts typed with a decimal comma read as written', async () => {
@@ -831,6 +908,110 @@ await check('/help names the watch interval it is given', async () => {
 });
 
 /* --------------------------------------------------------- set-platform */
+
+/* ------------------------------------------------------- exchange rates */
+
+// fx.js against a database of its own, in a child, with the rate service
+// mocked. Spawned, not run with execFileSync: the mock answers from this
+// process's event loop, which a synchronous child would block.
+let fxDbs = 0;
+function fxChild(body) {
+  const env = {
+    ...process.env,
+    ...isolated,
+    MYAAVE_DB: path.join(tmp, `fx-${(fxDbs += 1)}.db`),
+    MYAAVE_FX_OFFLINE: '0',
+    MYAAVE_FX_URL: MOCK,
+  };
+  const code = `const { db, prepare } = await import('./db.js');\nconst fx = await import('./fx.js');\n${body}\nprocess.exit(0);`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (c) => (out += c));
+    child.stderr.on('data', (c) => (err += c));
+    child.on('close', (status) => (status === 0 ? resolve(JSON.parse(out.trim().split('\n').at(-1))) : reject(new Error(err || `exit ${status}`))));
+  });
+}
+const isoShift = (iso, days) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+// A Wednesday two to three weeks back: well past the four days a stand-in is
+// marked provisional, and with business days on both sides.
+let fxDay = isoShift(today, -14);
+while (new Date(`${fxDay}T00:00:00Z`).getUTCDay() !== 3) fxDay = isoShift(fxDay, -1);
+
+await check('a stand-in rate is replaced past four days old, once the real one can be had', async () => {
+  // Saved on a euro day before the ECB published, with the day before's rate,
+  // and no refresh got through for longer than four days: the stand-in stayed
+  // for good, its marker gone, while the real rate was there to be had.
+  mock.fx = { rate: 1.1 };
+  const r = await fxChild(`
+    const now = new Date().toISOString();
+    prepare("INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr, platform, borrow_fx, borrow_fx_date, fx_source, created_at, updated_at) VALUES (?, 1000, 'EURC', 4, 'aave', 1.05, ?, 'ecb', ?, ?)")
+      .run('${fxDay}', '${isoShift(fxDay, -1)}', now, now);
+    prepare("INSERT INTO fx_rates (base, quote, date, rate, rate_date, source, fetched_at) VALUES ('EUR', 'USD', ?, 1.05, ?, 'ecb', ?)")
+      .run('${fxDay}', '${isoShift(fxDay, -1)}', '${fxDay}T08:00:00.000Z');
+    const first = await fx.refreshRatesNow();
+    const row = prepare('SELECT borrow_fx, borrow_fx_date FROM trades').get();
+    const again = await fx.refreshRatesNow();
+    console.log(JSON.stringify({ filled: first?.filled ?? null, row, again }));
+  `);
+  assert.deepEqual(r.row, { borrow_fx: 1.1, borrow_fx_date: fxDay });
+  assert.equal(r.filled, 1);
+  // Settled: nothing left to ask about, so the list stays finite.
+  assert.equal(r.again, null);
+});
+
+await check('a holiday stand-in is asked about once past the window, then settles', async () => {
+  mock.fx = { rate: 1.1, holiday: fxDay };
+  const r = await fxChild(`
+    const now = new Date().toISOString();
+    prepare("INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr, platform, borrow_fx, borrow_fx_date, fx_source, created_at, updated_at) VALUES (?, 1000, 'EURC', 4, 'aave', 1.1, ?, 'ecb', ?, ?)")
+      .run('${fxDay}', '${isoShift(fxDay, -1)}', now, now);
+    prepare("INSERT INTO fx_rates (base, quote, date, rate, rate_date, source, fetched_at) VALUES ('EUR', 'USD', ?, 1.1, ?, 'ecb', ?)")
+      .run('${fxDay}', '${isoShift(fxDay, -1)}', '${fxDay}T08:00:00.000Z');
+    const first = await fx.refreshRatesNow();
+    const again = await fx.refreshRatesNow();
+    const row = prepare('SELECT borrow_fx_date FROM trades').get();
+    console.log(JSON.stringify({ asked: first !== null, again, row }));
+  `);
+  assert.equal(r.asked, true);
+  assert.equal(r.again, null);
+  assert.equal(r.row.borrow_fx_date, isoShift(fxDay, -1));
+});
+
+await check('a rate from more than six days before its day is no answer', async () => {
+  // A mirror that had fallen behind answered a weekday with a rate from two
+  // weeks before, and it was stored as final; a range that stopped early
+  // carried its last rate over every later day.
+  mock.fx = { rate: 1.1, stale: isoShift(fxDay, -13) };
+  const one = await fxChild(`
+    const hit = await fx.resolveRate('EURC', '${fxDay}');
+    console.log(JSON.stringify({ hit, cached: fx.cachedRate('EURC', '${fxDay}'), error: fx.fxStatus().lastError }));
+  `);
+  assert.equal(one.hit, null);
+  assert.equal(one.cached, null);
+  assert.match(one.error, /too long before/);
+
+  mock.fx = { rate: 1.1, rangeEnd: isoShift(fxDay, -7) };
+  const span = await fxChild(`
+    const out = await fx.resolveRange('EURC', '${isoShift(fxDay, -10)}', '${fxDay}');
+    console.log(JSON.stringify(Object.fromEntries(out)));
+  `);
+  assert.equal(span[fxDay], undefined);
+  assert.equal(span[isoShift(fxDay, -7)].rateDate, isoShift(fxDay, -7));
+  assert.equal(span[isoShift(fxDay, -1)].rateDate, isoShift(fxDay, -7));
+});
+
+await check('a rate service answering with a web page is reported in words, not with the page', async () => {
+  mock.fx = { rate: 1.1, html: true };
+  const r = await fxChild(`
+    const hit = await fx.resolveRate('EURC', '${fxDay}');
+    console.log(JSON.stringify({ hit, error: fx.fxStatus().lastError }));
+  `);
+  assert.equal(r.hit, null);
+  assert.equal(r.error, 'The rate service did not answer with rates.');
+  mock.fx = { rate: 1.1 };
+});
 
 await check('set-platform: a dry run writes nothing, --apply sets Aave on the rest and keeps a set one', async () => {
   const file = path.join(tmp, 'platform.db');

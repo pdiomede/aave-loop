@@ -1,7 +1,7 @@
 # Next
 
 What is left to do on the VPS, and what to build next. Written 20 Nov 2026, after
-`281e8bd` was pushed to `main`.
+the day's bug hunt was pushed to `main`.
 
 ## On the VPS
 
@@ -25,6 +25,20 @@ On its first start the database updates itself:
 - the cached ETH price is carried over.
 
 The version shown is 2.1.8.
+
+Then reload any browser tab that had the app open from before the deploy. Such a
+tab still saves trades and alerts correctly, but its ETH price stops updating:
+it asks `/api/eth`, which became `/api/prices`. Tested on 20 Nov against a
+database written by 2.1.7: every trade, total, CSV figure, Statement line and
+bot reply came out the same after the upgrade, alerts kept their state, and
+`/watch` stayed on.
+
+Within the first hour the rate refresher asks once more about every euro stage
+that took the day before's rate (a stand-in) and whose day the cache never
+confirmed. Most settle as they are; a weekday that was saved before the ECB
+published, and never refreshed in time, gets its real rate, so a EURC trade's
+dollar figures can move by a little. The log says `Exchange rates: filled in N.`
+when that happens.
 
 ### 2. Update nginx's Content-Security-Policy
 
@@ -130,6 +144,15 @@ Ideas that came up on 20 Nov and were left for later, not bugs:
 - **Statement PDF and assets:** the Statement has no By asset table, because its
   fullest year already fills the A4 page to within a few points. Adding one means
   making room first (a narrower By month, or a second page).
+- **Point the rates at Frankfurter's new address:** `api.frankfurter.app` now
+  answers every request with a 301 to `https://api.frankfurter.dev/v1`. The app
+  follows it, so rates work, but each lookup makes two connections inside a 2.5 s
+  timeout. Changing the default `FX_URL` in `fx.js` to the new address (the paths
+  and answers are the same) saves the hop; until then `MYAAVE_FX_URL` can set it.
+- **Bug hunt, areas not covered yet:** `config.env` parsing and the shell scripts
+  (`runETHRoundTrip.sh`, `backupDatabase.sh`, `resetDatabase.sh`); a cbBTC trade
+  followed end to end; keyboard, screen reader and 320/375px use. The upgrade from
+  2.1.7, the exchange rates and the API's write rules were hunted on 20 Nov.
 - **Tiny cbBTC quantities in the CSV:** quantities are written raw, and JavaScript
   prints anything under 0.000001 in exponent form (`1e-7`). No real trade is that
   small, but a fixed-decimal writer would rule it out.
@@ -152,5 +175,11 @@ Accepted for now, worth knowing:
   - The alert goal form checks the bounds ($1 to $1,000,000) on the raw figure while
     the server rounds to the cent first, so a goal of 0.996 previews but the form
     refuses it.
+  - Two copies of the app refreshing rates at once: one could write an older
+    stand-in over a real rate the other had just written. The next refresh corrects
+    it, so at worst it lasts an hour.
+- **Small things seen and left:** a PATCH with a bad body to a trade that does not
+  exist answers 400, not 404; and the repayment error quotes the borrowed amount as
+  typed (10,000.005), where the card prints 10,000.01.
 - **Version:** 2.1.8 went out today, and the rule is one release a day. Work from
   tomorrow goes under `## [Unreleased]` and gets the next number.

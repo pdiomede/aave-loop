@@ -237,5 +237,18 @@ check('a cbBTC trade names its fields and its messages for cbBTC, and its goal f
   assert.equal(labelOf('goal_price', {}), 'ETH goal price');
 });
 
+check('a figure past a trillion, or an amount that prints as 0.00, is refused as the server refuses it', () => {
+  assert.equal(validateField('buy_gas_usd', '2000000000000', {}), 'That looks like a slipped digit.');
+  assert.equal(validateField('borrow_amount', '2000000000000', {}), 'That looks like a slipped digit.');
+  assert.match(validateField('borrow_amount', '0.004', {}), /must be at least 0\.01\.$/);
+  assert.equal(validateField('borrow_amount', '0.01', {}), null);
+  // A fee or a quantity is not an amount of the coin: 0.004 stays a figure.
+  assert.equal(validateField('buy_gas_usd', '0.004', {}), null);
+  assert.equal(validateField('buy_eth', '0.004', { buy_amount: 12 }), null);
+  // The implied price from the amount as printed: 0.014 prints 0.01, and
+  // 0.01 for 0.014 ETH is $0.71 an ETH.
+  assert.match(validateField('buy_eth', '0.014', { buy_amount: 0.014, borrow_currency: 'USDC' }), /^That is 0\.7143 USDC per ETH/);
+});
+
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);
 else console.log(`ok - ${passed} input checks`);

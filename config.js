@@ -75,7 +75,10 @@ function readFile() {
         err.code === 'EACCES'
           ? `${name} exists but this process cannot read it. Check that it is owned by the ` +
             'user the app runs as.'
-          : `${name} could not be read: ${err.message}`,
+          : // The code, not `err.message`: that holds the absolute path, and
+            // this text is served to the page by /api/alerts and the test
+            // send. The log line above keeps the whole message.
+            `${name} could not be read (${err.code ?? 'unknown error'}).`,
     };
   }
 }

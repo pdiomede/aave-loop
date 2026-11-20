@@ -30,11 +30,12 @@ hand-written file is a valid one-page PDF, that the figures it sets match ones w
 out by hand, and that `lib/logo.js` still matches the app's logo; add a case there
 when you change what the statement prints.
 `scripts/check-server.mjs` starts the real server as a child on a free port, against a
-database in a temp directory with Telegram and the price service mocked on loopback,
-and checks the API's write rules, the alert message (its lines must add up to its
-Gain), every way the alert sweep handles a failed send, the bot's reports and where
-`/watch` sends them, and `scripts/set-platform.mjs`; add a case there when you change
-any of those. It never touches the network or `data/myaave.db`, and takes about ten
+database in a temp directory with Telegram, the price service and the rate service
+mocked on loopback, and checks the API's write rules, the alert message (its lines
+must add up to its Gain), every way the alert sweep handles a failed send, the bot's
+reports and where `/watch` sends them, `scripts/set-platform.mjs`, and `fx.js`'s
+stand-ins and refusals (`fxChild` runs it in a child against a database of its own);
+add a case there when you change any of those. It never touches the network or `data/myaave.db`, and takes about ten
 seconds. A check is only worth adding if it fails on the old code: revert the fix
 for a moment and run it.
 Beyond that, verification means executing the thing you changed:
@@ -372,6 +373,13 @@ worst case fills the A4 page to within a few points.
   arithmetically correct under a label describing something else is a bug here.
 - **Exchange rates are resolved server-side and never accepted from a request.** A
   caller that could post its own rate could move every dollar figure in the ledger.
+  A rate published more than six days before its day (`MAX_RATE_LAG_DAYS` in
+  `fx.js`) is no answer, and a stand-in (a rate from before its day) stays open to
+  the hourly refresh until the cache has settled its day (`standInOpen`), not only
+  for the four days it is marked provisional.
+- **Every figure has the same ceiling, `FIGURE_MAX`** (a trillion, in `lib/calc.js`),
+  and an amount of the coin must print as at least 0.01; the server's `toNumber` and
+  the form's `validateField` share both, as they share `priceInRange`.
 - **Gas fees are dollars, one per stage.** The swaps' ("Costs & Fees (swap)", gas
   plus the DEX fee) are required on a purchase or sale being written
   (`checkSwapFee` in `server.js`); the borrow's and repayment's are optional. 0 is
