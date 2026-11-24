@@ -51,7 +51,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // answers to sendMessage, [status, description]; empty means 200.
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
-const mock = { price: 3000, btc: 90000, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 }, wbtcAsked: [] };
+const mock = { price: 3000, btc: 90000, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 }, wbtcAsked: [], wbtcLive: 94500 };
 // Wrapped bitcoin's price on a day, made from the date so every day differs:
 // 90,000 plus the day of the month, and 50 - no bitcoin price at all - on the 13th.
 const wbtcOn = (iso) => (iso.endsWith('-13') ? 50 : 90000 + Number(iso.slice(8, 10)));
@@ -68,6 +68,11 @@ const mockServer = http.createServer((req, res) => {
       const coins = [{ id: 'ethereum', current_price: mock.price }];
       if (mock.btc !== null) coins.push({ id: 'bitcoin', current_price: mock.btc });
       return res.end(JSON.stringify(coins));
+    }
+    // WBTC's own live price, for an open position's estimate.
+    if (req.url.startsWith('/simple/price')) {
+      mock.wbtcAsked.push(req.url);
+      return res.end(JSON.stringify({ 'wrapped-bitcoin': { usd: mock.wbtcLive } }));
     }
     // CoinGecko's daily wrapped bitcoin, for WBTC's rates: one day, or the
     // series - a point on each UTC midnight, then the price now.
@@ -1480,11 +1485,33 @@ await check('WBTC takes CoinGecko\'s daily price: a day, a span, and never a bad
   assert.equal(r.old, null);
 });
 
-await check('WBTC\'s rate today is BTC\'s live price, and its alert adds up and says so', async () => {
+await check('WBTC\'s rate today is its own live price, not BTC\'s, and its alert adds up and says so', async () => {
+  // Bitcoin at 95,000 and WBTC a little under it: the estimate takes WBTC's.
   mock.btc = 95000;
-  const r = await fxChild(`console.log(JSON.stringify(await fx.rateNow('WBTC')));`);
-  assert.equal(r.rate, 95000);
+  mock.wbtcLive = 94500;
+  mock.wbtcAsked.length = 0;
+  const r = await fxChild(`
+    const a = await fx.rateNow('WBTC');
+    const b = await fx.rateNow('WBTC');
+    console.log(JSON.stringify({ a, b, cached: fx.cachedRateNow('WBTC') }));
+  `);
+  assert.equal(r.a.rate, 94500);
+  assert.equal(r.cached.rate, 94500);
+  // Asked once: the second answer is the one held in memory.
+  assert.equal(r.b.rate, 94500);
+  assert.equal(mock.wbtcAsked.filter((u) => u.startsWith('/simple/price')).length, 1);
+  // A live price that is not a bitcoin price is no answer: the day's own, as
+  // cached, stands in. The bad answer puts CoinGecko to sleep for a minute, so
+  // the day's rate is the one already held.
+  mock.wbtcLive = 5;
+  const day = await fxChild(`
+    await fx.resolveRate('WBTC', '${today}');
+    console.log(JSON.stringify(await fx.rateNow('WBTC')));
+  `);
+  if (!today.endsWith('-13')) assert.equal(day.rate, wbtcOn(today));
+  assert.notEqual(day.source, 'live');
   mock.btc = 90000;
+  mock.wbtcLive = 94500;
   const { alertMessage } = await import('../alerts.js');
   const dollars = (v) => Number(v.replace(/[$,+]/g, ''));
   // 0.35012344 WBTC on 10 ETH at $100,000, held, bitcoin at $95,000 today:

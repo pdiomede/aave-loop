@@ -27,8 +27,7 @@
  * left without a rate, as any unknown rate is. Each service has its own
  * cooldown: CoinGecko rate limiting us is no reason to stop asking the ECB
  * about a euro trade, nor the other way round. Today's figure for an open
- * WBTC position is BTC's live price, which prices.js already follows for
- * cbBTC (`rateNow`).
+ * WBTC position is WBTC's own live price (`rateNow`).
  */
 import { db, prepare, tradesMissingFx, tradesWithSubstitutedFx } from './db.js';
 import {
@@ -41,7 +40,6 @@ import {
   todayISO,
 } from './lib/calc.js';
 import { setting } from './env.js';
-import { marketPrice, cachedMarketPrice } from './prices.js';
 
 const DAY_MS = 86400000;
 
@@ -71,9 +69,8 @@ const BTC_URL = (setting('BTC_URL') || 'https://api.coingecko.com/api/v3').repla
 const OFFLINE = setting('FX_OFFLINE') === '1';
 const QUOTE = 'USD';
 
-// CoinGecko's id for each base it prices, and the market prices.js follows it
-// at. Wrapped bitcoin's own daily price rather than bitcoin's, since that is
-// the coin borrowed; the live one is BTC's, as cbBTC is marked.
+// CoinGecko's id for each base it prices: wrapped bitcoin's own price, daily
+// and live, rather than bitcoin's, since that is the coin borrowed.
 const COINGECKO_ID = { BTC: 'wrapped-bitcoin' };
 // How far back a keyless CoinGecko answers. Asked about anything older it
 // refuses with a 401, which would have put every BTC lookup to sleep.
@@ -390,38 +387,65 @@ async function coinGeckoRange(base, fromISO, toISO) {
 
 /**
  * Today's rate for an open position's estimate (see `estimatedGainUsd`): for
- * WBTC, BTC's live price from prices.js - the one a cbBTC position is marked
- * at, fixed by `ETHROUNDTRIP_BTC_PRICE` like it - since a day's 00:00 price can
- * be a good few percent off by the afternoon and the estimate is "if I closed
- * now"; for a euro coin today's ECB rate, as before. Never stored: a stage's
- * rate stays the day's own, so it reads the same however late the trade was
- * entered. With no live price, the day's rate stands in.
+ * WBTC its own live price, from CoinGecko's `simple/price`, since a day's 00:00
+ * price can be a good few percent off by the afternoon and the estimate is "if
+ * I closed now"; for a euro coin today's ECB rate, as before. WBTC's own price
+ * rather than BTC's, which cbBTC is marked at: a WBTC that drifted from bitcoin
+ * would otherwise go unseen until the loan was repaid at the daily price. Never
+ * stored: a stage's rate stays the day's own, so it reads the same however late
+ * the trade was entered. Held in memory for ten minutes, so the page, the alert
+ * sweep and the bot asking at once cost one request against the keyless limit
+ * the ticker shares; with no live price, the last one held stands in, then the
+ * day's rate.
  */
-const LIVE_MARKET = { BTC: 'BTC' };
+const LIVE_MS = 10 * 60_000;
+const live = new Map(); // base -> { record, at }
+const liveInFlight = new Map(); // base -> Promise<record | null>
+
+async function fetchLive(base) {
+  const src = 'coingecko';
+  const today = todayISO();
+  const id = COINGECKO_ID[base];
+  try {
+    const body = await getJson(`/simple/price?ids=${id}&vs_currencies=usd`, TIMEOUT_MS, BTC_URL);
+    const rate = body?.[id]?.usd;
+    const problem = validate(rate, today, today, base);
+    if (problem) {
+      recordFailure(problem, src);
+      return null;
+    }
+    recordSuccess(src);
+    const record = { rate, rateDate: today, source: 'live' };
+    live.set(base, { record, at: Date.now() });
+    return record;
+  } catch (err) {
+    recordError(err, src);
+    return null;
+  }
+}
 
 export async function rateNow(currency) {
   const today = todayISO();
   if (isUsdPegged(currency)) return pegRate(today);
   const base = pegOf(currency);
-  const market = LIVE_MARKET[base];
-  if (market) {
-    const quote = await marketPrice(market);
-    if (validate(quote?.price, today, today, base) === null) {
-      return { rate: quote.price, rateDate: today, source: 'live' };
+  if (sourceOf(base) !== 'coingecko') return resolveRate(currency, today);
+  const held = live.get(base);
+  if (held && Date.now() - held.at < LIVE_MS) return held.record;
+  if (!networkIsOut('coingecko')) {
+    if (!liveInFlight.has(base)) {
+      liveInFlight.set(base, fetchLive(base).finally(() => liveInFlight.delete(base)));
     }
+    const fetched = await liveInFlight.get(base);
+    if (fetched) return fetched;
   }
-  return resolveRate(currency, today);
+  return held?.record ?? (await resolveRate(currency, today));
 }
 
 /** `rateNow` from memory alone: the live price last fetched, else the cache. */
 export function cachedRateNow(currency) {
   const today = todayISO();
   if (isUsdPegged(currency)) return pegRate(today);
-  const base = pegOf(currency);
-  const market = LIVE_MARKET[base];
-  const price = market ? cachedMarketPrice(market)?.price : undefined;
-  if (validate(price, today, today, base) === null) return { rate: price, rateDate: today, source: 'live' };
-  return cachedRate(currency, today);
+  return live.get(pegOf(currency))?.record ?? cachedRate(currency, today);
 }
 
 /**

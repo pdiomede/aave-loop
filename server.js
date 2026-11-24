@@ -721,7 +721,7 @@ async function rateLookup(req, res) {
   if (!CURRENCIES.includes(currency) || date === null) {
     return res.json({ currency, date: raw, rate: null, reason: 'That is not a currency and date I can look up.' });
   }
-  // `live=1` asks for today's figure for an estimate: WBTC's live BTC price
+  // `live=1` asks for today's figure for an estimate: WBTC's own live price
   // rather than the day's 00:00 one (see `rateNow`). Any other date is the day's.
   const live = req.query.live === '1' && date === todayISO();
   const hit = live ? await rateNow(currency) : await resolveRate(currency, date);

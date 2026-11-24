@@ -329,8 +329,10 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
 The one borrowed coin that is not a stablecoin. Its `peg` is `BTC`: a stage's
 rate is CoinGecko's daily `wrapped-bitcoin` price at 00:00 UTC (`fx.js`, keyless,
 so the past 365 days only; an older stage stays without a rate), and an open
-position's estimate uses BTC's live price from `prices.js` (`rateNow`), the one
-cbBTC is marked at - so a WBTC loan holding cbBTC reads close to flat. Each rate
+position's estimate uses WBTC's own live price (`rateNow`: CoinGecko's
+`simple/price`, held in memory ten minutes, never stored), not the BTC price cbBTC
+is marked at, so a WBTC that drifts from bitcoin shows before the loan is repaid;
+a WBTC loan holding cbBTC reads close to flat while the two agree. Each rate
 service has its own cooldown in `fx.js`; CoinGecko's keyless limit is shared with
 the ticker, and a 429 waits what it asks. Its amounts are 8 places (`coinDp`,
 `inCoin`, `coinUnits` in `lib/calc.js`) wherever a coin figure is held, checked or

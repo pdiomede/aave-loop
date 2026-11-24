@@ -993,7 +993,7 @@ async function loadPrices() {
  *
  * The server resolves it (`rateNow`): for a euro coin from the ECB's daily
  * rate it already caches - there is no live quote, and the estimate is rough
- * enough not to want one; for WBTC, BTC's live price, since bitcoin can move
+ * enough not to want one; for WBTC, its own live price, since bitcoin can move
  * more in a day than the euro in a month. Asked at most every half hour:
  * today's euro rate is provisional until the ECB publishes, so the server goes
  * past its cache for it each time it is asked.
