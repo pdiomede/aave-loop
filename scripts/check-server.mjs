@@ -306,6 +306,41 @@ await check('the repayment errors quote the loan as the card prints it', async (
   await api('DELETE', `/api/trades/${t.id}`);
 });
 
+await check('a save over a field changed elsewhere since the form opened is refused, not written over', async () => {
+  const t = (await api('POST', '/api/trades', borrow())).data;
+  await api('PATCH', `/api/trades/${t.id}`, buy);
+  const sale = { sell_date: '2026-09-20', sell_amount: '33000', sell_eth: '10', sell_gas_usd: '4' };
+  const opened = (await api('PATCH', `/api/trades/${t.id}`, sale)).data;
+  // The Sold card opens here, on the sale as saved.
+  const base = { sell_date: opened.sell_date, sell_amount: opened.sell_amount, sell_eth: opened.sell_eth, sell_gas_usd: opened.sell_gas_usd };
+  // Elsewhere, the sale is corrected to 33,500; and the purchase's fee, which
+  // the Sold card does not write, changes too.
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { sell_amount: '33500' })).status, 200);
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { ...buy, buy_gas_usd: '5' })).status, 200);
+  // The open card saves its fee: refused, because the amount it would write
+  // back - 33,000, as it opened - is not what is there now.
+  const stale = await api('PATCH', `/api/trades/${t.id}`, { ...sale, sell_gas_usd: '6', base });
+  assert.equal(stale.status, 409);
+  assert.equal(stale.data.field, 'sell_amount');
+  assert.equal(stale.data.error,
+    'Amount received was changed elsewhere after this form was opened: it is now 33,500. Your figures are still here; save again to replace it.');
+  assert.equal(stale.data.current.sell_amount, 33500, 'the row as it is now comes back');
+  const kept = (await api('GET', '/api/trades')).data.find((x) => x.id === t.id);
+  assert.equal(kept.sell_amount, 33500, 'nothing was written over');
+  assert.equal(kept.sell_gas_usd, 4);
+  // Saved again on the row as it now is: a knowing replacement, and accepted.
+  const fresh = { ...base, sell_amount: 33500 };
+  const again = await api('PATCH', `/api/trades/${t.id}`, { ...sale, sell_amount: '33500', sell_gas_usd: '6', base: fresh });
+  assert.equal(again.status, 200);
+  assert.equal(again.data.sell_gas_usd, 6);
+  // A change to another stage's field is no conflict for this one, and a save
+  // that sends no base - an older page - is not checked at all.
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { ...buy, buy_gas_usd: '7' })).status, 200);
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { sell_gas_usd: '8', base: { sell_gas_usd: 6 } })).status, 200);
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { sell_amount: '34000' })).status, 200);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 await check('an exchange rate in a request is refused', async () => {
   const r = await api('PATCH', `/api/trades/${t1.id}`, { buy_fx: '2' });
   assert.equal(r.status, 400);

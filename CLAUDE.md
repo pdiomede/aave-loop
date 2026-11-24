@@ -319,6 +319,14 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   re-renders. A change that re-renders the table must not discard it.
 - **Submit locks are per form**, keyed by what the form saves (`submitKey`), so a
   re-render mid-request cannot reopen one and one form saving never blocks another.
+- **A stage save says what it saw.** Opening a stage form snapshots the trade
+  (`state.editing.base`); the save sends `base`, what its fields held then
+  (`baseOf`), and the server refuses with 409 when one of the fields it writes has
+  changed since (`changedSince`), answering with the row as it now is. Field by
+  field, never `updated_at`: the server writes rows itself (the rate refresher), and
+  an edit to another stage is no conflict. The page then redraws the card, keeps the
+  typed figures, and stands the form on the new row, so a second Save replaces the
+  change knowingly. A PATCH with no `base` is not checked.
 - **Currency is a custom combobox** (`coinSelect`), not a `<select>`: the value lives
   in a hidden `borrow_currency` input, a pick fires `input` on it, and code that sets
   it directly must call `syncCoinSelect`. `CURRENCIES` is the picker's order and

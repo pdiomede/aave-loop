@@ -270,10 +270,6 @@ Accepted for now, worth knowing:
     it, so at worst it lasts an hour.
 - **Small thing seen and left:** a PATCH with a bad body to a trade that does not
   exist answers 400, not 404.
-- **A stage form left open while the same trade is edited elsewhere saves over
-  that edit** (last write wins); only the alert window checks that the trade still
-  is what it was drawn for. Seen in the 20 Nov bug hunt and left: one user, one tab
-  is the normal case.
 - **Bug hunt coverage:** on 20 Nov every area was hunted: Stats, CSV and PDF;
   alerts; trades; Telegram; the database; the interface and pagination; the price
   banner; the landing page; the upgrade from 2.1.7; exchange rates; the API; the

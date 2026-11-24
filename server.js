@@ -59,6 +59,7 @@ import {
 } from './alerts.js';
 import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
 import { setting, oldSettingsNote } from './env.js';
+import { labelOf } from './lib/input.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -190,6 +191,50 @@ class BadRequest extends Error {
     super(message);
     this.field = field;
   }
+}
+
+/**
+ * A save refused because a field it writes was changed by someone else since
+ * the form was opened. Carries the row as it is now, so the page can show it.
+ */
+class Conflict extends Error {
+  constructor(message, field, current) {
+    super(message);
+    this.field = field;
+    this.current = current;
+  }
+}
+
+/**
+ * The fields of `patch` that someone else has changed since the form was
+ * opened, read against `base`: what the page says those fields held then.
+ *
+ * Last write won. A Sold card left open on the Mac while the same sale was
+ * corrected on the phone saved over the correction, with nothing said. The
+ * trade's own `updated_at` cannot be the test: the server writes rows itself -
+ * the hourly rate refresher fills a rate in - and a save would then be refused
+ * for a change nobody made. So it is field by field, and only the fields this
+ * save writes: an edit to another stage, or a rate filled in, is no conflict.
+ * A caller that sends no `base` - an older page, a script - is not checked.
+ */
+function changedSince(base, patch, current) {
+  if (!base || typeof base !== 'object' || Array.isArray(base)) return null;
+  const same = (a, b) => (a ?? null) === (b ?? null);
+  return Object.keys(patch).find((k) => Object.prototype.hasOwnProperty.call(base, k) && !same(current[k], base[k])) ?? null;
+}
+
+function conflictMessage(key, current) {
+  const v = current[key];
+  const now =
+    v == null || v === ''
+      ? 'blank'
+      : typeof v === 'number'
+        ? v.toLocaleString('en-US', { maximumFractionDigits: 8 })
+        : String(v);
+  return (
+    `${labelOf(key, current)} was changed elsewhere after this form was opened: it is now ${now}. ` +
+    'Your figures are still here; save again to replace it.'
+  );
 }
 
 // A value of only whitespace is blank, not zero. Untrimmed, `toNumber(' ')`
@@ -622,6 +667,11 @@ app.patch('/api/trades/:id', async (req, res, next) => {
         const current = selectOne.get(id);
         if (!current) return null;
         if (Object.keys(patch).length === 0) return current;
+
+        // Against the row as read here, on every pass: a field changed by the
+        // other copy while this save waited is changed all the same.
+        const changed = changedSince(req.body?.base, patch, current);
+        if (changed) throw new Conflict(conflictMessage(changed, current), changed, current);
 
         const merged = { ...current, ...patch };
         checkChronology(merged);
@@ -1084,6 +1134,9 @@ app.use((req, res, next) => {
 app.use((err, _req, res, _next) => {
   if (err instanceof BadRequest) {
     return res.status(400).json({ error: err.message, field: err.field });
+  }
+  if (err instanceof Conflict) {
+    return res.status(409).json({ error: err.message, field: err.field, current: withDerived(err.current) });
   }
   // express.json() rejects unparseable bodies with a SyntaxError.
   if (err instanceof SyntaxError && 'body' in err) {

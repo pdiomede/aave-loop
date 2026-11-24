@@ -754,6 +754,8 @@ async function api(path, options = {}) {
     // Carried so a caller can tell "there was nothing there" from "the request
     // did not get through", which are the same sentence otherwise.
     err.status = res.status;
+    // A 409 sends the row as it is now, for the form to be shown against.
+    err.current = body.current;
     throw err;
   }
   return body;
@@ -3518,6 +3520,19 @@ function beginSubmit(form) {
   };
 }
 
+/**
+ * What the fields being saved held when their form was opened, sent beside
+ * them so the server can refuse a save over a change made elsewhere meanwhile
+ * (`changedSince` in server.js). Last write won: a Sold card left open on the
+ * Mac saved over the same sale corrected on the phone, with nothing said. Null
+ * when the form's opening was not recorded, and then the save is not checked.
+ */
+function baseOf(id, stage, values) {
+  const base = state.editing?.id === id && state.editing?.stage === stage ? state.editing.base : null;
+  if (!base) return null;
+  return Object.fromEntries(Object.keys(values).map((k) => [k, base[k] ?? null]));
+}
+
 async function submitStage(form) {
   const id = Number(form.dataset.trade);
   const stage = form.dataset.stageForm;
@@ -3526,9 +3541,11 @@ async function submitStage(form) {
   const done = beginSubmit(form);
   if (!done) return;
   try {
+    const values = payloadOf(form);
+    const base = baseOf(id, stage, values);
     const updated = await api(`/api/trades/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(payloadOf(form)),
+      body: JSON.stringify(base ? { ...values, base } : values),
     });
     const assetChanged = assetOf(updated) !== assetOf(trade);
     // Two stages of one trade can now be saved at once. The server writes them
@@ -3568,6 +3585,17 @@ async function submitStage(form) {
     const name = STAGES.find((s) => s.key === stage).name;
     toast(`${stage === 'buy' || stage === 'sell' ? `${name} ${tickerOf(updated)}` : name} saved.`);
   } catch (err) {
+    // Changed elsewhere since the form was opened: the card behind it is
+    // redrawn as the trade now is, the figures typed here stay in the form
+    // (`render` keeps the draft), and the form now stands on that change, so
+    // saving again replaces it knowingly rather than unseen.
+    if (err.status === 409 && err.current) {
+      const now = withoutDerived(err.current);
+      state.trades = state.trades.map((t) => (t.id === id ? now : t));
+      writeSeq += 1;
+      if (state.editing?.id === id && state.editing?.stage === stage) state.editing.base = { ...now };
+      render();
+    }
     // On the form as it is now. A re-render while the save was away replaces
     // the one captured at the click, and the error went into that detached
     // copy: nothing on screen said the save had failed.
@@ -4364,7 +4392,11 @@ function wire() {
 
     const edit = e.target.closest('[data-edit-stage]');
     if (edit) {
-      state.editing = { id: Number(edit.dataset.trade), stage: edit.dataset.editStage };
+      // The trade as the form opens on it, for the save to say what it saw
+      // (`baseOf`): a field changed elsewhere in the meantime is refused
+      // rather than written over.
+      const opened = state.trades.find((t) => t.id === Number(edit.dataset.trade));
+      state.editing = { id: Number(edit.dataset.trade), stage: edit.dataset.editStage, base: opened ? { ...opened } : null };
       state.openIds.add(Number(edit.dataset.trade));
       render();
       return;

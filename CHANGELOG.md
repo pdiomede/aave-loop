@@ -19,6 +19,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ### Fixed
 
 - **The repayment errors quote the loan as the card prints it:** a loan typed as 10,000.005 was "the 10,000.005 borrowed"; it is 10,000.01.
+- **A stage saved over a change made elsewhere is refused, not written over.** A Sold card left open on the Mac while the same sale was corrected on the phone saved over the correction; now the save is refused, the field says what it is now, the figures typed stay in the form, and saving again replaces it knowingly.
 - **`/price` explains a missing price with that market's own problem.** With BTC and WBTC both missing it read "The BTC price did not come back. The WBTC price did not come back.", naming a price it never shows.
 
 ## [2.1.8] - 2026-11-20
