@@ -1,6 +1,6 @@
 {
   "name": "eth-roundtrip",
-  "version": "2.1.8",
+  "version": "2.2.0",
   "description": "ETH Roundtrip: track stablecoin and EURC borrow, ETH buy and sell, and repay cycles.",
   "type": "module",
   "private": true,

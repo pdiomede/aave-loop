@@ -25,6 +25,20 @@ Left:
 - **21 Nov:** check that the night's backup ran: `ls -lt /home/paolo/backup/aaveloop`
   should show a `myaave-...db` from about 03:00 UTC, and its log no error.
 
+## 2.2.0 (24 Nov): WBTC as a borrowed coin
+
+Deploy as in step 1 below (`git pull`, restart). No nginx, settings or BotFather
+change: no inline script changed, and `wbtc.png` sits in `landing/` beside the other
+coins. Then check:
+
+- A new trade's Currency picker lists WBTC, with its logo, last after USDT; the
+  landing page's "Borrow in any of" row shows it, with no password asked
+  (`curl -sI https://ethroundtrip.com/landing/wbtc.png` answers 200).
+- A WBTC trade dated within the last year gets its rates (the card says "at
+  $NN,NNN.NN on ..."), and amounts keep all 8 places.
+- The social card (`og5.png`) still lists only the stablecoins; it is an image and was
+  not redrawn.
+
 Work over SSH from the Mac's Terminal, not the Hetzner web console: the console drops
 the Shift key, so `&`, `|`, `*`, `"`, `+` and capital letters come out wrong (`&&`
 arrived as `77`).
@@ -227,5 +241,10 @@ Accepted for now, worth knowing:
   alerts; trades; Telegram; the database; the interface and pagination; the price
   banner; the landing page; the upgrade from 2.1.7; exchange rates; the API; the
   config and shell scripts; cbBTC end to end; keyboard, screen reader and phones.
-- **Version:** 2.1.8 went out today, and the rule is one release a day. Work from
-  tomorrow goes under `## [Unreleased]` and gets the next number.
+- **WBTC's rates need CoinGecko's free tier,** which answers for the past 365 days
+  only and limits requests per minute (shared with the ETH and BTC ticker). Saving
+  several WBTC stages in a quick burst can hit the limit; those stages show "no rate"
+  and the hourly refresh fills them in one request. A WBTC trade dated more than a
+  year back stays without a rate.
+- **Version:** 2.2.0 went out on 24 Nov, and the rule is one release a day. Work from
+  the next day goes under `## [Unreleased]` and gets the next number.
