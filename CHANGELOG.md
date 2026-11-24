@@ -9,6 +9,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **A loop can buy WBTC,** beside ETH and cbBTC, in the Bought card's asset picker, to 8 places. It is valued at WBTC's own price, fetched with ETH's and BTC's in the same CoinGecko request, so a drift from bitcoin shows; a WBTC alert goal is a WBTC price. The header, `/price` and `/watch` still show ETH and BTC only.
 - **Stats and the Statement have a WBTC row** under By asset.
+- **A missing or old price is explained on the page.** A position with no price for its market shows "no price" in Net gain, one valued at a stale price "old price" with its age, and the header's estimate says which market and how many positions; WBTC has no ticker row to show it otherwise.
+- **Each asset has its own plausible price range** for a purchase or sale: ETH $1 to $100,000, cbBTC and WBTC $10,000 to $1,000,000. A quantity typed for ETH and left after switching to WBTC (2.9 for $10,000, "$3,448 a WBTC") is refused, and flagged as soon as the asset is picked.
 
 ### Changed
 

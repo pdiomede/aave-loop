@@ -9,6 +9,7 @@ import {
   parseDate,
   parseAmount,
   priceInRange,
+  unitPriceInRange,
   FIGURE_MAX,
   qtyAsPrinted,
   SELL_OVER_BUY,
@@ -486,7 +487,7 @@ function checkSwapFee(patch, row) {
 
 /**
  * The price a purchase or sale implies, per ETH or per cbBTC, has to be one it
- * could trade at (`priceInRange`). Scoped to the stages this request writes,
+ * could trade at (`unitPriceInRange`, its asset's own range). Scoped to the stages this request writes,
  * like `checkSwapFee`, so a row saved before the check existed is not refused
  * an unrelated edit - and to a change of asset, which changes what the price
  * is a price of.
@@ -503,7 +504,7 @@ function checkUnitPrice(patch, row, current = null) {
     if (row[amountKey] == null || row[ethKey] == null) continue;
     // From the amount as printed, as `derive` works out the price the card shows.
     const price = asPrinted(row[amountKey]) / row[ethKey];
-    if (!priceInRange(price)) {
+    if (!unitPriceInRange(price, assetOf(row))) {
       const shown = price.toLocaleString('en-US', { maximumSignificantDigits: 4 });
       throw new BadRequest(
         `That is ${shown} ${row.borrow_currency} per ${ticker}. Check the amount and the ${ticker}.`,

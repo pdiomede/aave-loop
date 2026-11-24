@@ -541,6 +541,14 @@ a.brand {
   padding-left: 14px;
 }
 
+/* Why the estimate is a dash or rough: a market with no price, or an old one.
+   In the warning colour, since it qualifies the figure above it, and allowed
+   to wrap rather than widen the tile. */
+.stat__sub.stat__note {
+  max-width: 260px;
+  color: var(--warn);
+}
+
 /* ------------------------------------------------------------------ main */
 
 .main {

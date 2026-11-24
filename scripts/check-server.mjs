@@ -561,10 +561,27 @@ await check('editing a purchase does not re-check an old sale when the asset sta
   db.close();
   const fee = await api('PATCH', `/api/trades/${t.id}`, { ...buy, asset: 'eth', buy_gas_usd: '6' });
   assert.equal(fee.status, 200);
-  // A change of asset still re-checks it.
+  // A change of asset still re-checks both. The purchase goes first, and since
+  // each asset has its own range, 10 ETH for 30,000 is $3,000 a cbBTC: refused.
   const moved = await api('PATCH', `/api/trades/${t.id}`, { asset: 'cbbtc' });
   assert.equal(moved.status, 400);
-  assert.equal(moved.data.field, 'sell_eth');
+  assert.equal(moved.data.field, 'buy_eth');
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a purchase is held to its own asset\'s price range', async () => {
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: today, borrow_amount: '10000' }))).data;
+  const bought = { buy_date: today, buy_amount: '10000', buy_gas_usd: '1' };
+  // An ETH quantity on a WBTC purchase: $3,448 a WBTC.
+  const left = await api('PATCH', `/api/trades/${t.id}`, { asset: 'wbtc', ...bought, buy_eth: '2.9' });
+  assert.equal(left.status, 400);
+  assert.equal(left.data.field, 'buy_eth');
+  assert.equal(left.data.error, 'That is 3,448 USDC per WBTC. Check the amount and the WBTC.');
+  // The same figure is an ETH purchase, and switching it to WBTC is refused.
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { asset: 'eth', ...bought, buy_eth: '2.9' })).status, 200);
+  const moved = await api('PATCH', `/api/trades/${t.id}`, { asset: 'wbtc' });
+  assert.equal(moved.status, 400);
+  assert.equal(moved.data.field, 'buy_eth');
   await api('DELETE', `/api/trades/${t.id}`);
 });
 

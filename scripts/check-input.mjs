@@ -212,6 +212,29 @@ check('the asset is required, ETH or cbBTC, and kept as a word', () => {
   assert.equal(contextFrom({}, { asset: 'cbbtc' }).asset, 'cbbtc');
 });
 
+check('a purchase price is judged against its own asset\'s range, not one for all', () => {
+  // 2.9 typed for ETH and left there after picking WBTC: $3,448 a WBTC, an ETH
+  // price, which the one range every asset shared let through.
+  assert.equal(
+    validateField('buy_eth', '2.9', { asset: 'wbtc', borrow_currency: 'USDC', buy_amount: 10000 }),
+    'That is 3,448 USDC per WBTC. Check the amount and the WBTC.',
+  );
+  assert.equal(
+    validateField('buy_eth', '2.9', { asset: 'cbbtc', borrow_currency: 'USDC', buy_amount: 10000 }),
+    'That is 3,448 USDC per cbBTC. Check the amount and the cbBTC.',
+  );
+  // The other way: 0.1 typed for WBTC and left on ETH, for 12,000, is $120,000 an ETH.
+  assert.equal(
+    validateField('buy_eth', '0.1', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 12000 }),
+    'That is 120,000 USDC per ETH. Check the amount and the ETH.',
+  );
+  // Real prices pass, at the edges of each range too.
+  assert.equal(validateField('buy_eth', '0.1', { asset: 'wbtc', borrow_currency: 'USDC', buy_amount: 9500 }), null);
+  assert.equal(validateField('buy_eth', '1', { asset: 'wbtc', borrow_currency: 'USDC', buy_amount: 10000 }), null);
+  assert.equal(validateField('buy_eth', '2.9', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 10000 }), null);
+  assert.equal(validateField('buy_eth', '1', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 100000 }), null);
+});
+
 check('a cbBTC trade names its fields and its messages for cbBTC, and its goal for BTC', () => {
   const t = { asset: 'cbbtc', borrow_currency: 'USDC' };
   assert.equal(labelOf('buy_eth', t), 'cbBTC purchased');

@@ -377,6 +377,31 @@ const RATE_MISSING = `<span class="chip chip--warn" tabindex="0" data-tip="${esc
   TIPS.noRate,
 )}</span></span>`;
 
+/** A warning chip, its sentence reachable by keyboard and read aloud, as `RATE_MISSING` is. */
+const warnChip = (label, tip) =>
+  `<span class="chip chip--warn" tabindex="0" data-tip="${esc(tip)}">${esc(label)}<span class="sr-only">: ${esc(
+    tip,
+  )}</span></span>`;
+
+/**
+ * What stands between an open position and a sound estimate on the price side:
+ * no price for its market at all, or only one the server calls stale (older
+ * than the alert check would act on; `freshPrice` in alerts.js). WBTC has no
+ * row in the header's ticker, so a missing or old WBTC price showed nowhere -
+ * its positions read "-", or an estimate at a price hours old, with no reason
+ * given. Empty when the position needs no price or its price is fresh.
+ */
+function priceNote(t, d) {
+  if (!estimateNeedsPrice(d)) return '';
+  const market = marketOf(t);
+  const q = state.prices[market];
+  if (!isNum(q?.price)) return warnChip('no price', `No ${market} price right now, so this position is not estimated.`);
+  if (q.stale) {
+    return warnChip('old price', `Estimated at the ${market} price fetched ${fetchedAgo(q.fetchedAt)}; no newer one could be had.`);
+  }
+  return '';
+}
+
 /** The asset's logo, small and decorative: its ticker is always written beside it. */
 const assetMark = (t, size = 15) =>
   `<img class="asset-mark" src="${ASSET_META[assetOf(t)].art}" alt="" width="${size}" height="${size}" />`;
@@ -1522,6 +1547,16 @@ function applyAsset(form, trade) {
     const value = form.elements[flagged.name]?.value ?? '';
     const error = validateField(flagged.name, value, formContext(form, trade ?? {}, flagged.name));
     if (error) showFormError(form, error, flagged.name, { focus: false });
+    return;
+  }
+  // And a quantity that was fine for the asset before the pick: typed for ETH
+  // and left there, 2.9 is $3,448 a WBTC, outside WBTC's range, and said so
+  // only at Save - while the hint under it read "WBTC price $3,448.28" as if
+  // that were a price.
+  const qty = form.elements.buy_eth?.value ?? '';
+  if (qty.trim() !== '') {
+    const error = validateField('buy_eth', qty, formContext(form, trade ?? {}, 'buy_eth'));
+    if (error) showFormError(form, error, 'buy_eth', { focus: false });
   }
 }
 
@@ -2019,16 +2054,20 @@ function gainCellHtml(t, d) {
   // row, and as two items the figure floated mid-row with `est` pinned to the
   // far edge, apart from the number it qualifies.
   if (isNum(gain)) {
-    return `<span><span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ` ${estChip(t, d)}`}</span>`;
+    // An estimate on an old price says so in place of the plain `est`.
+    return `<span><span class="${gainClass(gain)}">${signedUsd(gain)}</span>${
+      isNum(d.netGainUsd) ? '' : ` ${priceNote(t, d) || estChip(t, d)}`
+    }</span>`;
   }
   // The chip only where a rate is what stands between the row and a figure.
-  // A position waiting on the ETH price would be sent to fetch rates that
-  // cannot help it, so that is a dash; with the price in, a missing rate is
-  // the only thing left, and the header tile already says "no rate" for it.
-  // A trade with nothing to estimate keeps the old rule, once the ETH is sold.
+  // A position waiting on its market's price would be sent to fetch rates that
+  // cannot help it, so it says the price is missing instead; with the price
+  // in, a missing rate is the only thing left, and the header tile already
+  // says "no rate" for it. A trade with nothing to estimate keeps the old
+  // rule, once the ETH is sold.
   const dash = '<span class="muted">-</span>';
   if (hasEstimate(d)) {
-    if (estimateNeedsPrice(d) && priceNow(t) === null) return dash;
+    if (estimateNeedsPrice(d) && priceNow(t) === null) return `<span>${dash} ${priceNote(t, d)}</span>`;
     return d.fxComplete ? dash : RATE_MISSING;
   }
   return d.stages.sold && !d.fxComplete ? RATE_MISSING : dash;
@@ -3125,6 +3164,31 @@ function openGainLines() {
   const lines = [
     `Est. gain ${fig(g.total)}${g.missing && priced ? ` ${RATE_MISSING}` : ''}`,
   ];
+  // Which market's price is missing or old, and for how many positions: the
+  // reason the total above is a dash or rough. Said here because WBTC, unlike
+  // ETH and BTC, has no ticker row to show it.
+  const byMarket = new Map();
+  for (const t of state.trades) {
+    const d = derive(t);
+    if (!estimateNeedsPrice(d)) continue;
+    const market = marketOf(t);
+    const q = state.prices[market];
+    const kind = !isNum(q?.price) ? 'none' : q.stale ? 'old' : null;
+    if (!kind) continue;
+    const entry = byMarket.get(market) ?? { kind, n: 0, fetchedAt: q?.fetchedAt };
+    entry.n += 1;
+    byMarket.set(market, entry);
+  }
+  for (const [market, { kind, n, fetchedAt }] of byMarket) {
+    const what = `${n} position${n === 1 ? '' : 's'}`;
+    lines.push({
+      cls: 'stat__note',
+      html:
+        kind === 'none'
+          ? `No ${esc(market)} price right now: ${what} not estimated.`
+          : `${esc(market)} price from ${esc(fetchedAgo(fetchedAt))}: ${what} estimated on it.`,
+    });
+  }
   // One position would only repeat the total above it. Two to a row, id and
   // figure in columns of their own: a flowing line wrapped after its separator
   // and left a dot dangling at the end of the first row from four positions on.
