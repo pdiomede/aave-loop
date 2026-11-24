@@ -154,8 +154,9 @@ lands.
 ## Architecture
 
 Express + better-sqlite3 + vanilla ES modules. Four stages per trade (borrow, buy
-ETH, sell ETH, repay), each with its own date and amounts, all denominated in
-`borrow_currency`. Everything is reported in USD.
+the asset - ETH, cbBTC or WBTC - sell it, repay), each with its own date and amounts,
+all denominated in `borrow_currency`, which is always a stablecoin. Everything is
+reported in USD.
 
 ### lib/calc.js is isomorphic, and that is the central constraint
 
@@ -207,7 +208,13 @@ shut down: the server waits up to 12 s for an alert send), but moves to the next
 port when anything else holds it, and a copy started by hand (`PORT=3011
 npm start`, a second checkout pointed at the same `ETHROUNDTRIP_DB`) runs beside it. So
 concurrent access is a supported state, not an edge case. Production runs one
-copy; this is mostly a dev-machine state, but the code holds for both. This is why:
+copy; this is mostly a dev-machine state, but the code holds for both - **as long as
+both copies run the same version.** An older copy does not know a newer asset and
+`assetOf` reads it as ETH: 2.1.8 on a 2.2.0 database closed every armed WBTC alert as
+"off market" the moment it started, and its page would save a WBTC purchase back as
+ETH. Nothing in the newer code can prevent it, so a release that adds an asset or a
+market leaves a warning in NEXT.md (never run the older version on that database,
+never restore a newer backup onto an older install). This is why:
 
 - alerts are claimed with a conditional `UPDATE ... WHERE id = ? AND status = 'armed'`
   before the message is sent, so of two processes exactly one gets `changes === 1`;
@@ -365,7 +372,11 @@ reads each coin by its id, and caches a row per market in `market_price` (which
 replaced the single-row `eth_price`, left in place for an older copy). A partial
 answer caches what came back without the cooldown, so a missing BTC never holds ETH
 back; a coin left out counts as asked (`missingAt`) for as long as the caller would
-accept a cached price, so it costs one request per window, not one per caller. The
+accept a cached price, so it costs one request per window, not one per caller.
+`priceStatus().lastError` joins every market's problem; `problems` keeps each one
+under its market, and a message about some markets quotes only theirs - `/price`
+once explained a missing BTC with WBTC's problem too, under a reply that never
+shows WBTC. The
 page's `adoptQuotes` judges "newer" by the server's clock (`fetchedAt + ageMs`), so a
 quote stamped ahead of it cannot freeze the banner. Callers pass a `{ ETH, BTC, WBTC }` map (`openGainsUsd`, `holdingText`) and pick a
 trade's price with `priceFor(t, prices)`. An alert's goal is a price of its market,
@@ -466,14 +477,24 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
   auth, and the browser shows a login prompt on the public page — the landing logo did
   exactly that, in every browser without saved credentials. Keep a copy in `landing/`:
   the coin, platform (`aave.png`, `etherfi.png`, `morpho.jpg`) and asset (`eth.png`,
-  `cbbtc.png`) marks are all copies, so a new platform or asset needs its logo copied
-  there and named on the landing page. `scripts/check-calc.mjs` reads every `src`,
+  `cbbtc.png`, `wbtc.png`) marks are all copies, so a new platform or asset needs its
+  logo copied there and named on the landing page. The social card (`og6.png`, drawn
+  from `scripts/og.html` with headless Chrome) names the assets too; redraw it under
+  a new name once production has served the old one, since scrapers cache by URL. `scripts/check-calc.mjs` reads every `src`,
   `srcset`, loading `<link>`, `og:image`/`twitter:image` and CSS `url()` of the public
   pages and fails on one outside `/landing/` (Google Fonts excepted) or not on disk.
 - **Text can change freely; inline scripts cannot.** The landing page describes what
   `lib/calc.js` computes (net gain after interest *and fees*, partial exits, weekend
   rates), so a formula change may mean a copy change there too.
 - **Inline scripts are admitted by hash.** nginx's Content-Security-Policy lists the
-  SHA-256 of each inline script on `landing/index.html` and `landing/404.html`; edit one
-  and the browser silently blocks it until the user updates nginx. The ledger page has
-  no inline script at all for that reason — its theme runs from `public/theme.js`.
+  SHA-256 of each inline script on `landing/index.html` and `landing/404.html`
+  (`CSP_PINNED` in `scripts/check-calc.mjs`, two today); edit one and the browser
+  silently blocks it until the user updates nginx. The ledger page has no inline
+  script at all for that reason — its theme runs from `public/theme.js`.
+- **nginx's config is shared with other sites.** The policy is one `add_header` in
+  `/etc/nginx/sites-available/all-sites.conf`, which also holds UrlReporter's
+  `script-src 'self' https://www.googletagmanager.com`. A command for the user that
+  rewrites ETH Roundtrip's line must match only it - anchor it on its own first
+  hash, as NEXT.md's step 2 does - or it rewrites that site's too. Have them back
+  the file up, `nginx -t`, then reload; the live header can be read from here with
+  `curl -sI https://ethroundtrip.com/`.

@@ -42,10 +42,9 @@ Done on the VPS on 20 Nov:
   /home/paolo/backup/aaveloop --keep 14`, in paolo's crontab) uses no `MYAAVE_*`
   setting, so it needs no change.
 
-Left from 20 Nov, not yet confirmed here:
-
-- **21 Nov:** check that the night's backup ran: `ls -lt /home/paolo/backup/aaveloop`
-  should show a `myaave-...db` from about 03:00 UTC, and its log no error.
+Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
+`/home/paolo/backup/aaveloop` holds one `myaave-...db` from 03:00 every night, 11 to
+24 Nov, fourteen in all as `--keep 14` asks.
 
 ## 2.2.0 (24 Nov): WBTC as an asset to buy
 
