@@ -1,9 +1,26 @@
 # Next
 
 What is left to do on the VPS, and what to build next. Written 20 Nov 2026, after
-the day's bug hunt was pushed to `main`.
+the day's bug hunt was pushed to `main`; brought up to date on 24 Nov.
 
-## Where it stands (20 Nov, evening)
+## Where it stands (24 Nov)
+
+Done on the VPS on 24 Nov:
+
+- **Deployed 2.2.0** (`main` as of 24 Nov): WBTC as an asset to buy, the "no price"
+  and "old price" notes, per-asset price ranges, and the repayment and `/price` fixes.
+- **BotFather** command list pasted again, with `/holding` naming WBTC.
+- **Checked from outside, without a password:** the footer reads v2.2.0;
+  `landing/wbtc.png` and `landing/og6.png` answer 200 and `og5.png` 404; the page
+  names `og6.png` only, and lists WBTC under "Buy and sell".
+
+Left from 24 Nov:
+
+- **The app behind its password:** the header shows ETH and BTC only, and a trade's
+  Bought card offers WBTC after cbBTC, with its logo.
+- **The social card:** have LinkedIn's
+  [Post Inspector](https://www.linkedin.com/post-inspector/) and Telegram's
+  @WebpageBot fetch `https://ethroundtrip.com/` again, so they show `og6.png`.
 
 Done on the VPS on 20 Nov:
 
@@ -17,7 +34,7 @@ Done on the VPS on 20 Nov:
   /home/paolo/backup/aaveloop --keep 14`, in paolo's crontab) uses no `MYAAVE_*`
   setting, so it needs no change.
 
-Left:
+Left from 20 Nov, not yet confirmed here:
 
 - **Monday 23 Nov, 19:00 CET: step 2, the nginx hashes** (a reminder is scheduled in
   the Claude app). Until then only the landing page's theme button is blocked; the
@@ -27,8 +44,9 @@ Left:
 
 ## 2.2.0 (24 Nov): WBTC as an asset to buy
 
-Deploy as in step 1 below (`git pull`, restart). No nginx or settings change: no
-inline script changed, and `wbtc.png` sits in `landing/` beside the other logos.
+Deployed on 24 Nov (see above); kept as the record of what it needed. Deploy as
+in step 1 below (`git pull`, restart). No nginx or settings change: no inline
+script changed, and `wbtc.png` sits in `landing/` beside the other logos.
 In BotFather, paste the command list from step 4 below again: `/holding` now says
 "ETH, cbBTC or WBTC". Then check:
 
