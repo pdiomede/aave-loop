@@ -21,14 +21,14 @@ Done on the VPS on 24 Nov:
   in step 2 below would also have replaced. The previous file is
   `all-sites.conf.bak` beside it. The comment above the line still speaks of four
   hashes and `public/index.html`; it is two, on the two landing pages.
-
-Left from 24 Nov:
-
-- **The app behind its password:** the header shows ETH and BTC only, and a trade's
-  Bought card offers WBTC after cbBTC, with its logo.
-- **The social card:** have LinkedIn's
+- **The app behind its password, checked:** the header shows ETH and BTC only, and a
+  trade's Bought card offers WBTC after cbBTC, with its logo.
+- **The social card refreshed:** LinkedIn's
   [Post Inspector](https://www.linkedin.com/post-inspector/) and Telegram's
-  @WebpageBot fetch `https://ethroundtrip.com/` again, so they show `og6.png`.
+  @WebpageBot fetched `https://ethroundtrip.com/` again and show `og6.png`; X
+  refreshes on its own within about a week.
+
+Nothing is left on the VPS for 2.2.0.
 
 Done on the VPS on 20 Nov:
 
