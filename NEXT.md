@@ -226,6 +226,13 @@ Nothing is waiting: every idea from 20 Nov was built that day.
 
 Accepted for now, worth knowing:
 
+- **Never run 2.1.8 or older on a database that 2.2.0 has used.** 2.1.8 does not know
+  WBTC: it reads a WBTC trade as ETH, closes its armed alert the moment it starts or
+  sweeps (seen in a test on 24 Nov), and editing that purchase in its page would save
+  it back as ETH. 2.2.0 cannot prevent it, since the behaviour is in the old code. So
+  do not start an older checkout against the same `ETHROUNDTRIP_DB`, and do not
+  restore a backup taken on 2.2.0 onto an older install. A deploy is safe: it
+  replaces the one copy.
 - **A command may be answered twice after a restart.** When the app stops in the
   middle of a reply, the bot rewinds to that command so nothing is lost. That command
   can get its answer twice.
