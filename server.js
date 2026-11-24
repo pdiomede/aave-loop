@@ -9,10 +9,6 @@ import {
   parseDate,
   parseAmount,
   priceInRange,
-  ethPriceInRange,
-  inCoin,
-  coinUnits,
-  coinDp,
   FIGURE_MAX,
   qtyAsPrinted,
   SELL_OVER_BUY,
@@ -21,6 +17,7 @@ import {
   gasKey,
   todayISO,
   intervalMs,
+  cents,
   asPrinted,
   CURRENCIES,
   PLATFORMS,
@@ -38,7 +35,6 @@ import {
   staleFxColumns,
   backfillRates,
   resolveRate,
-  rateNow,
   fxStatus,
   startFxRefresher,
   stopFxRefresher,
@@ -224,12 +220,8 @@ function toNumber(value, field, label, { allowZero = false, money = false } = {}
   // An amount of the coin is printed to the cent, and `derive` works from the
   // printed figure, so one that prints as 0.00 is zero however it was typed:
   // 0.004 USDC for 0.000002 ETH passed "greater than zero" and the price check
-  // on its raw figures, and was saved as ETH bought at $0.00. `money` is the
-  // coin, whose own places decide it: 0.004 WBTC is hundreds of dollars.
-  if (money && coinUnits(n, money) === 0) {
-    const dp = coinDp(money);
-    throw new BadRequest(`${label} must be at least ${(10 ** -dp).toFixed(dp)}.`, field);
-  }
+  // on its raw figures, and was saved as ETH bought at $0.00.
+  if (money && cents(n) === 0) throw new BadRequest(`${label} must be at least 0.01.`, field);
   return n;
 }
 
@@ -273,13 +265,9 @@ function toDate(value, field, label) {
  */
 const GRAPHEMES = new Intl.Segmenter('en', { granularity: 'grapheme' });
 
-function normalise(body, { requireBorrow, asset = null, currency = null }) {
+function normalise(body, { requireBorrow, asset = null }) {
   const out = {};
   const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
-  // The coin the amounts are in, for how small one may be: the one this
-  // request sets, else the trade's own (`currency`, read by the caller).
-  const sent = typeof body.borrow_currency === 'string' ? body.borrow_currency.toUpperCase() : null;
-  const coin = CURRENCIES.includes(sent) ? sent : CURRENCIES.includes(currency) ? currency : CURRENCIES[0];
 
   const numericField = (key, label, opts) => {
     if (!has(key)) return;
@@ -291,7 +279,7 @@ function normalise(body, { requireBorrow, asset = null, currency = null }) {
   };
 
   dateField('borrow_date', 'Borrow date');
-  numericField('borrow_amount', 'Borrow amount', { money: coin });
+  numericField('borrow_amount', 'Borrow amount', { money: true });
   // A promotional or incentivised borrow really can sit at 0%.
   numericField('borrow_apr', 'Borrow APR', { allowZero: true });
   // Gas can genuinely be nothing - a sponsored or batched transaction - so 0
@@ -327,14 +315,14 @@ function normalise(body, { requireBorrow, asset = null, currency = null }) {
   const ticker = ASSET_META[out.asset ?? (ASSETS.includes(asset) ? asset : ASSETS[0])].ticker;
 
   dateField('buy_date', 'Purchase date');
-  numericField('buy_amount', 'Purchase amount', { money: coin });
+  numericField('buy_amount', 'Purchase amount', { money: true });
   numericField('buy_eth', `${ticker} purchased`);
   numericField('buy_gas_usd', SWAP_FEE, { allowZero: true });
   // Optional: not every loop supplies the ETH (or cbBTC) on Aave, so blank is accepted.
   numericField('buy_lend_gas_usd', 'Lending gas fee', { allowZero: true });
 
   dateField('sell_date', 'Sale date');
-  numericField('sell_amount', 'Sale amount', { money: coin });
+  numericField('sell_amount', 'Sale amount', { money: true });
   numericField('sell_eth', `${ticker} sold`);
   numericField('sell_gas_usd', SWAP_FEE, { allowZero: true });
   numericField('sell_unstake_gas_usd', 'Unstaking gas fee', { allowZero: true });
@@ -352,7 +340,7 @@ function normalise(body, { requireBorrow, asset = null, currency = null }) {
   }
 
   dateField('repay_date', 'Repayment date');
-  numericField('repay_amount', 'Repaid amount', { money: coin });
+  numericField('repay_amount', 'Repaid amount', { money: true });
   numericField('repay_gas_usd', 'Repayment gas fee', { allowZero: true });
 
   if (has('notes')) {
@@ -451,12 +439,9 @@ function checkChronology(row) {
     // them: a raw 0.005 of slack let 10,000.00 repay a 10,000.005 loan, which
     // the cards print as 10,000.01 - interest of -$0.01 and a flat trade
     // scored a win.
-    // In the coin's own last place for WBTC, satoshis, as `derive` takes it.
-    const c = row.borrow_currency;
-    const shown = row.borrow_amount.toLocaleString('en-US', { maximumFractionDigits: coinDp(c) });
-    if (coinUnits(row.repay_amount, c) < coinUnits(row.borrow_amount, c)) {
+    if (cents(row.repay_amount) < cents(row.borrow_amount)) {
       throw new BadRequest(
-        `A repayment cannot be less than the ${shown} borrowed.`,
+        `A repayment cannot be less than the ${row.borrow_amount.toLocaleString('en-US')} borrowed.`,
         'repay_amount',
       );
     }
@@ -464,7 +449,7 @@ function checkChronology(row) {
     // that far out is a slipped digit rather than a real number.
     if (row.repay_amount > row.borrow_amount * 2) {
       throw new BadRequest(
-        `That is a long way above the ${shown} borrowed. Check the figure.`,
+        `That is a long way above the ${row.borrow_amount.toLocaleString('en-US')} borrowed. Check the figure.`,
         'repay_amount',
       );
     }
@@ -501,12 +486,10 @@ function checkSwapFee(patch, row) {
 
 /**
  * The price a purchase or sale implies, per ETH or per cbBTC, has to be one it
- * could trade at in the borrowed coin (`ethPriceInRange`): dollars for a
- * stablecoin, a few hundredths to about one for WBTC. Scoped to the stages
- * this request writes, like `checkSwapFee`, so a row saved before the check
- * existed is not refused an unrelated edit - and to a change of asset or of
- * coin, which changes what the price is a price of: 30,000 that were USDT are
- * not 30,000 WBTC.
+ * could trade at (`priceInRange`). Scoped to the stages this request writes,
+ * like `checkSwapFee`, so a row saved before the check existed is not refused
+ * an unrelated edit - and to a change of asset, which changes what the price
+ * is a price of.
  */
 function checkUnitPrice(patch, row, current = null) {
   const ticker = assetMeta(row).ticker;
@@ -514,15 +497,13 @@ function checkUnitPrice(patch, row, current = null) {
   // asset it shows, so editing a purchase's fee re-checked the sale's price,
   // and an old row's refused the edit with an error about a field not in it.
   const assetChanged = 'asset' in patch && (current === null || patch.asset !== assetOf(current));
-  const coinChanged =
-    'borrow_currency' in patch && (current === null || patch.borrow_currency !== current.borrow_currency);
   for (const stage of ['buy', 'sell']) {
     const [amountKey, ethKey] = [`${stage}_amount`, `${stage}_eth`];
-    if (!(amountKey in patch || ethKey in patch || assetChanged || coinChanged)) continue;
+    if (!(amountKey in patch || ethKey in patch || assetChanged)) continue;
     if (row[amountKey] == null || row[ethKey] == null) continue;
     // From the amount as printed, as `derive` works out the price the card shows.
-    const price = inCoin(row[amountKey], row.borrow_currency) / row[ethKey];
-    if (!ethPriceInRange(price, row.borrow_currency)) {
+    const price = asPrinted(row[amountKey]) / row[ethKey];
+    if (!priceInRange(price)) {
       const shown = price.toLocaleString('en-US', { maximumSignificantDigits: 4 });
       throw new BadRequest(
         `That is ${shown} ${row.borrow_currency} per ${ticker}. Check the amount and the ${ticker}.`,
@@ -618,8 +599,7 @@ app.patch('/api/trades/:id', async (req, res, next) => {
     // rather than after waiting behind someone else's rate lookup.
     // The trade's asset only names the fields in an error ("cbBTC purchased
     // must be a number"); the checks below run on the row as read in the lock.
-    const saved = selectOne.get(id);
-    const patch = normalise(req.body || {}, { requireBorrow: false, asset: saved?.asset, currency: saved?.borrow_currency });
+    const patch = normalise(req.body || {}, { requireBorrow: false, asset: selectOne.get(id)?.asset });
 
     const row = await withTradeLock(id, async () => {
       // The lock only orders writers in this process. The other copy of the
@@ -721,12 +701,9 @@ async function rateLookup(req, res) {
   if (!CURRENCIES.includes(currency) || date === null) {
     return res.json({ currency, date: raw, rate: null, reason: 'That is not a currency and date I can look up.' });
   }
-  // `live=1` asks for today's figure for an estimate: WBTC's own live price
-  // rather than the day's 00:00 one (see `rateNow`). Any other date is the day's.
-  const live = req.query.live === '1' && date === todayISO();
-  const hit = live ? await rateNow(currency) : await resolveRate(currency, date);
+  const hit = await resolveRate(currency, date);
   if (!hit) {
-    const status = fxStatus(currency);
+    const status = fxStatus();
     return res.json({
       currency, date, rate: null,
       reason: status.offline
@@ -793,7 +770,7 @@ function quoteView(quote) {
   };
 }
 
-/** Every market's quote, `{ ETH, BTC }`, as `quoteView` gives each. */
+/** Every market's quote, `{ ETH, BTC, WBTC }`, as `quoteView` gives each. */
 const pricesView = (quotes) => Object.fromEntries(MARKETS.map((m) => [m, quoteView(quotes[m])]));
 
 /**
@@ -842,8 +819,9 @@ app.get('/api/alerts', async (req, res, next) => {
 });
 
 /**
- * What ETH and BTC cost, for the ticker in the page header: `{ pollMs, prices:
- * { ETH, BTC } }`, one quote per market in the shape `quoteView` gives. It was
+ * What ETH, BTC and WBTC cost, for the ticker in the page header (ETH and BTC,
+ * `TICKER_MARKETS`) and every estimate (WBTC's too): `{ pollMs, prices:
+ * { ETH, BTC, WBTC } }`, one quote per market in the shape `quoteView` gives. It was
  * /api/eth while ETH was the only one.
  *
  * Its own route rather than a field on /api/alerts, which is the same argument

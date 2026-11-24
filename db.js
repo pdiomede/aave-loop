@@ -205,8 +205,8 @@ db.exec(`
  * exception for the same reason the `*_fx` columns are: a price observed at a
  * moment cannot be recomputed later, so not keeping it loses it.
  *
- * `market_price` holds a row per market the app follows, ETH and BTC (MARKETS
- * in lib/calc.js; cbBTC is valued at BTC). It is on disk rather than in a
+ * `market_price` holds a row per market the app follows, ETH, BTC and WBTC
+ * (MARKETS in lib/calc.js; cbBTC is valued at BTC, WBTC at its own). It is on disk rather than in a
  * module variable so a restart starts warm and a second copy of the app sees
  * the same figure, which matters because both poll. It replaced `eth_price`,
  * whose single row (`id = 1`) could not hold a second coin.
@@ -377,7 +377,7 @@ const PLATFORM_COLUMNS = [['platform', 'TEXT']];
 // pairing again - the DDL and this list both carry it.
 const ASSET_COLUMNS = [['asset', "TEXT NOT NULL DEFAULT 'eth'"]];
 
-// The market an alert's goal is a price of, 'ETH' or 'BTC', written when it
+// The market an alert's goal is a price of, 'ETH', 'BTC' or 'WBTC', written when it
 // is saved. The trade's asset can change after an alert has fired, and a
 // fired ETH goal read back off what is now a cbBTC trade would be listed as a
 // BTC price. NULL on an alert from before cbBTC, which was an ETH goal. Same

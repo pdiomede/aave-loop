@@ -35,9 +35,6 @@ import {
   assetOf,
   priceFor,
   ethHeldNow,
-  ethPriceInRange,
-  inCoin,
-  coinDp,
 } from '../lib/calc.js';
 import { tradesCsv, csvFileName } from '../lib/csv.js';
 
@@ -808,6 +805,20 @@ check('openGainsUsd values each position at its own market', () => {
   near(g.total, 4393.37 - 1006.63, 'total');
 });
 
+// The same again in WBTC, 0.3 of it. WBTC is valued at its own price.
+const wb = (over = {}) => held({ asset: 'wbtc', buy_eth: 0.3, ...over });
+
+check('WBTC is valued at its own price, not at BTC\'s as cbBTC is', () => {
+  assert.equal(assetOf({ asset: 'wbtc' }), 'wbtc');
+  assert.equal(priceFor(wb(), { ETH: 3450, BTC: 97000, WBTC: 96500 }), 96500);
+  assert.equal(priceFor(wb(), { ETH: 3450, BTC: 97000 }), null, 'no WBTC price is no price');
+  const g = openGainsUsd([btc({ id: 1 }), wb({ id: 2 })], { ETH: 3450, BTC: 97000, WBTC: 96500 }, {}, AS_OF);
+  // cbBTC: -1,006.63, as above. WBTC: 0.3 x 96,500 is 28,950.00, less the
+  // 30,000, 98.63 and 8: -1,156.63. At BTC's price it would have read -1,006.63.
+  near(g.rows[1].gain, -1156.63, 'WBTC position');
+  near(g.total, -1006.63 - 1156.63, 'total');
+});
+
 check('openGainsUsd: no BTC price leaves the total unknown, not the ETH alone', () => {
   const g = openGainsUsd([held({ id: 1 }), btc({ id: 2 })], { ETH: 3450 }, {}, AS_OF);
   assert.equal(g.total, null);
@@ -850,82 +861,6 @@ check('the CSV names the asset after the platform, and its quantity in full', ()
   assert.equal(at(row, 'sell_qty'), '0,01234567');
   // Nothing bought: the picker's ETH is not a fact about the trade.
   assert.equal(at(rows.find((r) => at(r, 'id') === '2'), 'asset'), '');
-});
-
-/* -------------------------------------------------------------------- WBTC */
-
-// Borrowed 0.350123456 WBTC at 1% with bitcoin at $100,000, all but a few
-// satoshis of it spent on 10 ETH, sold in full for 0.38000001 WBTC at $110,000
-// and repaid as 0.35041123 at $120,000. No gas, so every figure is the coin's.
-const wbtc = (over = {}) => ({
-  id: 1, borrow_currency: 'WBTC', platform: 'aave',
-  borrow_date: '2026-09-01', borrow_amount: 0.350123456, borrow_apr: 1, borrow_fx: 100000, borrow_gas_usd: 0,
-  buy_date: '2026-09-01', buy_amount: 0.35012344, buy_eth: 10, buy_fx: 100000, buy_gas_usd: 0,
-  sell_date: '2026-09-20', sell_amount: 0.38000001, sell_eth: 10, sell_fx: 110000, sell_gas_usd: 0,
-  repay_date: '2026-10-01', repay_amount: 0.35041123, repay_fx: 120000, repay_gas_usd: 0,
-  ...over,
-});
-
-check('a WBTC trade is worked out to the satoshi, not the cent', () => {
-  const d = derive(wbtc(), AS_OF);
-  // The loan as its card prints it, 0.35012346; gross 0.38000001 - 0.35012344;
-  // interest 0.35041123 - 0.35012346; net the one less the other.
-  near(d.grossGain, 0.02987657, 'gross gain');
-  near(d.interestPaid, 0.00028777, 'interest paid');
-  near(d.netGain, 0.0295888, 'net gain');
-  // In dollars, each leg to the cent: $35,012.346 and $35,012.344 print
-  // $35,012.35 and $35,012.34; 0.38000001 x 110,000 is $41,800.0011 and
-  // 0.35041123 x 120,000 is $42,049.3476.
-  near(d.borrowUsd, 35012.35, 'borrowed');
-  near(d.buyUsd, 35012.34, 'spent');
-  near(d.grossGainUsd, 41800 - 35012.34, 'gross gain $');
-  near(d.loanCostUsd, 42049.35 - 35012.35, 'loan cost');
-  // 0.00028777 x 120,000 is $34.5324, and the rest of the cost is bitcoin's move.
-  near(d.interestPaidUsd, 34.53, 'of which interest');
-  near(d.principalFxUsd, 7037 - 34.53, 'of which currency');
-  near(d.netGainUsd, 6787.66 - 7037, 'net gain $');
-  // 0.035 WBTC per ETH is a price; so much would be refused in dollars.
-  near(d.buyPrice, 0.035012344, 'purchase price in WBTC');
-  near(d.buyPriceUsd, 3501.234, 'purchase price in dollars');
-});
-
-check('a WBTC trade still held is marked at today\'s bitcoin price', () => {
-  // 10 ETH at $3,450 is $34,500. The purchase, $35,012.34 at 100,000, moved by
-  // -0.35012344 x (90,000 - 100,000) = +$3,501.2344, printed $3,501.23, to
-  // $31,511.11; 30 days' interest on 0.35012346 at 1% is 0.00028777 WBTC,
-  // $25.8993 at 90,000, printed $25.90.
-  const t = wbtc({ sell_date: null, sell_amount: null, sell_eth: null, sell_fx: null, repay_date: null, repay_amount: null, repay_fx: null });
-  near(est(t, PRICE, { WBTC: 90000 }), 34500 - (35012.34 - 3501.23) - 25.9, 'estimate');
-});
-
-check('Stats and the CSV keep WBTC to its 8 places', () => {
-  // Two loans of 0.350123456 print 0.35012346 each; the coin line adds those,
-  // 0.70024692, beside $70,024.70 - not 0.70 as it would to the cent.
-  const [row] = summaryReport([wbtc({ id: 1 }), wbtc({ id: 2 })], AS_OF).byCurrency;
-  assert.equal(row.borrowedNative, 0.70024692);
-  assert.equal(row.borrowed, 70024.7);
-  const { rows, at } = csvRows([wbtc()]);
-  assert.equal(at(rows[0], 'borrow_amount'), '0,35012346');
-  assert.equal(at(rows[0], 'buy_amount'), '0,35012344');
-  assert.equal(at(rows[0], 'interest_paid'), '0,00028777');
-  assert.equal(at(rows[0], 'net_gain'), '0,0295888');
-  assert.equal(at(rows[0], 'net_gain_usd'), '-249,34');
-  // A figure `String` would write as 5e-8 is written out.
-  const tiny = csvRows([wbtc({ repay_amount: 0.35012351 })]);
-  assert.equal(tiny.at(tiny.rows[0], 'interest_paid'), '0,00000005');
-});
-
-check('an ETH price is judged in the coin it was paid in', () => {
-  assert.ok(ethPriceInRange(0.035, 'WBTC'));
-  assert.ok(ethPriceInRange(1.0003, 'WBTC'), 'about one WBTC per cbBTC');
-  assert.ok(!ethPriceInRange(350, 'WBTC'), 'a slipped digit in WBTC');
-  assert.ok(!ethPriceInRange(0.035, 'USDT'), 'cents per ETH is a slipped digit');
-  assert.ok(ethPriceInRange(3450, 'USDT'));
-  // A dollar coin's amounts are still to the cent, and WBTC's to the satoshi.
-  assert.equal(inCoin(1.005, 'USDT'), 1.01);
-  assert.equal(inCoin(0.123456785, 'WBTC'), 0.12345679);
-  assert.equal(coinDp('WBTC'), 8);
-  assert.equal(coinDp('EURC'), 2);
 });
 
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);

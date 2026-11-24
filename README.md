@@ -1,6 +1,6 @@
 # ETH Roundtrip
 
-Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin or WBTC, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned.
+Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH, cbBTC or WBTC, sell it, repay the loan, and see what the round trip actually earned.
 
 **Platforms:** Aave, Ether.fi and Morpho. **Assets bought:** ETH, and cbBTC (Coinbase's wrapped bitcoin), valued at BTC's price.
 
@@ -26,7 +26,7 @@ A trade starts with the borrow; each stage is added as it happens.
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
 | Borrow | platform (Aave, Ether.fi or Morpho), date, currency, amount, APR, gas fee (optional) | `OPEN` |
-| Buy | asset (ETH or cbBTC), date, amount spent, amount received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
+| Buy | asset (ETH, cbBTC or WBTC), date, amount spent, amount received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
 | Sell | date, amount sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
 | Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
 
@@ -42,7 +42,7 @@ Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require 
 
 | Figure | Formula |
 | --- | --- |
-| Buy / sell price (per ETH or cbBTC) | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
+| Buy / sell price (per ETH, cbBTC or WBTC) | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
 | Gross gain | `sell_amount - buy_amount * (sell_eth / buy_eth)` |
 | Accrued interest | `borrow_amount * apr% * days / 365` |
 | Fees | the six stage fees, in dollars |
@@ -55,7 +55,7 @@ Gross gain uses the cost of what was actually sold, so a profitable partial exit
 
 ## Exchange rates
 
-Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage converts at the European Central Bank reference rate for its own day, so the euro's movement between borrowing and repaying lands in the result. A WBTC stage converts at CoinGecko's WBTC price at 00:00 UTC that day (the past year only), so bitcoin's movement lands in it the same way.
+Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage converts at the European Central Bank reference rate for its own day, so the euro's movement between borrowing and repaying lands in the result.
 
 | Figure | Formula |
 | --- | --- |
@@ -74,9 +74,9 @@ A loan cost can be negative: if the euro fell, the loan was cheaper in dollars t
 
 ## Price alerts
 
-While a trade holds ETH or cbBTC, the **Bought** card has a bell. It takes one goal price and shows the message in full before saving. The goal is a price of the trade's market: ETH's for an ETH trade, BTC's for a cbBTC one. A goal above today's price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it, and changing the trade's asset closes it.
+While a trade holds ETH, cbBTC or WBTC, the **Bought** card has a bell. It takes one goal price and shows the message in full before saving. The goal is a price of the trade's market: ETH's for an ETH trade, BTC's for a cbBTC one, WBTC's for a WBTC one. A goal above today's price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it, and changing the trade's asset closes it.
 
-The prices come from CoinGecko, ETH and BTC in one request, without a key, every fifteen minutes, and only while an alert is armed. cbBTC is valued at BTC's price. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
+The prices come from CoinGecko, ETH, BTC and WBTC in one request, without a key, every fifteen minutes, and only while an alert is armed. cbBTC is valued at BTC's price, WBTC at its own; the header shows ETH and BTC. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
 
 ## Bot commands
 
@@ -85,9 +85,9 @@ The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat i
 | Command | Returns |
 | --- | --- |
 | `/price` | ETH and BTC now, each with 24h, 7d and 30d change |
-| `/holding` | each trade still holding ETH or cbBTC, with its estimated gain at its own market's price, and a total per asset with what it is worth; when the trades span platforms, a line per platform with its trades, holdings and share of the gain; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
+| `/holding` | each trade still holding ETH, cbBTC or WBTC, with its estimated gain at its own market's price, and a total per asset with what it is worth; when the trades span platforms, a line per platform with its trades, holdings and share of the gain; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
 | `/summary` | realized net gain, blended annualized, closed trades, open positions, and the ETH and cbBTC held |
-| `/watch` / `/unwatch` | the ETH and BTC prices every twenty minutes in the chat that asked, sent only while a trade holds ETH or cbBTC, or stop. One watch at a time: `/watch` from the other chat moves it there |
+| `/watch` / `/unwatch` | the ETH and BTC prices every twenty minutes in the chat that asked, sent only while a trade holds ETH, cbBTC or WBTC, or stop. One watch at a time: `/watch` from the other chat moves it there |
 
 `/help`, `/start` and anything unrecognised list the commands. A `@name` suffix, capitals and arguments are fine. Commands are read by long polling, so nothing needs to be reachable from the internet; two copies of the app share one reader by a lease. `/watch` survives a restart.
 
@@ -95,7 +95,7 @@ Telegram draws the Menu button only in a private chat. To get it, set `TELEGRAM_
 
 ```
 price - ETH and BTC prices now, with 24h, 7d and 30d change
-holding - trades still holding ETH or cbBTC, one line each
+holding - trades still holding ETH, cbBTC or WBTC, one line each
 summary - realized gain, annualized, closed, open and held
 watch - send the ETH and BTC prices every 20 minutes
 unwatch - stop the price updates
@@ -136,7 +136,7 @@ The format is `KEY=value` per line, with `#` comments, an optional `export ` and
 landing/       public page, served by nginx
 server.js      Express API and static host
 db.js          SQLite connection and schema
-fx.js prices.js  exchange rates and the ETH and BTC prices, cached
+fx.js prices.js  exchange rates and the ETH, BTC and WBTC prices, cached
 telegram.js    sending one message
 alerts.js      price alerts and their timer
 bot.js         reading and answering commands

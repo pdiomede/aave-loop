@@ -204,28 +204,21 @@ check('a closed euro trade with no rate is "no rate", not $0.00', () => {
 });
 
 check('a full year - twelve months, every coin, a warning - still fits one page', () => {
-  const coins = ['USDT', 'EURC', 'DAI', 'USDC', 'GHO', 'WBTC'];
+  const coins = ['USDT', 'EURC', 'DAI', 'USDC', 'GHO'];
   const year = Array.from({ length: 12 }, (_, i) => {
     const currency = coins[i % coins.length];
-    const fx =
-      currency === 'EURC'
-        ? { borrow_fx: 1.1, buy_fx: 1.1, sell_fx: 1.11, repay_fx: 1.12 }
-        : currency === 'WBTC'
-          ? { borrow_fx: 98765.43, buy_fx: 98765.43, sell_fx: 99999.99, repay_fx: 101234.56 }
-          : {};
-    // A WBTC loan in bitcoin: the two of them, 1.23456789 each, are the
-    // longest coin line the statement can be asked to print.
-    const btc = currency === 'WBTC';
+    const fx = currency === 'EURC' ? { borrow_fx: 1.1, buy_fx: 1.1, sell_fx: 1.11, repay_fx: 1.12 } : {};
     return trade({
-      loan: btc ? 1.23456789 : 123456.78 + i,
-      proceeds: btc ? 1.3 : 123456.78 + (i % 3 === 0 ? -9876.54 : 98765.43),
+      loan: 123456.78 + i,
+      proceeds: 123456.78 + (i % 3 === 0 ? -9876.54 : 98765.43),
       buyGas: 12.34,
       sellGas: 5.67,
       month: String(i + 1).padStart(2, '0'),
       currency,
       ...fx,
-      // Half of them cbBTC, so By asset draws both of its rows.
-      ...(i % 2 ? { asset: 'cbbtc', buy_eth: 1.2, sell_eth: 1.2 } : {}),
+      // A third each of ETH, cbBTC and WBTC, so By asset draws all its rows.
+      ...(i % 3 === 1 ? { asset: 'cbbtc', buy_eth: 1.2, sell_eth: 1.2 } : {}),
+      ...(i % 3 === 2 ? { asset: 'wbtc', buy_eth: 1.2, sell_eth: 1.2 } : {}),
     });
   });
   // Closed without a rate, so the warning line and every chip are drawn.
@@ -234,9 +227,7 @@ check('a full year - twelve months, every coin, a warning - still fits one page'
   assert.equal(pdf.match(/\/Type \/Page\b(?!s)/g).length, 1);
   for (const m of ['Jan 2026', 'Jun 2026', 'Dec 2026']) assert.ok(shows(pdf, m), m);
   for (const c of coins) assert.ok(shows(pdf, c), c);
-  for (const a of ['ETH', 'cbBTC', 'By currency and asset']) assert.ok(shows(pdf, a), a);
-  // The coin total under Borrowed, to the satoshi rather than the cent.
-  assert.ok(shows(pdf, '2.46913578 WBTC'), 'WBTC borrowed to 8 places');
+  for (const a of ['ETH', 'cbBTC', 'WBTC', 'By currency and asset']) assert.ok(shows(pdf, a), a);
 });
 
 check('By asset: a row per asset, its figures adding up to the totals', () => {

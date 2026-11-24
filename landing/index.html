@@ -6,7 +6,7 @@
     <title>ETH Roundtrip</title>
     <meta
       name="description"
-      content="Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin or WBTC, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned."
+      content="Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH, cbBTC or WBTC, sell it, repay the loan, and see what the round trip actually earned."
     />
     <meta name="color-scheme" content="light dark" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -28,7 +28,7 @@
     <meta property="og:site_name" content="ETH Roundtrip" />
     <meta property="og:url" content="https://ethroundtrip.com/" />
     <meta property="og:title" content="ETH Roundtrip - every loop, measured" />
-    <meta property="og:description" content="Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin or WBTC, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
+    <meta property="og:description" content="Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH, cbBTC or WBTC, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
     <meta property="og:image" content="https://ethroundtrip.com/landing/og6.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
@@ -38,7 +38,7 @@
     <!-- X reads its own namespace and falls back to og: for anything missing. -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="ETH Roundtrip - every loop, measured" />
-    <meta name="twitter:description" content="Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin or WBTC, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
+    <meta name="twitter:description" content="Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH, cbBTC or WBTC, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
     <meta name="twitter:image" content="https://ethroundtrip.com/landing/og6.png" />
     <meta name="twitter:image:alt" content="ETH Roundtrip: every loop, measured." />
     <script>
@@ -78,7 +78,7 @@
 
         <h1 class="hero__title">Every loop, measured.</h1>
         <p class="hero__sub">
-          Borrow a stablecoin or WBTC, buy ETH or cbBTC, sell it, repay the loan.<br />
+          Borrow a stablecoin, buy ETH, cbBTC or WBTC, sell it, repay the loan.<br />
           This keeps every cycle in one place and tells you what the round trip actually
           earned, after its interest and&nbsp;fees.
         </p>
@@ -156,7 +156,6 @@
             <img src="/landing/dai.svg" alt="DAI" width="30" height="30" />
             <img src="/landing/gho.svg" alt="GHO" width="30" height="30" />
             <img src="/landing/eurc.svg" alt="EURC" width="30" height="30" />
-            <img src="/landing/wbtc.png" alt="WBTC" width="30" height="30" />
           </div>
 
           <!-- Where the loop runs and what it buys, each mark named under it.
@@ -174,7 +173,8 @@
             <span class="coins__label">Buy and sell</span>
             <figure class="mark"><img src="/landing/eth.png" alt="" width="30" height="30" /><figcaption class="mark__name">ETH</figcaption></figure>
             <figure class="mark"><img src="/landing/cbbtc.png" alt="" width="30" height="30" /><figcaption class="mark__name">cbBTC</figcaption></figure>
-            <span class="coins__note">cbBTC, Coinbase's wrapped bitcoin, is valued at BTC's price.</span>
+            <figure class="mark"><img src="/landing/wbtc.png" alt="" width="30" height="30" /><figcaption class="mark__name">WBTC</figcaption></figure>
+            <span class="coins__note">cbBTC, Coinbase's wrapped bitcoin, is valued at BTC's price; WBTC at its own.</span>
           </div>
         </div>
       </section>

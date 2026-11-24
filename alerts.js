@@ -34,16 +34,17 @@ import {
   estimatedGainPct,
   estimateRate,
   isUsdPegged,
+  todayISO,
   intervalMs,
   marketOf,
   ASSETS,
   ASSET_META,
 } from './lib/calc.js';
-import { rateNow, cachedRateNow } from './fx.js';
+import { resolveRate, cachedRate } from './fx.js';
 import { marketPrices } from './prices.js';
 import { sendTelegramMessage } from './telegram.js';
 import { telegramConfig } from './config.js';
-import { n2, qty, coinAmount, fxRate, fmtDate, signedUsd, signedPct2 } from './format.js';
+import { n2, qty, fmtDate, signedUsd, signedPct2 } from './format.js';
 import { setting } from './env.js';
 
 /**
@@ -116,8 +117,9 @@ export const HOLDING = `
 // The trade's asset rides along, so the sweep judges each goal against its
 // own market.
 /**
- * The market of the trade aliased `t`, in SQL: 'BTC' for cbBTC, 'ETH' for
- * anything else, built from `ASSET_META` so it cannot drift from `marketOf`.
+ * The market of the trade aliased `t`, in SQL: 'BTC' for cbBTC, 'WBTC' for
+ * WBTC, 'ETH' for anything else, built from `ASSET_META` so it cannot drift
+ * from `marketOf`.
  * `ALERT_OFF_MARKET` is an alert whose goal is a price of the other market -
  * set before the trade's asset changed - which nothing may judge or send.
  */
@@ -389,7 +391,7 @@ export function alertMessage(trade, alert, price, fxNow = {}, { when = 'now' } =
     // the price, which is often the one somebody is waiting to buy at.
     `${market} reached your $${n2(alert.goal_price)} goal${at}`,
     '',
-    `Trade #${trade.id}: borrowed ${coinAmount(trade.borrow_amount, c)} ${c} on ${fmtDate(trade.borrow_date)}`,
+    `Trade #${trade.id}: borrowed ${n2(trade.borrow_amount)} ${c} on ${fmtDate(trade.borrow_date)}`,
     `Bought: ${qty(trade.buy_eth, trade)}`,
   ];
 
@@ -433,8 +435,8 @@ export function alertMessage(trade, alert, price, fxNow = {}, { when = 'now' } =
     const at = !marked
       ? ''
       : moved === null
-        ? ` (${c} at ${fxRate(rate, c)} today)`
-        : ` (${c} at ${fxRate(rate, c)} today, bought at ${fxRate(trade.buy_fx, c)}: ${signedUsd(moved)})`;
+        ? ` (${c} at ${rate.toFixed(4)} today)`
+        : ` (${c} at ${rate.toFixed(4)} today, bought at ${trade.buy_fx.toFixed(4)}: ${signedUsd(moved)})`;
     // The same gain over what the asset cost, signed the way the dollars are.
     const pct = estimatedGainPct(trade, d, price, fxNow);
     if (pct !== null) value.push(`Gain (%): ${signedPct2(pct)}`);
@@ -470,7 +472,7 @@ export function previewMessage(trade, goalPrice, price = null) {
 function cachedRateToday(trade) {
   const c = trade.borrow_currency;
   if (isUsdPegged(c)) return {};
-  const rate = cachedRateNow(c)?.rate;
+  const rate = cachedRate(c, todayISO())?.rate;
   return Number.isFinite(rate) && rate > 0 ? { [c]: rate } : {};
 }
 
@@ -530,7 +532,7 @@ async function fire(row, price, market, { when = 'now' } = {}) {
   // left to wait for. A sweep told to stop meanwhile claims nothing.
   const before = selectTrade().get(row.trade_id);
   if (!before) return;
-  const today = isUsdPegged(before.borrow_currency) ? null : await rateNow(before.borrow_currency);
+  const today = isUsdPegged(before.borrow_currency) ? null : await resolveRate(before.borrow_currency, todayISO());
   const fxNow = Number.isFinite(today?.rate) ? { [before.borrow_currency]: today.rate } : {};
   if (stopping || !db.open) return;
 

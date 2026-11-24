@@ -308,7 +308,7 @@ async function textFor(command, from = null) {
       // where they will arrive.
       setWatch(true, from);
       return `${await watchMessage()}\n\n<i>Watching. The prices every ${WATCH_EVERY} here until /unwatch${
-        holdingCount() === 0 ? ', sent while a trade holds ETH or cbBTC - none does now' : ''
+        holdingCount() === 0 ? ', sent while a trade holds ETH, cbBTC or WBTC - none does now' : ''
       }.</i>`;
     case 'unwatch':
       setWatch(false);

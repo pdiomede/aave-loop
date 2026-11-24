@@ -1,5 +1,5 @@
 /**
- * What ETH and BTC are worth right now.
+ * What ETH, BTC and WBTC are worth right now.
  *
  * The second module here that touches the network, and it is shaped like the
  * first one on purpose: a timeout so a stalled service cannot hold anything
@@ -15,10 +15,12 @@
  * deals in a number that is stale the moment it arrives. So the cache is a row
  * per market with the time on it, and every reader decides how old is too old.
  *
- * Two markets, `MARKETS` in lib/calc.js: ETH, and BTC, which is what a cbBTC
- * trade is valued at (see `ASSET_META`). This was `eth.js` while ETH was the
- * only one. Both come back from one request, so adding BTC cost no second
- * cooldown and no second share of the rate limit.
+ * Three markets, `MARKETS` in lib/calc.js: ETH; BTC, which is what a cbBTC
+ * trade is valued at (see `ASSET_META`); and WBTC, at its own price, fetched
+ * to value a WBTC trade and never shown on its own. This was
+ * `eth.js` while ETH was the only one. All come back from one request, so
+ * adding BTC and WBTC cost no second cooldown and no second share of the rate
+ * limit.
  */
 import { db, prepare } from './db.js';
 import { parseAmount, MARKETS } from './lib/calc.js';
@@ -33,7 +35,7 @@ const PRICE_URL = (setting('ETH_URL') || 'https://api.coingecko.com/api/v3').rep
 const OFFLINE = setting('ETH_OFFLINE') === '1';
 
 /** CoinGecko's id for each market. */
-const COIN_ID = { ETH: 'ethereum', BTC: 'bitcoin' };
+const COIN_ID = { ETH: 'ethereum', BTC: 'bitcoin', WBTC: 'wrapped-bitcoin' };
 
 /**
  * Every coin, one call, and every window anything here reports.
@@ -51,8 +53,9 @@ const MARKETS_PATH =
 
 /**
  * A fixed price, for trying the alert path without waiting for the market to
- * move. `ETHROUNDTRIP_ETH_PRICE` fixes ETH and `ETHROUNDTRIP_BTC_PRICE` fixes BTC; a fixed
- * market is never asked for, whatever the other does.
+ * move. `ETHROUNDTRIP_ETH_PRICE` fixes ETH, `ETHROUNDTRIP_BTC_PRICE` BTC and
+ * `ETHROUNDTRIP_WBTC_PRICE` WBTC; a fixed market is never asked for, whatever
+ * the others do.
  *
  * Read like any typed amount and held to the same limits as a fetched price.
  * `Number()` alone served -3450 and Infinity as ETH's price - the very values
@@ -73,7 +76,7 @@ function fixedFrom(key) {
   return n;
 }
 
-const FIXED = { ETH: fixedFrom('ETH_PRICE'), BTC: fixedFrom('BTC_PRICE') };
+const FIXED = { ETH: fixedFrom('ETH_PRICE'), BTC: fixedFrom('BTC_PRICE'), WBTC: fixedFrom('WBTC_PRICE') };
 
 // Longer than the 2.5s fx.js allows itself. That one can be asked four times
 // for a single save, so its timeouts multiply; this is asked once, and the
@@ -239,7 +242,7 @@ export function cachedMarketPrice(market) {
   };
 }
 
-/** Every market's cached price, `{ ETH, BTC }`, each a quote or null. */
+/** Every market's cached price, `{ ETH, BTC, WBTC }`, each a quote or null. */
 export function cachedMarketPrices() {
   return Object.fromEntries(MARKETS.map((m) => [m, cachedMarketPrice(m)]));
 }

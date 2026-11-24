@@ -17,6 +17,7 @@ import {
   summarize,
   estimatedGainUsd,
   isUsdPegged,
+  todayISO,
   cents,
   ethHeldNow,
   PLATFORM_META,
@@ -24,14 +25,15 @@ import {
   ASSETS,
   ASSET_META,
   MARKETS,
+  TICKER_MARKETS,
   assetOf,
   marketOf,
   priceFor,
 } from './lib/calc.js';
 import { marketPrices, priceStatus } from './prices.js';
-import { rateNow } from './fx.js';
+import { resolveRate } from './fx.js';
 import { priceFreshMs } from './alerts.js';
-import { units, fxRate, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
+import { units, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
 /**
  * Telegram refuses a message over 4096 characters, counted after its HTML is
@@ -74,14 +76,15 @@ const worthSaying = (age) => age === Infinity || (Number.isFinite(age) && age > 
 const fetchedWhen = (age) => (age === Infinity ? 'at an unknown time' : `${ageWords(age)} ago`);
 
 /**
- * Every market's price, ETH then BTC, a block each. `quotes` is `{ ETH, BTC }`
+ * The followed markets' prices (`TICKER_MARKETS`), ETH then BTC, a block each;
+ * WBTC, fetched only to value WBTC trades, is not one of them. `quotes` is `{ ETH, BTC, WBTC }`
  * as `marketPrices` answers it. A market with no price is named once at the
  * end with the reason, rather than leaving the other's figure unsaid.
  */
 export function priceText(quotes) {
   const blocks = [];
   const missing = [];
-  for (const market of MARKETS) {
+  for (const market of TICKER_MARKETS) {
     const quote = quotes?.[market];
     if (!quote || !Number.isFinite(quote.price)) {
       missing.push(market);
@@ -183,8 +186,8 @@ const selectHolding = () =>
 const heldRows = () => selectHolding().all().filter((t) => ethHeldNow(derive(t, derivedOn(t))) > 0);
 
 /**
- * `prices` is `{ ETH, BTC }` in dollars, and each row is valued at its own
- * asset's market (`priceFor`): a cbBTC position at BTC, never at ETH. `ages` is
+ * `prices` is `{ ETH, BTC, WBTC }` in dollars, and each row is valued at its own
+ * asset's market (`priceFor`): a cbBTC position at BTC, a WBTC one at WBTC. `ages` is
  * how old each of those prices is. `fxNow` is today's rate per borrowed coin,
  * the one the page's Open positions tile uses, so a euro position reads the
  * same figure in the chat as on the page (see `estimatedGainUsd`).
@@ -338,7 +341,7 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
     const less = gassed ? 'interest and fees' : 'interest';
     // A euro loan is marked at today's rate rather than the one it was bought
     // at, and a figure has to say how it was arrived at.
-    const at = [...marked].map((c) => `${c} at ${fxRate(fxNow[c], c)}`).join(', ');
+    const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');
     const move = movedKnown && !moveGap ? ` (${signedUsd(moved / 100)} of it from the move since purchase)` : '';
     head.push(
       `Unrealised ${escHtml(signedUsd(gain / 100))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
@@ -470,7 +473,7 @@ export function helpText(every = '20 minutes') {
     '<b>ETH Roundtrip</b>',
     '',
     '/price - ETH and BTC now, with 24h, 7d and 30d change',
-    '/holding - trades still holding ETH or cbBTC, one line each',
+    '/holding - trades still holding ETH, cbBTC or WBTC, one line each',
     '/summary - realized gain, annualized, closed, open and held',
     `/watch - send the ETH and BTC prices every ${every}`,
     '/unwatch - stop the price updates',
@@ -543,13 +546,14 @@ export async function holdingMessage() {
  */
 async function ratesToday(rows) {
   const coins = [...new Set(rows.map((t) => t.borrow_currency).filter((c) => !isUsdPegged(c)))];
+  const today = todayISO();
   const out = {};
   for (const c of coins) {
     try {
-      const hit = await rateNow(c);
+      const hit = await resolveRate(c, today);
       if (Number.isFinite(hit?.rate) && hit.rate > 0) out[c] = hit.rate;
     } catch {
-      // `rateNow` answers null rather than throwing; this is belt and braces
+      // `resolveRate` answers null rather than throwing; this is belt and braces
       // so a chat command is never left without a reply.
     }
   }

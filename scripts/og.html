@@ -51,7 +51,7 @@
 
   /* The right-hand card: where the loop runs, what it buys, what it borrows. */
   .card {
-    position: absolute; right: 72px; top: 92px; width: 480px;
+    position: absolute; right: 72px; top: 112px; width: 480px;
     padding: 30px 32px 32px;
     background: rgba(255, 255, 255, 0.86);
     border-radius: 22px;
@@ -69,15 +69,13 @@
     background: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14);
     object-fit: contain; flex: none;
   }
-  /* Six coins and their names no longer fit one line of the card once WBTC
-     joined: the names wrap to a line of their own under the logos. */
-  .stack { display: flex; flex-wrap: wrap; }
+  .stack { display: flex; }
   .stack img {
     width: 48px; height: 48px; border-radius: 50%;
     background: #ffffff; box-shadow: 0 0 0 3px #ffffff;
   }
   .stack img + img { margin-left: -10px; }
-  .stack-note { flex-basis: 100%; margin-top: 14px; white-space: nowrap; font-size: 19px; font-weight: 600; color: #37373c; }
+  .stack-note { margin-left: 14px; align-self: center; white-space: nowrap; font-size: 19px; font-weight: 600; color: #37373c; }
 </style>
 </head>
 <body>
@@ -88,9 +86,9 @@
     </div>
     <h1>Every loop,<br />measured.</h1>
     <p class="lede">
-      Borrow, buy <b>ETH</b> or <b>cbBTC</b>, sell, repay.<br />
-      What the round trip actually earned,<br />
-      after what it cost.
+      Borrow, buy <b>ETH</b>, <b>cbBTC</b> or <b>WBTC</b>,<br />
+      sell, repay. What the round trip<br />
+      actually earned, after what it cost.
     </p>
     <div class="pills">
       <span class="pill">Net of interest &amp; fees</span>
@@ -112,6 +110,7 @@
       <div class="marks">
         <span class="mark"><img class="disc" src="../landing/eth.png" alt="" />ETH</span>
         <span class="mark"><img class="disc" src="../landing/cbbtc.png" alt="" />cbBTC</span>
+        <span class="mark"><img class="disc" src="../landing/wbtc.png" alt="" />WBTC</span>
       </div>
     </div>
     <div class="row">
@@ -122,8 +121,7 @@
         <img src="../landing/dai.svg" alt="" />
         <img src="../landing/gho.svg" alt="" />
         <img src="../landing/eurc.svg" alt="" />
-        <img src="../landing/wbtc.png" alt="" />
-        <span class="stack-note">USD, EURC, DAI, GHO, WBTC</span>
+        <span class="stack-note">USD, EURC, DAI, GHO</span>
       </div>
     </div>
   </div>

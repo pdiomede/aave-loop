@@ -63,9 +63,9 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | --- | --- |
 | `ETHROUNDTRIP_DB` | database file. Always set it when testing. |
 | `ETHROUNDTRIP_FX_OFFLINE=1` / `ETHROUNDTRIP_ETH_OFFLINE=1` | no network lookups at all |
-| `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` | a fixed ETH / BTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
+| `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` / `ETHROUNDTRIP_WBTC_PRICE=96500` | a fixed ETH / BTC / WBTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
 | `ETHROUNDTRIP_BOT_OFF=1` | no Telegram long-poll |
-| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_BTC_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` | point at a mock (`BTC_URL` is CoinGecko for WBTC's daily rates; `FX_OFFLINE=1` stops it too) |
+| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` | point at a mock |
 | `ETHROUNDTRIP_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
 | `ETHROUNDTRIP_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
 
@@ -170,7 +170,7 @@ drift between a hand-written SQL predicate and `stages()`.
 `estimatedGainUsd(t, d, price, fxNow)` is the same for an open position's estimate:
 the header's Open positions tile (`openGainsUsd`), the table's `est` figures and their
 sort, Telegram's `/holding` and the alert message all print it, so one trade never
-reads two ways. `/holding` lists only trades still holding ETH or cbBTC (`ethHeldNow`), a
+reads two ways. `/holding` lists only trades still holding ETH, cbBTC or WBTC (`ethHeldNow`), a
 part-sold one with what it kept; a trade sold in full and not repaid is open (the
 tile and `/summary` count it) but not in `/holding`. It takes the price of the
 trade's market (`priceFor`) and today's rate per coin as arguments rather
@@ -188,10 +188,9 @@ it is a closing statement, so an open position is in no figure on it. It imports
 `calc.js` and `lib/logo.js`, the logo's PNG data written by `scripts/make-logo.mjs`
 (rerun it if `public/ETHRoundtrip_logo_96.png` changes; the checks fail until you do).
 It is one A4 page by construction (a year has at most 12 months, drawn in two
-columns of six, `CURRENCIES` 6 coins and `ASSETS` 2) and throws rather than draw past
+columns of six, `CURRENCIES` 5 coins and `ASSETS` 3) and throws rather than draw past
 the bottom margin, so a layout change that overflows fails `npm run check`; the
-fullest year, both assets and all six coins included, leaves about 1.5pt: WBTC's row
-took the rest, so the next row anywhere has to take room from elsewhere. It is ASCII throughout - text beyond it as octal
+fullest year, all three assets included, leaves about 8.5pt. It is ASCII throughout - text beyond it as octal
 escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
 `env.js`, `fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
@@ -324,23 +323,6 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   tied in that way (`data-field-of`). It starts empty: the platform is required and
   never guessed.
 
-### WBTC
-
-The one borrowed coin that is not a stablecoin. Its `peg` is `BTC`: a stage's
-rate is CoinGecko's daily `wrapped-bitcoin` price at 00:00 UTC (`fx.js`, keyless,
-so the past 365 days only; an older stage stays without a rate), and an open
-position's estimate uses WBTC's own live price (`rateNow`: CoinGecko's
-`simple/price`, held in memory ten minutes, never stored), not the BTC price cbBTC
-is marked at, so a WBTC that drifts from bitcoin shows before the loan is repaid;
-a WBTC loan holding cbBTC reads close to flat while the two agree. Each rate
-service has its own cooldown in `fx.js`; CoinGecko's keyless limit is shared with
-the ticker, and a 429 waits what it asks. Its amounts are 8 places (`coinDp`,
-`inCoin`, `coinUnits` in `lib/calc.js`) wherever a coin figure is held, checked or
-printed - page, Telegram (`coinAmount`/`fxRate` in `format.js`), CSV, Statement,
-and the server's and the form's "at least" minimum - and its rate prints in
-dollars. A purchase or sale's implied price is checked with `ethPriceInRange`, in
-WBTC per unit for WBTC. The ticker is written uppercase, `WBTC`, in code and copy.
-
 ### Platforms
 
 `PLATFORMS` / `PLATFORM_META` in `lib/calc.js` are where a trade ran (`aave`,
@@ -360,28 +342,32 @@ start closed, and keep their open/closed state in localStorage (`ethroundtrip-st
 
 ### Assets and markets
 
-A trade buys ETH or cbBTC: `ASSETS` / `ASSET_META` in `lib/calc.js`, stored lowercase
+A trade buys ETH, cbBTC or WBTC: `ASSETS` / `ASSET_META` in `lib/calc.js`, stored lowercase
 in `trades.asset`, `NOT NULL DEFAULT 'eth'` because ETH was the only choice before it
 (a fact, unlike the platform). `assetOf(t)` reads it, ETH for a row that names none.
 `buy_eth` / `sell_eth` and `derive`'s `ethHeld` / `retainedEth` / `costOfSoldEth` keep
 their names and hold units of the trade's asset; the CSV heads them `buy_qty` /
 `sell_qty`, and the swaps' "Costs & Fees" (`buy_gas_usd` / `sell_gas_usd`, gas plus
-the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC), and
+the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC and WBTC), and
 every "as printed" sum of quantities (`/holding`, `/summary`) uses it per asset and
 never adds two assets together. A sale is partial only if what it keeps prints as more
 than zero to those places: `derive`'s `isPartialSale` compares Bought and Sold as printed
 (`qtyAsPrinted`), and `retainedEth` after a partial sale is their printed difference, so
 the card's lines add up. 0.00004 ETH kept is a full exit, 0.00004 cbBTC a holding.
 
-Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC']`, and cbBTC's
-`market` is BTC. `prices.js` (was `eth.js`) fetches both in one CoinGecko request,
+Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC', 'WBTC']`,
+cbBTC's `market` is BTC and WBTC's is WBTC, its own price (`wrapped-bitcoin`), so a
+WBTC that drifts from bitcoin shows. Only `TICKER_MARKETS`, ETH and BTC, are shown
+for themselves - the header's ticker, `/price`, `/watch` - by the user's choice; WBTC's
+price is fetched to value WBTC trades and their alerts. `prices.js` (was `eth.js`)
+fetches all three in one CoinGecko request,
 reads each coin by its id, and caches a row per market in `market_price` (which
 replaced the single-row `eth_price`, left in place for an older copy). A partial
 answer caches what came back without the cooldown, so a missing BTC never holds ETH
 back; a coin left out counts as asked (`missingAt`) for as long as the caller would
 accept a cached price, so it costs one request per window, not one per caller. The
 page's `adoptQuotes` judges "newer" by the server's clock (`fetchedAt + ageMs`), so a
-quote stamped ahead of it cannot freeze the banner. Callers pass a `{ ETH, BTC }` map (`openGainsUsd`, `holdingText`) and pick a
+quote stamped ahead of it cannot freeze the banner. Callers pass a `{ ETH, BTC, WBTC }` map (`openGainsUsd`, `holdingText`) and pick a
 trade's price with `priceFor(t, prices)`. An alert's goal is a price of its market,
 stored on the alert (`alerts.market`, NULL = ETH); a PATCH that changes the asset
 closes the armed alert in the same transaction, and the sweep skips any goal whose
@@ -405,9 +391,7 @@ card of its own; a closing statement has no nothing-bought row.
   half. This rule has been broken and re-fixed several times — check it whenever you
   touch a formatter.
 - **A money figure is built from figures as printed.** `derive` takes every amount,
-  dollar conversion and fee as its card prints it - dollars to the cent (`asPrinted`),
-  a coin amount to the coin's own places (`inCoin`: the cent, or 8 for WBTC, from
-  `CURRENCY_META[c].dp`; never round a coin amount with `cents`) - and
+  dollar conversion and fee to the cent as its card prints it (`asPrinted`), and
   every result is a difference of those, so a stage card adds up line by line; the
   currency effect is what is left of the loan cost after the interest. Every total in
   `summarize`, `summaryReport`, `openGainsUsd` and `/holding` (`report.js`) then adds

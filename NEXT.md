@@ -25,18 +25,18 @@ Left:
 - **21 Nov:** check that the night's backup ran: `ls -lt /home/paolo/backup/aaveloop`
   should show a `myaave-...db` from about 03:00 UTC, and its log no error.
 
-## 2.2.0 (24 Nov): WBTC as a borrowed coin
+## 2.2.0 (24 Nov): WBTC as an asset to buy
 
-Deploy as in step 1 below (`git pull`, restart). No nginx, settings or BotFather
-change: no inline script changed, and `wbtc.png` sits in `landing/` beside the other
-coins. Then check:
+Deploy as in step 1 below (`git pull`, restart). No nginx or settings change: no
+inline script changed, and `wbtc.png` sits in `landing/` beside the other logos.
+In BotFather, paste the command list from step 4 below again: `/holding` now says
+"ETH, cbBTC or WBTC". Then check:
 
-- A new trade's Currency picker lists WBTC, with its logo, last after USDT; the
-  landing page's "Borrow in any of" row shows it, with no password asked
+- The Bought card's asset picker offers WBTC after cbBTC, with its logo; a WBTC
+  quantity keeps all 8 places. The header still shows ETH and BTC only.
+- The landing page's "Buy and sell" row shows WBTC, with no password asked
   (`curl -sI https://ethroundtrip.com/landing/wbtc.png` answers 200).
-- A WBTC trade dated within the last year gets its rates (the card says "at
-  $NN,NNN.NN on ..."), and amounts keep all 8 places.
-- The social card is redrawn as `og6.png`, with WBTC under Borrows; `og5.png` is gone.
+- The social card is redrawn as `og6.png`, with WBTC under Buys; `og5.png` is gone.
   Check it is served with no password asked, and the only one the page names:
 
   ```bash
@@ -180,7 +180,7 @@ Send `/setcommands` to @BotFather, pick the bot, and paste:
 
 ```
 price - ETH and BTC prices now, with 24h, 7d and 30d change
-holding - trades still holding ETH or cbBTC, one line each
+holding - trades still holding ETH, cbBTC or WBTC, one line each
 summary - realized gain, annualized, closed, open and held
 watch - send the ETH and BTC prices every 20 minutes
 unwatch - stop the price updates
@@ -251,10 +251,5 @@ Accepted for now, worth knowing:
   alerts; trades; Telegram; the database; the interface and pagination; the price
   banner; the landing page; the upgrade from 2.1.7; exchange rates; the API; the
   config and shell scripts; cbBTC end to end; keyboard, screen reader and phones.
-- **WBTC's rates need CoinGecko's free tier,** which answers for the past 365 days
-  only and limits requests per minute (shared with the ETH and BTC ticker). Saving
-  several WBTC stages in a quick burst can hit the limit; those stages show "no rate"
-  and the hourly refresh fills them in one request. A WBTC trade dated more than a
-  year back stays without a rate.
 - **Version:** 2.2.0 went out on 24 Nov, and the rule is one release a day. Work from
   the next day goes under `## [Unreleased]` and gets the next number.

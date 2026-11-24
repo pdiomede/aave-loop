@@ -15,12 +15,12 @@ import {
   ASSETS,
   ASSET_META,
   MARKETS,
+  TICKER_MARKETS,
   assetOf,
   marketOf,
   priceFor,
   FX_STAGES,
   isUsdPegged,
-  coinDp,
   gasKey,
   openGainsUsd,
   estimatedGainUsd,
@@ -80,31 +80,18 @@ function signedUsd(v) {
 }
 
 /**
- * A coin amount carries its own ticker instead of a dollar sign. The cards
- * are all denominated in the coin that was borrowed, so "32,000.00 USDT"
+ * A stablecoin amount carries its own ticker instead of a dollar sign. The
+ * cards are all denominated in the coin that was borrowed, so "32,000.00 USDT"
  * reads in one line. Prices stay in dollars, since ETH and BTC are quoted in dollars.
- * To the coin's own places: the cent, or 8 for WBTC, where 0.01 is hundreds
- * of dollars.
  */
 function money(v, currency) {
   if (!isNum(v)) return '';
-  const dp = coinDp(currency);
-  return `${v < 0 && !printsZero(v, dp) ? '-' : ''}${amount(v, dp)} ${currency}`;
+  return `${v < 0 && !printsZero(v, USD_DP) ? '-' : ''}${amount(v, USD_DP)} ${currency}`;
 }
 
 function signedMoney(v, currency) {
   if (!isNum(v)) return '';
-  const dp = coinDp(currency);
-  return `${printsZero(v, dp) ? '' : v < 0 ? '-' : '+'}${amount(v, dp)} ${currency}`;
-}
-
-/**
- * A rate as its card states it: four places for a coin worth about a dollar,
- * and in dollars for WBTC, whose rate is bitcoin's price - "at $97,123.45",
- * where "at 97123.4500" read as a misprint.
- */
-function fmtRate(rate, currency) {
-  return coinDp(currency) === 2 ? rate.toFixed(4) : usd(rate);
+  return `${printsZero(v, USD_DP) ? '' : v < 0 ? '-' : '+'}${amount(v, USD_DP)} ${currency}`;
 }
 
 /** A quantity of `t`'s asset, to its own decimals, without the ticker. */
@@ -256,7 +243,7 @@ const TIPS = {
   avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
     "Every fee on this tab's trades, open ones too: the borrow and repay gas, the swaps' costs and fees, " +
-    'and the gas to lend and unstake the ETH or cbBTC. Unrecorded ones are counted below.',
+    'and the gas to lend and unstake the ETH, cbBTC or WBTC. Unrecorded ones are counted below.',
   best:
     "The largest dollar result among closed trades that have one. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
@@ -268,7 +255,7 @@ const TIPS = {
     'The weakest annualized return among closed trades with a dollar result, or the biggest loss by rate. ' +
     'Trades whose rate cannot be worked out are left out, not counted as zero.',
   cur: {
-    currency: 'The coin borrowed. Trades are grouped by what you borrowed.',
+    currency: 'The stablecoin borrowed. Trades are grouped by what you borrowed.',
     closed: 'Repaid trades in this currency.',
     open: 'Trades in this currency not yet repaid.',
     borrowed:
@@ -303,7 +290,7 @@ const TIPS = {
   alerts: {
     trade:
       'The trade the goal is on. A new goal replaces one not yet reached, and adds a row otherwise; a reached goal still waiting to be sent is kept, as FAILED.',
-    goal: "The price to wait for, in USD: ETH's for an ETH trade, BTC's for a cbBTC one.",
+    goal: "The price to wait for, in USD: ETH's for an ETH trade, BTC's for a cbBTC one, WBTC's for a WBTC one.",
     direction:
       "Set when saved, against the market's price at that moment, or the purchase price when no recent price could be had. A goal above it waits for a rise; below it, for a fall.",
     status:
@@ -317,7 +304,7 @@ const TIPS = {
   },
 };
 
-// Artwork for the coins we have it for. The rest fall back to a
+// Artwork for the stablecoins we have it for. The rest fall back to a
 // tinted circle carrying the ticker.
 const COIN_ART = {
   USDC: '/usdc.svg',
@@ -325,7 +312,6 @@ const COIN_ART = {
   DAI: '/dai.svg',
   GHO: '/gho.svg',
   EURC: '/eurc.svg',
-  WBTC: '/wbtc.png',
 };
 
 function coin(currency) {
@@ -349,9 +335,9 @@ function coin(currency) {
  * its own, which also puts the provenance directly under the number it
  * explains rather than trailing off the edge of the card.
  */
-function fxNote(usdValue, leg, currency) {
+function fxNote(usdValue, leg) {
   if (!isNum(usdValue)) return RATE_MISSING;
-  const at = leg && isNum(leg.rate) ? `<span class="fx-note__rate">at ${fmtRate(leg.rate, currency)}${
+  const at = leg && isNum(leg.rate) ? `<span class="fx-note__rate">at ${leg.rate.toFixed(4)}${
     leg.date ? ` on ${fmtDate(leg.date)}` : ''
   }</span>` : '';
   return `<span class="fx-note__usd">${usd(usdValue)}</span>${at}`;
@@ -694,7 +680,7 @@ const state = {
   statsOpen: loadStatsOpen(),
   page: 1,
   // Price alerts, keyed by trade id, plus what the server knows about where an
-  // alert would go and what ETH and BTC last cost (`{ ETH, BTC }`). All three
+  // alert would go and what each market last cost (`{ ETH, BTC, WBTC }`). All three
   // are fetched once at boot and kept in step by the writes themselves, so a
   // card can read them synchronously while it renders.
   alerts: {},
@@ -706,8 +692,8 @@ const state = {
   alertLog: null,
   alertLogError: null,
   alertsPage: 1,
-  // What ETH and BTC cost, `{ ETH, BTC }`, for the ticker in the header and
-  // every estimate. Deliberately not `alertPrices` above: that one belongs to
+  // What each market costs, `{ ETH, BTC, WBTC }`, for the ticker in the header
+  // (ETH and BTC only, `TICKER_MARKETS`) and every estimate. Deliberately not `alertPrices` above: that one belongs to
   // the alert window, is refreshed on its own by `loadAlerts({ refresh: true
   // })`, and arrives through a call that also rewrites `state.alerts`. Polling
   // for a header figure through that would put a second writer on the
@@ -880,7 +866,7 @@ const priceNow = (t) => {
   return isNum(p) ? p : null;
 };
 
-/** `{ ETH, BTC }` as plain numbers, for `openGainsUsd`. */
+/** `{ ETH, BTC, WBTC }` as plain numbers, for `openGainsUsd`. */
 const priceMap = () => Object.fromEntries(MARKETS.map((m) => [m, state.prices[m]?.price ?? null]));
 
 /**
@@ -991,12 +977,10 @@ async function loadPrices() {
  * under Open positions can mark a euro loan the way it marks the ETH or BTC: at today's
  * figure.
  *
- * The server resolves it (`rateNow`): for a euro coin from the ECB's daily
- * rate it already caches - there is no live quote, and the estimate is rough
- * enough not to want one; for WBTC, its own live price, since bitcoin can move
- * more in a day than the euro in a month. Asked at most every half hour:
- * today's euro rate is provisional until the ECB publishes, so the server goes
- * past its cache for it each time it is asked.
+ * The server resolves it, from the ECB's daily rate it already caches - there
+ * is no live quote, and the estimate is rough enough not to want one. Asked at
+ * most every half hour: today's rate is provisional until the ECB publishes, so
+ * the server goes past its cache for it each time it is asked.
  *
  * A rate that could not be had keeps the one already held, and with none the
  * trade's own stored rates stand in (see `openGainsUsd`).
@@ -1020,7 +1004,7 @@ async function loadFxNow() {
   const today = todayISO();
   const got = await Promise.all(
     wanted.map((c) =>
-      api(`/api/fx/rate?currency=${encodeURIComponent(c)}&date=${today}&live=1`)
+      api(`/api/fx/rate?currency=${encodeURIComponent(c)}&date=${today}`)
         .then((body) => [c, body?.rate])
         .catch(() => [c, null]),
     ),
@@ -1053,7 +1037,7 @@ function renderTicker() {
   const mount = document.getElementById('price-ticker');
   if (!mount) return;
 
-  const rows = MARKETS.map((market) => [market, state.prices[market]])
+  const rows = TICKER_MARKETS.map((market) => [market, state.prices[market]])
     .filter(([, q]) => q && isNum(q.price))
     .map(([market, q]) => {
       // Every space in here is real, not indentation: the gaps between these
@@ -1471,8 +1455,8 @@ function borrowFields(t = {}, { platform = false } = {}) {
       : ''
   }
     ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
-    ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The coin you borrowed: a stablecoin or WBTC.', value: unitOf(t), options: CURRENCIES })}
-    ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Coins borrowed.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: CURRENCY_META[unitOf(t)]?.placeholder ?? '25000' })}
+    ${field({ name: 'borrow_currency', label: 'Currency', tip: 'The stablecoin you borrowed.', value: unitOf(t), options: CURRENCIES })}
+    ${field({ name: 'borrow_amount', label: 'Amount borrowed', tip: 'Stablecoins borrowed.', type: 'number', value: t.borrow_amount ?? '', suffix: unitOf(t), placeholder: '25000' })}
     ${field({ name: 'borrow_apr', label: 'Borrow APR', tip: 'Borrow rate on the day, as a percent.', type: 'number', value: t.borrow_apr ?? '', suffix: '%', placeholder: '4.27' })}
     ${gasField(t, 'borrow_gas_usd', 'Gas fee', 'Gas paid to borrow, in USD. Optional.')}
   </div>`;
@@ -1501,7 +1485,7 @@ function buyFields(t) {
   const { ticker, placeholder } = ASSET_META[assetOf(t)];
   return `<div class="grid">
     ${field({ name: 'buy_date', label: 'Purchase date', tip: `Day you swapped the loan into ${ticker}.`, type: 'date', value: t.buy_date ?? t.borrow_date, autofocus: true })}
-    ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Coins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
+    ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Stablecoins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
     ${field({ name: 'buy_eth', label: `${ticker} purchased`, tip: `${ticker} received from the swap.`, type: 'number', value: t.buy_eth ?? '', suffix: ticker, placeholder })}
     ${gasField(t, 'buy_gas_usd', SWAP_FEE, `What the swap into ${ticker} cost, in USD: gas plus any swap or aggregator fee.`, true)}
     ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', `Gas paid to supply the ${ticker} to the lending platform, in USD. Optional.`)}
@@ -1512,8 +1496,8 @@ function sellFields(t) {
   const { ticker } = ASSET_META[assetOf(t)];
   return `<div class="grid">
     ${field({ name: 'sell_date', label: 'Sale date', tip: `Day you swapped the ${ticker} back.`, type: 'date', value: t.sell_date || todayISO(), autofocus: true })}
-    ${field({ name: 'sell_amount', label: 'Amount received', tip: 'Coins received from the sale.', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
-    ${field({ name: 'sell_eth', label: `${ticker} sold`, tip: `${ticker} swapped back to the borrowed coin.`, type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: ticker })}
+    ${field({ name: 'sell_amount', label: 'Amount received', tip: 'Stablecoins received from the sale.', type: 'number', value: t.sell_amount ?? '', suffix: unitOf(t) })}
+    ${field({ name: 'sell_eth', label: `${ticker} sold`, tip: `${ticker} swapped back to stablecoins.`, type: 'number', value: t.sell_eth ?? t.buy_eth ?? '', suffix: ticker })}
     ${gasField(t, 'sell_unstake_gas_usd', 'Gas fee to unstake', `Gas paid to withdraw the ${ticker} from the lending platform, in USD. Optional.`)}
     ${gasField(t, 'sell_gas_usd', SWAP_FEE, `What the swap out of ${ticker} cost, in USD: gas plus any swap or aggregator fee.`, true)}
   </div>`;
@@ -1715,7 +1699,7 @@ function refreshHints(form, trade, stage) {
     const annual = isNum(after.pct) ? `<br><strong>${pct(after.pct)}</strong> annualized` : '';
     const realized = after.stages.repaid && isNum(after.grossGain);
     set('repay_amount', isUsdPegged(c) && isNum(after.netGain)
-      ? `Net gain <strong class="${gainClass(after.netGain, coinDp(c))}">${signedMoney(after.netGain, c)}</strong>${
+      ? `Net gain <strong class="${gainClass(after.netGain)}">${signedMoney(after.netGain, c)}</strong>${
           isNum(after.netGainUsd) ? ` (${signedUsd(after.netGainUsd)})` : ''
         }${annual}`
       : realized && isNum(after.netGainUsd)
@@ -1723,7 +1707,7 @@ function refreshHints(form, trade, stage) {
             isNum(after.netGain) ? ` (${signedMoney(after.netGain, c)})` : ''
           }${annual}`
         : realized && isNum(after.netGain)
-          ? `Net gain <strong class="${gainClass(after.netGain, coinDp(c))}">${signedMoney(after.netGain, c)}</strong>${asSaved}`
+          ? `Net gain <strong class="${gainClass(after.netGain)}">${signedMoney(after.netGain, c)}</strong>${asSaved}`
           : realized
             ? 'Net gain <span class="muted">worked out in dollars on save</span>'
           : isNum(after.suggestedRepay)
@@ -1819,7 +1803,7 @@ function resultRow(row, row2, d, label, native, usdValue, c, rowCls = '') {
   // Right aligned, both lines: left to itself the short dollar figure started
   // flush with the longer coin figure under it, short of the card's edge.
   const cls = ['stage__row--result', rowCls].filter(Boolean).join(' ');
-  if (d.isUsdPegged) return row(label, signedMoney(native, c), gainClass(native, coinDp(c)), cls);
+  if (d.isUsdPegged) return row(label, signedMoney(native, c), gainClass(native), cls);
   const under = isNum(native) ? signedMoney(native, c) : '';
   // Only reached on a card whose stage is done, so a missing dollar figure is a
   // missing rate, and the coin figure underneath still stands when it is known.
@@ -1873,7 +1857,7 @@ function stageSummary(stage, t, d) {
           ? `<span class="platform-name">${platformMark(t.platform)}${esc(PLATFORM_META[t.platform].label)}</span>`
           : '<span class="muted">-</span>') +
         row('Date', fmtDate(t.borrow_date)) +
-        row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow, c)) +
+        row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow)) +
         row('APR', pct(t.borrow_apr), '', 'stage__row--gap') +
         row(d.stages.repaid ? 'Loan length' : 'Running for', isNum(d.days) ? `${d.days} day${d.days === 1 ? '' : 's'}` : '') +
         gasRow('borrow')
@@ -1881,7 +1865,7 @@ function stageSummary(stage, t, d) {
     case 'buy':
       return (
         row('Date', fmtDate(t.buy_date)) +
-        row2('Spent', money(t.buy_amount, c), fxNote(d.buyUsd, d.fx.buy, c)) +
+        row2('Spent', money(t.buy_amount, c), fxNote(d.buyUsd, d.fx.buy)) +
         row('Bought', assetAmount(t.buy_eth, t), '', 'stage__row--gap') +
         // ETH and cbBTC are quoted in dollars, so this column is converted.
         // Dividing a euro amount by a quantity of ETH gives euros per ETH,
@@ -1896,11 +1880,11 @@ function stageSummary(stage, t, d) {
     case 'sell':
       return (
         row('Date', fmtDate(t.sell_date)) +
-        row2('Received', money(t.sell_amount, c), fxNote(d.sellUsd, d.fx.sell, c)) +
+        row2('Received', money(t.sell_amount, c), fxNote(d.sellUsd, d.fx.sell)) +
         row('Sold', assetAmount(t.sell_eth, t), '', 'stage__row--gap') +
         row(`${tickerOf(t)} price`, isNum(d.sellPriceUsd) ? usd(d.sellPriceUsd) : RATE_MISSING) +
         (d.isPartialSale
-          ? row2(`Cost of ${tickerOf(t)} sold`, money(d.costOfSoldEth, c), fxNote(d.costOfSoldEthUsd, d.fx.buy, c))
+          ? row2(`Cost of ${tickerOf(t)} sold`, money(d.costOfSoldEth, c), fxNote(d.costOfSoldEthUsd, d.fx.buy))
           : '') +
         (d.isPartialSale ? row('Still held', assetAmount(d.retainedEth, t)) : '') +
         // No single rate to name: the proceeds are converted at the sale's
@@ -1922,7 +1906,7 @@ function stageSummary(stage, t, d) {
       // for what it is and the two parts are shown separately.
       return (
         row('Date', fmtDate(t.repay_date)) +
-        row2('Repaid', money(t.repay_amount, c), fxNote(d.repayUsd, d.fx.repay, c)) +
+        row2('Repaid', money(t.repay_amount, c), fxNote(d.repayUsd, d.fx.repay)) +
         row2(
           d.isUsdPegged ? 'Interest' : 'Loan cost',
           money(d.interestPaid ?? d.accruedInterest, c),
@@ -2315,7 +2299,7 @@ function renderTable() {
   if (state.trades.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No trades yet</h3>
-      <p>Start with the coin you borrowed, on Aave, Ether.fi or Morpho, then add each stage as it happens.</p>
+      <p>Start with the stablecoin you borrowed, on Aave, Ether.fi or Morpho, then add each stage as it happens.</p>
     </div>`;
     return;
   }
@@ -2727,7 +2711,7 @@ const ECB_RATES_URL =
 /**
  * The note under the Stats view.
  *
- * One sentence, scoped. Four of the six currencies are pegged, and `rateOf`
+ * One sentence, scoped. Four of the five currencies are pegged, and `rateOf`
  * in lib/calc.js hands a pegged coin a literal 1, so on a USDC ledger - the
  * default - no figure is converted at any rate at all. "Amounts in a currency
  * other than the dollar" is what keeps that true, and it is why the note does
@@ -2737,20 +2721,17 @@ const ECB_RATES_URL =
  * business days only, and db.js stores Friday's rate against a Sunday trade.
  * Without it the link is an invitation to look up a date that has no row.
  *
- * WBTC is the one coin the ECB does not price, so it is named with its own
- * source: CoinGecko's daily price, taken at 00:00 UTC (see fx.js).
- *
  * Nothing in here is data, so nothing is escaped. The anchor's attributes
  * follow the one external link in index.html, and it says that it leaves the
  * app the way the theme toggle says what it does.
  */
 const SUMMARY_FOOT = `<p class="summary__foot muted">
     Every figure is in US dollars, apart from each coin's own total under By
-    currency's Borrowed. Euro coins are converted at the
+    currency's Borrowed. Amounts in a currency other than the dollar are
+    converted at the
     <a href="${ECB_RATES_URL}" target="_blank" rel="noopener noreferrer">European
     Central Bank reference rate<span class="sr-only"> (opens in a new tab)</span></a>
-    for the day of each transaction, or for the last business day before it;
-    WBTC at CoinGecko's price at 00:00 UTC that day.
+    for the day of each transaction, or for the last business day before it.
   </p>`;
 
 // A tray with an arrow into it, drawn like the bell: the file comes down to you.
@@ -3259,7 +3240,7 @@ function renderAlerts() {
   if (state.alertLog.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No alerts yet</h3>
-      <p>Set a goal price from the bell on a trade that is still holding ETH or cbBTC.
+      <p>Set a goal price from the bell on a trade that is still holding ETH, cbBTC or WBTC.
          Every alert is kept here, including the ones already sent.</p>
     </div>`;
     return;
@@ -3699,7 +3680,7 @@ function alertDialogBody(t, d, a) {
           type: 'number',
           value: goal,
           prefix: '$',
-          placeholder: market === 'BTC' ? '100000' : '3000',
+          placeholder: market === 'ETH' ? '3000' : '100000',
           autofocus: true,
         })}
         ${noBasis}
@@ -4625,9 +4606,6 @@ function wire() {
     if (input.name === 'borrow_currency') {
       const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');
       if (unit) unit.textContent = input.value;
-      // And its example: 25000 is a loan in dollars, not in WBTC.
-      const amountInput = form.querySelector('input[name="borrow_amount"]');
-      if (amountInput) amountInput.placeholder = CURRENCY_META[input.value]?.placeholder ?? '25000';
     }
 
     // The form's own, not the input's: the Bought card's asset picker sits in
