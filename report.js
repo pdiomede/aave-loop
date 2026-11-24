@@ -115,7 +115,19 @@ export function priceText(quotes) {
   }
 
   if (missing.length) {
-    const why = priceStatus().lastError || 'No price has come back yet.';
+    // The missing markets' own problems, when the last answer named them; the
+    // whole request's error otherwise. Never another market's: `lastError`
+    // joins every market's, and a missing BTC was explained as "The BTC price
+    // did not come back. The WBTC price did not come back." under a /price
+    // that shows no WBTC.
+    const { lastError, problems = {} } = priceStatus();
+    const own = missing.map((m) => problems[m]).filter(Boolean);
+    const why =
+      own.length > 0
+        ? own.join(' ')
+        : Object.keys(problems).length === 0 && lastError
+          ? lastError
+          : 'No price has come back yet.';
     blocks.push(`Could not get the ${missing.join(' or ')} price.\n${escHtml(why)}`);
   }
 

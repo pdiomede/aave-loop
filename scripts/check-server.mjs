@@ -293,6 +293,19 @@ await check('a repayment below the principal is refused', async () => {
   assert.equal(r.data.field, 'repay_amount');
 });
 
+await check('the repayment errors quote the loan as the card prints it', async () => {
+  // A loan typed as 10,000.005 prints as 10,000.01, and the errors used to say
+  // "10,000.005", a figure shown nowhere else.
+  const t = (await api('POST', '/api/trades', borrow({ borrow_amount: '10000.005' }))).data;
+  await api('PATCH', `/api/trades/${t.id}`, { ...buy, buy_amount: '10000', buy_eth: '4' });
+  await api('PATCH', `/api/trades/${t.id}`, { sell_date: '2026-09-20', sell_amount: '11000', sell_eth: '4', sell_gas_usd: '1' });
+  const under = await api('PATCH', `/api/trades/${t.id}`, { repay_date: '2026-09-20', repay_amount: '10000' });
+  assert.equal(under.data.error, 'A repayment cannot be less than the 10,000.01 borrowed.');
+  const over = await api('PATCH', `/api/trades/${t.id}`, { repay_date: '2026-09-20', repay_amount: '30000' });
+  assert.equal(over.data.error, 'That is a long way above the 10,000.01 borrowed. Check the figure.');
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 await check('an exchange rate in a request is refused', async () => {
   const r = await api('PATCH', `/api/trades/${t1.id}`, { buy_fx: '2' });
   assert.equal(r.status, 400);
@@ -954,6 +967,22 @@ await check('once shutdown begins, the sweep claims nothing more', async () => {
 /* ------------------------------------------------------------- bot reports */
 
 const { holdingText, helpText } = await import('../report.js');
+
+await check('/price explains a missing price with its own market\'s problem, never WBTC\'s', async () => {
+  const { priceText } = await import('../report.js');
+  const { marketPrices } = await import('../prices.js');
+  // ETH answers; BTC and WBTC do not. The reason under the missing BTC used to
+  // be every market's problem joined, WBTC's included.
+  mock.btc = null;
+  mock.wbtc = null;
+  const quotes = await marketPrices({ maxAgeMs: 0 });
+  const text = priceText({ ETH: quotes.ETH });
+  assert.match(text, /Could not get the BTC price\.\nThe BTC price did not come back\.$/);
+  assert.doesNotMatch(text, /WBTC/);
+  mock.btc = 90000;
+  mock.wbtc = 89900;
+  await marketPrices({ maxAgeMs: 0 });
+});
 
 await check('/price and /watch give ETH and BTC only, and say which could not be had', async () => {
   const { priceText, watchMessage } = await import('../report.js');

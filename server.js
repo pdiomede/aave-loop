@@ -440,9 +440,14 @@ function checkChronology(row) {
     // them: a raw 0.005 of slack let 10,000.00 repay a 10,000.005 loan, which
     // the cards print as 10,000.01 - interest of -$0.01 and a flat trade
     // scored a win.
+    //
+    // Quoted as printed too, to the cent as the card and the form show it: the
+    // default format quoted a loan typed as 10,000.005 as "10,000.005", a
+    // figure shown nowhere else.
+    const loan = row.borrow_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     if (cents(row.repay_amount) < cents(row.borrow_amount)) {
       throw new BadRequest(
-        `A repayment cannot be less than the ${row.borrow_amount.toLocaleString('en-US')} borrowed.`,
+        `A repayment cannot be less than the ${loan} borrowed.`,
         'repay_amount',
       );
     }
@@ -450,7 +455,7 @@ function checkChronology(row) {
     // that far out is a slipped digit rather than a real number.
     if (row.repay_amount > row.borrow_amount * 2) {
       throw new BadRequest(
-        `That is a long way above the ${row.borrow_amount.toLocaleString('en-US')} borrowed. Check the figure.`,
+        `That is a long way above the ${loan} borrowed. Check the figure.`,
         'repay_amount',
       );
     }

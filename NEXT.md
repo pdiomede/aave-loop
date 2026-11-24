@@ -233,11 +233,6 @@ Accepted for now, worth knowing:
   do not start an older checkout against the same `ETHROUNDTRIP_DB`, and do not
   restore a backup taken on 2.2.0 onto an older install. A deploy is safe: it
   replaces the one copy.
-- **`/price` can name WBTC in its failure reason** ("The WBTC price did not come
-  back") when ETH or BTC is missing too, though WBTC is never shown there. Low
-  severity, from the 24 Nov bug hunt; its two other findings (a missing or old
-  WBTC price unexplained on the page, a leftover ETH quantity not flagged after
-  switching to WBTC) were fixed the same day.
 - **A WBTC trade dated before late 2020 is refused** by the purchase price check,
   whose WBTC range starts at $10,000 (bitcoin was below that until October 2020).
   Widen `ASSET_META.wbtc.priceRange` in `lib/calc.js` if one ever needs recording.
@@ -255,9 +250,8 @@ Accepted for now, worth knowing:
   - Two copies of the app refreshing rates at once: one could write an older
     stand-in over a real rate the other had just written. The next refresh corrects
     it, so at worst it lasts an hour.
-- **Small things seen and left:** a PATCH with a bad body to a trade that does not
-  exist answers 400, not 404; and the repayment error quotes the borrowed amount as
-  typed (10,000.005), where the card prints 10,000.01.
+- **Small thing seen and left:** a PATCH with a bad body to a trade that does not
+  exist answers 400, not 404.
 - **A stage form left open while the same trade is edited elsewhere saves over
   that edit** (last write wins); only the alert window checks that the trade still
   is what it was drawn for. Seen in the 20 Nov bug hunt and left: one user, one tab

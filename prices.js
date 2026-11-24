@@ -101,7 +101,7 @@ const MAX_COOLDOWN_MS = 3_600_000;
 // `cooldownUntil` is the wall-clock time, for showing; the test runs on the
 // monotonic clock. Timed by `Date.now()`, a clock stepped back six hours kept
 // lookups asleep for six hours more, against a ceiling of one.
-const state = { cooldownUntil: 0, sleepUntil: 0, lastError: null, lastTriedAt: null };
+const state = { cooldownUntil: 0, sleepUntil: 0, lastError: null, lastTriedAt: null, problems: {} };
 
 /**
  * When a market was last asked for and left out of, or wrong in, an otherwise
@@ -124,6 +124,11 @@ export function priceStatus() {
     sleeping: monoNow() < state.sleepUntil,
     cooldownUntil: state.cooldownUntil || null,
     lastError: state.lastError,
+    // Each market's own problem from the last answer, `{ WBTC: '...' }`, so a
+    // message about one market quotes only its own: `lastError` joins them,
+    // and /price said "The WBTC price did not come back" under a missing BTC.
+    // Empty after a failure of the whole request, which `lastError` says.
+    problems: { ...state.problems },
     lastTriedAt: state.lastTriedAt,
   };
 }
@@ -132,8 +137,9 @@ function networkIsOut() {
   return OFFLINE || monoNow() < state.sleepUntil;
 }
 
-function recordFailure(message, cooldownMs = COOLDOWN_MS) {
+function recordFailure(message, cooldownMs = COOLDOWN_MS, problems = {}) {
   state.lastError = message;
+  state.problems = problems;
   state.lastTriedAt = new Date().toISOString();
   state.cooldownUntil = Date.now() + cooldownMs;
   state.sleepUntil = monoNow() + cooldownMs;
@@ -141,6 +147,7 @@ function recordFailure(message, cooldownMs = COOLDOWN_MS) {
 
 function recordSuccess() {
   state.lastError = null;
+  state.problems = {};
   state.lastTriedAt = new Date().toISOString();
   state.cooldownUntil = 0;
   state.sleepUntil = 0;
@@ -386,6 +393,7 @@ async function fetchPrices() {
     const fetchedAt = new Date().toISOString();
     const out = {};
     const problems = [];
+    const byMarket = {};
     for (const market of MARKETS) {
       if (FIXED[market] !== null) continue;
       const coin = coins.find((c) => c?.id === COIN_ID[market]);
@@ -393,6 +401,7 @@ async function fetchPrices() {
       const problem = coin ? validate(price, market) : `The ${market} price did not come back.`;
       if (problem) {
         problems.push(problem);
+        byMarket[market] = problem;
         missingAt[market] = monoNow();
         continue;
       }
@@ -417,10 +426,13 @@ async function fetchPrices() {
     // to sleep over a missing BTC price held ETH's back with it - the alert
     // sweep and the ticker kept a minute-old ETH figure for want of a coin
     // they were not asking about. The problem is still said in the status.
-    if (Object.keys(out).length === 0 && problems.length > 0) recordFailure(problems.join(' '));
+    if (Object.keys(out).length === 0 && problems.length > 0) recordFailure(problems.join(' '), COOLDOWN_MS, byMarket);
     else {
       recordSuccess();
-      if (problems.length > 0) state.lastError = problems.join(' ');
+      if (problems.length > 0) {
+        state.lastError = problems.join(' ');
+        state.problems = byMarket;
+      }
     }
     return out;
   } catch (err) {

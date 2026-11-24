@@ -16,6 +16,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **The social card is redrawn as `landing/og6.png`** with WBTC among the assets bought; a new filename because scrapers cache by URL, and `og5.png` is removed. Paste the new `/holding` line from the README into BotFather.
 
+### Fixed
+
+- **The repayment errors quote the loan as the card prints it:** a loan typed as 10,000.005 was "the 10,000.005 borrowed"; it is 10,000.01.
+- **`/price` explains a missing price with that market's own problem.** With BTC and WBTC both missing it read "The BTC price did not come back. The WBTC price did not come back.", naming a price it never shows.
+
 ## [2.1.8] - 2026-11-20
 
 ### Added
