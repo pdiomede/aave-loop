@@ -17,7 +17,6 @@ import {
   summarize,
   estimatedGainUsd,
   isUsdPegged,
-  todayISO,
   cents,
   ethHeldNow,
   PLATFORM_META,
@@ -30,9 +29,9 @@ import {
   priceFor,
 } from './lib/calc.js';
 import { marketPrices, priceStatus } from './prices.js';
-import { resolveRate } from './fx.js';
+import { rateNow } from './fx.js';
 import { priceFreshMs } from './alerts.js';
-import { units, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
+import { units, fxRate, usd, signedUsd, pct1, pct2, padLeft, padRight, escHtml, MISSING } from './format.js';
 
 /**
  * Telegram refuses a message over 4096 characters, counted after its HTML is
@@ -339,7 +338,7 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
     const less = gassed ? 'interest and fees' : 'interest';
     // A euro loan is marked at today's rate rather than the one it was bought
     // at, and a figure has to say how it was arrived at.
-    const at = [...marked].map((c) => `${c} at ${fxNow[c].toFixed(4)}`).join(', ');
+    const at = [...marked].map((c) => `${c} at ${fxRate(fxNow[c], c)}`).join(', ');
     const move = movedKnown && !moveGap ? ` (${signedUsd(moved / 100)} of it from the move since purchase)` : '';
     head.push(
       `Unrealised ${escHtml(signedUsd(gain / 100))} after ${less}${caveat}${at ? `, ${escHtml(`${at} today${move}`)}` : ''}`,
@@ -544,14 +543,13 @@ export async function holdingMessage() {
  */
 async function ratesToday(rows) {
   const coins = [...new Set(rows.map((t) => t.borrow_currency).filter((c) => !isUsdPegged(c)))];
-  const today = todayISO();
   const out = {};
   for (const c of coins) {
     try {
-      const hit = await resolveRate(c, today);
+      const hit = await rateNow(c);
       if (Number.isFinite(hit?.rate) && hit.rate > 0) out[c] = hit.rate;
     } catch {
-      // `resolveRate` answers null rather than throwing; this is belt and braces
+      // `rateNow` answers null rather than throwing; this is belt and braces
       // so a chat command is never left without a reply.
     }
   }

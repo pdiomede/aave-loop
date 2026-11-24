@@ -1,6 +1,6 @@
 # ETH Roundtrip
 
-Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned.
+Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin or WBTC, buy ETH or cbBTC, sell it, repay the loan, and see what the round trip actually earned.
 
 **Platforms:** Aave, Ether.fi and Morpho. **Assets bought:** ETH, and cbBTC (Coinbase's wrapped bitcoin), valued at BTC's price.
 
@@ -55,7 +55,7 @@ Gross gain uses the cost of what was actually sold, so a profitable partial exit
 
 ## Exchange rates
 
-Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage converts at the European Central Bank reference rate for its own day, so the euro's movement between borrowing and repaying lands in the result.
+Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage converts at the European Central Bank reference rate for its own day, so the euro's movement between borrowing and repaying lands in the result. A WBTC stage converts at CoinGecko's WBTC price at 00:00 UTC that day (the past year only), so bitcoin's movement lands in it the same way.
 
 | Figure | Formula |
 | --- | --- |

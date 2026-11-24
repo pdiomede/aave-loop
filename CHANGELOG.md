@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **WBTC can be borrowed,** to buy ETH or cbBTC. Its amounts are kept and printed to 8 places, not the cent; a stage's dollar rate is CoinGecko's WBTC price at 00:00 UTC that day (the past year only, keyless), and an open WBTC position is marked at BTC's live price, as cbBTC is. A purchase's price is checked in WBTC (about 0.03 per ETH, 1 per cbBTC), where the dollar range refused it.
+
 ## [2.1.8] - 2026-11-20
 
 ### Added

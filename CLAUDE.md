@@ -65,7 +65,7 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | `ETHROUNDTRIP_FX_OFFLINE=1` / `ETHROUNDTRIP_ETH_OFFLINE=1` | no network lookups at all |
 | `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` | a fixed ETH / BTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
 | `ETHROUNDTRIP_BOT_OFF=1` | no Telegram long-poll |
-| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` | point at a mock |
+| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_BTC_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` | point at a mock (`BTC_URL` is CoinGecko for WBTC's daily rates; `FX_OFFLINE=1` stops it too) |
 | `ETHROUNDTRIP_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
 | `ETHROUNDTRIP_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
 
@@ -188,9 +188,10 @@ it is a closing statement, so an open position is in no figure on it. It imports
 `calc.js` and `lib/logo.js`, the logo's PNG data written by `scripts/make-logo.mjs`
 (rerun it if `public/ETHRoundtrip_logo_96.png` changes; the checks fail until you do).
 It is one A4 page by construction (a year has at most 12 months, drawn in two
-columns of six, `CURRENCIES` 5 coins and `ASSETS` 2) and throws rather than draw past
+columns of six, `CURRENCIES` 6 coins and `ASSETS` 2) and throws rather than draw past
 the bottom margin, so a layout change that overflows fails `npm run check`; the
-fullest year, both assets included, leaves about 25pt. It is ASCII throughout - text beyond it as octal
+fullest year, both assets and all six coins included, leaves about 1.5pt: WBTC's row
+took the rest, so the next row anywhere has to take room from elsewhere. It is ASCII throughout - text beyond it as octal
 escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
 `env.js`, `fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
@@ -323,6 +324,21 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   tied in that way (`data-field-of`). It starts empty: the platform is required and
   never guessed.
 
+### WBTC
+
+The one borrowed coin that is not a stablecoin. Its `peg` is `BTC`: a stage's
+rate is CoinGecko's daily `wrapped-bitcoin` price at 00:00 UTC (`fx.js`, keyless,
+so the past 365 days only; an older stage stays without a rate), and an open
+position's estimate uses BTC's live price from `prices.js` (`rateNow`), the one
+cbBTC is marked at - so a WBTC loan holding cbBTC reads close to flat. Each rate
+service has its own cooldown in `fx.js`; CoinGecko's keyless limit is shared with
+the ticker, and a 429 waits what it asks. Its amounts are 8 places (`coinDp`,
+`inCoin`, `coinUnits` in `lib/calc.js`) wherever a coin figure is held, checked or
+printed - page, Telegram (`coinAmount`/`fxRate` in `format.js`), CSV, Statement,
+and the server's and the form's "at least" minimum - and its rate prints in
+dollars. A purchase or sale's implied price is checked with `ethPriceInRange`, in
+WBTC per unit for WBTC. The ticker is written uppercase, `WBTC`, in code and copy.
+
 ### Platforms
 
 `PLATFORMS` / `PLATFORM_META` in `lib/calc.js` are where a trade ran (`aave`,
@@ -387,7 +403,9 @@ card of its own; a closing statement has no nothing-bought row.
   half. This rule has been broken and re-fixed several times — check it whenever you
   touch a formatter.
 - **A money figure is built from figures as printed.** `derive` takes every amount,
-  dollar conversion and fee to the cent as its card prints it (`asPrinted`), and
+  dollar conversion and fee as its card prints it - dollars to the cent (`asPrinted`),
+  a coin amount to the coin's own places (`inCoin`: the cent, or 8 for WBTC, from
+  `CURRENCY_META[c].dp`; never round a coin amount with `cents`) - and
   every result is a difference of those, so a stage card adds up line by line; the
   currency effect is what is left of the loan cost after the interest. Every total in
   `summarize`, `summaryReport`, `openGainsUsd` and `/holding` (`report.js`) then adds

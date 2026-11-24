@@ -261,5 +261,31 @@ check('a goal is judged to the cent, and a quantity that prints as zero is refus
   assert.equal(validateField('buy_eth', '0.00000001', { asset: 'cbbtc', buy_amount: 0.01 }), null);
 });
 
+check('a WBTC figure keeps all 8 places, and its ETH price is judged in WBTC', () => {
+  assert.equal(reads(typed('0.35012345')), 0.35012345);
+  assert.equal(reads(typed('0,35012345')), 0.35012345);
+  const wbtc = { borrow_currency: 'WBTC', buy_amount: 0.35012345 };
+  // 0.035 WBTC an ETH is a price; 350 would have been refused as cents.
+  assert.equal(validateField('buy_eth', '10', wbtc), null);
+  assert.equal(
+    validateField('buy_eth', '0.001', wbtc),
+    'That is 350.1 WBTC per ETH. Check the amount and the ETH.',
+  );
+  // Judged to the satoshi and said to it: to the cent, 0.35012345 repaid on a
+  // loan of 0.35012346 would have passed as the same 0.35.
+  assert.equal(
+    validateField('repay_amount', '0.35012345', { borrow_currency: 'WBTC', borrow_amount: 0.35012346 }),
+    'A repayment cannot be less than the 0.35012346 borrowed.',
+  );
+  assert.equal(validateField('repay_amount', '0.35012346', { borrow_currency: 'WBTC', borrow_amount: 0.35012346 }), null);
+  // 0.004 is a real loan in WBTC, hundreds of dollars; under a satoshi is not.
+  assert.equal(validateField('borrow_amount', '0.004', { borrow_currency: 'WBTC' }), null);
+  assert.equal(
+    validateField('borrow_amount', '0.000000004', { borrow_currency: 'WBTC' }),
+    'Amount borrowed must be at least 0.00000001.',
+  );
+  assert.equal(validateField('borrow_amount', '0.004', { borrow_currency: 'USDC' }), 'Amount borrowed must be at least 0.01.');
+});
+
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);
 else console.log(`ok - ${passed} input checks`);

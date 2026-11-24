@@ -19,6 +19,16 @@
  * rather than leaving to be discovered on the line that sets it: this comment
  * said the rates "come from the European Central Bank", which is true of the
  * figures and not of the request.
+ *
+ * WBTC is the exception: the ECB has no bitcoin. A stage's rate is CoinGecko's
+ * daily dollar price of wrapped bitcoin, the one taken at 00:00 UTC on the day,
+ * read without a key (`BTC_URL`, which `ETHROUNDTRIP_BTC_URL` overrides).
+ * Keyless, CoinGecko answers for the past 365 days only, so an older stage is
+ * left without a rate, as any unknown rate is. Each service has its own
+ * cooldown: CoinGecko rate limiting us is no reason to stop asking the ECB
+ * about a euro trade, nor the other way round. Today's figure for an open
+ * WBTC position is BTC's live price, which prices.js already follows for
+ * cbBTC (`rateNow`).
  */
 import { db, prepare, tradesMissingFx, tradesWithSubstitutedFx } from './db.js';
 import {
@@ -28,8 +38,10 @@ import {
   FX_STAGES,
   parseDate,
   intervalMs,
+  todayISO,
 } from './lib/calc.js';
 import { setting } from './env.js';
+import { marketPrice, cachedMarketPrice } from './prices.js';
 
 const DAY_MS = 86400000;
 
@@ -55,8 +67,20 @@ const lagging = (date, rateDate) => {
 // every request with a 301 to this, which fetch follows - but at the cost of a
 // second connection inside the 2.5 s timeout, on every lookup.
 const FX_URL = (setting('FX_URL') || 'https://api.frankfurter.dev/v1').replace(/\/+$/, '');
+const BTC_URL = (setting('BTC_URL') || 'https://api.coingecko.com/api/v3').replace(/\/+$/, '');
 const OFFLINE = setting('FX_OFFLINE') === '1';
 const QUOTE = 'USD';
+
+// CoinGecko's id for each base it prices, and the market prices.js follows it
+// at. Wrapped bitcoin's own daily price rather than bitcoin's, since that is
+// the coin borrowed; the live one is BTC's, as cbBTC is marked.
+const COINGECKO_ID = { BTC: 'wrapped-bitcoin' };
+// How far back a keyless CoinGecko answers. Asked about anything older it
+// refuses with a 401, which would have put every BTC lookup to sleep.
+const COINGECKO_HISTORY_DAYS = 365;
+
+/** Which service prices a base: CoinGecko for bitcoin, the ECB otherwise. */
+const sourceOf = (base) => (COINGECKO_ID[base] ? 'coingecko' : 'ecb');
 
 // A lookup has to lose to a stalled network quickly. Four stages on one trade
 // would otherwise hold the request open for four full timeouts.
@@ -75,35 +99,68 @@ const RANGE_TIMEOUT_MS = 15_000;
  * carries on with the rate column empty and the interface says so.
  */
 const COOLDOWN_MS = 60_000;
+// A 429 from CoinGecko's shared keyless limit: wait what it asks, within
+// bounds, or five minutes, as prices.js does with the same service.
+const RATE_LIMIT_COOLDOWN_MS = 5 * 60_000;
+const MAX_COOLDOWN_MS = 60 * 60_000;
 
-const state = { cooldownUntil: 0, lastError: null, lastTriedAt: null };
+const fresh = () => ({ cooldownUntil: 0, lastError: null, lastTriedAt: null });
+const states = { ecb: fresh(), coingecko: fresh() };
 
-export function fxStatus() {
+function statusOf(src, url) {
+  const st = states[src];
   return {
-    provider: OFFLINE ? 'offline' : FX_URL,
+    provider: OFFLINE ? 'offline' : url,
     offline: OFFLINE,
-    sleeping: Date.now() < state.cooldownUntil,
-    cooldownUntil: state.cooldownUntil || null,
-    lastError: state.lastError,
-    lastTriedAt: state.lastTriedAt,
+    sleeping: Date.now() < st.cooldownUntil,
+    cooldownUntil: st.cooldownUntil || null,
+    lastError: st.lastError,
+    lastTriedAt: st.lastTriedAt,
   };
 }
 
+/**
+ * The rate services' state. With a coin, the one service that prices it; with
+ * none, the ECB's as before, its `lastError` falling back to CoinGecko's so a
+ * backfill that failed only on WBTC still says why, and CoinGecko's in full
+ * under `btc`.
+ */
+export function fxStatus(currency) {
+  if (currency) {
+    const src = sourceOf(pegOf(currency));
+    return statusOf(src, src === 'coingecko' ? BTC_URL : FX_URL);
+  }
+  const ecb = statusOf('ecb', FX_URL);
+  const btc = statusOf('coingecko', BTC_URL);
+  return { ...ecb, lastError: ecb.lastError ?? btc.lastError, btc };
+}
+
 /** True when a lookup would certainly fail, so we do not bother trying. */
-function networkIsOut() {
-  return OFFLINE || Date.now() < state.cooldownUntil;
+function networkIsOut(src = 'ecb') {
+  return OFFLINE || Date.now() < states[src].cooldownUntil;
 }
 
-function recordFailure(message) {
-  state.lastError = message;
-  state.lastTriedAt = new Date().toISOString();
-  state.cooldownUntil = Date.now() + COOLDOWN_MS;
+function recordFailure(message, src = 'ecb', cooldownMs = COOLDOWN_MS) {
+  const st = states[src];
+  st.lastError = message;
+  st.lastTriedAt = new Date().toISOString();
+  st.cooldownUntil = Date.now() + cooldownMs;
 }
 
-function recordSuccess() {
-  state.lastError = null;
-  state.lastTriedAt = new Date().toISOString();
-  state.cooldownUntil = 0;
+function recordSuccess(src = 'ecb') {
+  const st = states[src];
+  st.lastError = null;
+  st.lastTriedAt = new Date().toISOString();
+  st.cooldownUntil = 0;
+}
+
+/** A failed request, said once for either service. */
+function recordError(err, src) {
+  if (err.retryAfterMs) {
+    recordFailure('The rate service is rate limiting us. Waiting before asking again.', src, err.retryAfterMs);
+    return;
+  }
+  recordFailure(err.name === 'TimeoutError' ? 'The rate service did not answer in time.' : err.message, src);
 }
 
 /* -------------------------------------------------------------------- cache */
@@ -188,13 +245,17 @@ const pegRate = (isoDate) => ({ rate: 1, rateDate: isoDate, source: 'peg' });
 /* ------------------------------------------------------------------ fetching */
 
 /**
- * A published rate has to be near 1 for the currencies this tracks, and a date
- * later than the one asked for would mean the answer describes a different day.
- * Both are cheap to check and both would otherwise corrupt a stored figure
- * quietly.
+ * A published rate has to be near 1 for the currencies the ECB prices, and a
+ * date later than the one asked for would mean the answer describes a
+ * different day. Both are cheap to check and both would otherwise corrupt a
+ * stored figure quietly. Bitcoin is held to bounds of its own: a dollar price
+ * of thousands, nowhere near 1, and a zero or a slipped digit still refused.
  */
-function validate(rate, rateDate, wanted) {
-  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0 || rate > 100) {
+const RATE_BOUNDS = { BTC: [1_000, 10_000_000] };
+
+function validate(rate, rateDate, wanted, base = 'EUR') {
+  const [lo, hi] = RATE_BOUNDS[base] ?? [0, 100];
+  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= lo || rate > hi) {
     return 'The rate that came back was not a usable number.';
   }
   if (typeof rateDate !== 'string' || parseDate(rateDate) === null) {
@@ -209,11 +270,23 @@ function validate(rate, rateDate, wanted) {
   return null;
 }
 
-async function getJson(path, timeoutMs = TIMEOUT_MS) {
-  const res = await fetch(`${FX_URL}${path}`, {
+async function getJson(path, timeoutMs = TIMEOUT_MS, base = FX_URL) {
+  const res = await fetch(`${base}${path}`, {
     headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(timeoutMs),
   });
+  if (res.status === 429) {
+    // In seconds or as an HTTP date, as prices.js reads it.
+    const header = res.headers.get('retry-after');
+    const secs = Number(header);
+    const asked = Number.isFinite(secs) ? secs * 1000 : Date.parse(header ?? '') - Date.now();
+    const err = new Error('The rate service is rate limiting us.');
+    err.retryAfterMs =
+      Number.isFinite(asked) && asked > 0
+        ? Math.min(Math.max(asked, COOLDOWN_MS), MAX_COOLDOWN_MS)
+        : RATE_LIMIT_COOLDOWN_MS;
+    throw err;
+  }
   if (!res.ok) throw new Error(`The rate service answered ${res.status}.`);
   // Not `res.json()` as it stands: a 200 that is not JSON - a portal's sign-in
   // page - threw the parser's own message, which quotes the start of the body,
@@ -223,6 +296,132 @@ async function getJson(path, timeoutMs = TIMEOUT_MS) {
   } catch {
     throw new Error('The rate service did not answer with rates.');
   }
+}
+
+/* ------------------------------------------------------------- CoinGecko */
+
+/** Whether a keyless CoinGecko still answers for a day: the past 365 only. */
+function withinCoinGeckoHistory(isoDate) {
+  const age = (parseDate(todayISO()) - parseDate(isoDate)) / DAY_MS;
+  return age < COINGECKO_HISTORY_DAYS;
+}
+
+/**
+ * One day's price from CoinGecko, taken at 00:00 UTC on that day. Its own
+ * date, never carried from another: bitcoin trades every day. A day with no
+ * price yet (today, before midnight UTC has come round where the reader is)
+ * is no answer rather than a failure, so it does not put lookups to sleep.
+ */
+async function coinGeckoDay(base, isoDate, hit) {
+  const src = 'coingecko';
+  if (!withinCoinGeckoHistory(isoDate)) {
+    states[src].lastError = 'CoinGecko gives free prices for the past year only.';
+    return hit;
+  }
+  const [y, m, d] = isoDate.split('-');
+  try {
+    const body = await getJson(
+      `/coins/${COINGECKO_ID[base]}/history?date=${d}-${m}-${y}&localization=false`,
+      TIMEOUT_MS,
+      BTC_URL,
+    );
+    const rate = body?.market_data?.current_price?.usd;
+    recordSuccess(src);
+    if (rate == null) return hit;
+    const problem = validate(rate, isoDate, isoDate, base);
+    if (problem) {
+      recordFailure(problem, src);
+      return hit;
+    }
+    const resolved = { rate, rateDate: isoDate, source: 'coingecko' };
+    cachePut(base, isoDate, resolved);
+    return resolved;
+  } catch (err) {
+    recordError(err, src);
+    return hit;
+  }
+}
+
+/**
+ * Every day of a span in one request: the daily series for as many days back
+ * as the span starts, capped at the year a keyless CoinGecko gives. Its daily
+ * points sit on 00:00 UTC; the last one is the price now, which is not any
+ * day's rate and is left out.
+ */
+async function coinGeckoRange(base, fromISO, toISO) {
+  const src = 'coingecko';
+  const out = new Map();
+  const fromTs = parseDate(fromISO);
+  const toTs = parseDate(toISO);
+  if (fromTs === null || toTs === null) return out;
+  const back = Math.ceil((Date.now() - fromTs) / DAY_MS) + 1;
+  const days = Math.min(Math.max(back, 1), COINGECKO_HISTORY_DAYS);
+  let prices;
+  try {
+    const body = await getJson(
+      `/coins/${COINGECKO_ID[base]}/market_chart?vs_currency=usd&days=${days}&interval=daily`,
+      RANGE_TIMEOUT_MS,
+      BTC_URL,
+    );
+    prices = body?.prices;
+    if (!Array.isArray(prices)) throw new Error('The rate service returned no rates.');
+    recordSuccess(src);
+  } catch (err) {
+    recordError(err, src);
+    return out;
+  }
+  const recent = Date.now() - 10 * 60_000;
+  for (const point of prices) {
+    if (!Array.isArray(point)) continue;
+    const [ts, rate] = point;
+    // On a midnight, to within five minutes, and not the live point at the end.
+    if (!Number.isFinite(ts) || ts % DAY_MS > 5 * 60_000 || ts > recent) continue;
+    const day = ts - (ts % DAY_MS);
+    if (day < fromTs || day > toTs) continue;
+    const iso = new Date(day).toISOString().slice(0, 10);
+    if (validate(rate, iso, iso, base) !== null) continue;
+    out.set(iso, { rate, rateDate: iso, source: 'coingecko' });
+  }
+  db.transaction(() => {
+    for (const [iso, record] of out) cachePut(base, iso, record);
+  })();
+  return out;
+}
+
+/**
+ * Today's rate for an open position's estimate (see `estimatedGainUsd`): for
+ * WBTC, BTC's live price from prices.js - the one a cbBTC position is marked
+ * at, fixed by `ETHROUNDTRIP_BTC_PRICE` like it - since a day's 00:00 price can
+ * be a good few percent off by the afternoon and the estimate is "if I closed
+ * now"; for a euro coin today's ECB rate, as before. Never stored: a stage's
+ * rate stays the day's own, so it reads the same however late the trade was
+ * entered. With no live price, the day's rate stands in.
+ */
+const LIVE_MARKET = { BTC: 'BTC' };
+
+export async function rateNow(currency) {
+  const today = todayISO();
+  if (isUsdPegged(currency)) return pegRate(today);
+  const base = pegOf(currency);
+  const market = LIVE_MARKET[base];
+  if (market) {
+    const quote = await marketPrice(market);
+    if (validate(quote?.price, today, today, base) === null) {
+      return { rate: quote.price, rateDate: today, source: 'live' };
+    }
+  }
+  return resolveRate(currency, today);
+}
+
+/** `rateNow` from memory alone: the live price last fetched, else the cache. */
+export function cachedRateNow(currency) {
+  const today = todayISO();
+  if (isUsdPegged(currency)) return pegRate(today);
+  const base = pegOf(currency);
+  const market = LIVE_MARKET[base];
+  const price = market ? cachedMarketPrice(market)?.price : undefined;
+  if (validate(price, today, today, base) === null) return { rate: price, rateDate: today, source: 'live' };
+  return cachedRate(currency, today);
 }
 
 /**
@@ -246,7 +445,8 @@ export async function resolveRate(currency, isoDate) {
   const provisional = unconfirmed(isoDate, hit);
   if (hit && !provisional) return hit;
 
-  if (networkIsOut()) return hit;
+  if (networkIsOut(sourceOf(base))) return hit;
+  if (sourceOf(base) === 'coingecko') return coinGeckoDay(base, isoDate, hit);
 
   try {
     const body = await getJson(`/${isoDate}?from=${base}&to=${QUOTE}`);
@@ -262,7 +462,7 @@ export async function resolveRate(currency, isoDate) {
     cachePut(base, isoDate, resolved);
     return resolved;
   } catch (err) {
-    recordFailure(err.name === 'TimeoutError' ? 'The rate service did not answer in time.' : err.message);
+    recordError(err, 'ecb');
     return hit;
   }
 }
@@ -286,9 +486,11 @@ export function cachedRate(currency, isoDate) {
 export async function resolveRange(currency, fromISO, toISO) {
   const out = new Map();
   if (isUsdPegged(currency)) return out;
-  if (networkIsOut()) return out;
 
   const base = pegOf(currency);
+  if (networkIsOut(sourceOf(base))) return out;
+  if (sourceOf(base) === 'coingecko') return coinGeckoRange(base, fromISO, toISO);
+
   let published;
   try {
     const body = await getJson(`/${fromISO}..${toISO}?from=${base}&to=${QUOTE}`, RANGE_TIMEOUT_MS);
@@ -296,7 +498,7 @@ export async function resolveRange(currency, fromISO, toISO) {
     if (!published || typeof published !== 'object') throw new Error('The rate service returned no rates.');
     recordSuccess();
   } catch (err) {
-    recordFailure(err.name === 'TimeoutError' ? 'The rate service did not answer in time.' : err.message);
+    recordError(err, 'ecb');
     return out;
   }
 

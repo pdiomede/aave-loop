@@ -51,7 +51,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // answers to sendMessage, [status, description]; empty means 200.
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
-const mock = { price: 3000, btc: 90000, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 } };
+const mock = { price: 3000, btc: 90000, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 }, wbtcAsked: [] };
+// Wrapped bitcoin's price on a day, made from the date so every day differs:
+// 90,000 plus the day of the month, and 50 - no bitcoin price at all - on the 13th.
+const wbtcOn = (iso) => (iso.endsWith('-13') ? 50 : 90000 + Number(iso.slice(8, 10)));
+const DAY = 86_400_000;
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
@@ -64,6 +68,24 @@ const mockServer = http.createServer((req, res) => {
       const coins = [{ id: 'ethereum', current_price: mock.price }];
       if (mock.btc !== null) coins.push({ id: 'bitcoin', current_price: mock.btc });
       return res.end(JSON.stringify(coins));
+    }
+    // CoinGecko's daily wrapped bitcoin, for WBTC's rates: one day, or the
+    // series - a point on each UTC midnight, then the price now.
+    if (req.url.startsWith('/coins/wrapped-bitcoin/')) {
+      mock.wbtcAsked.push(req.url);
+      const q = new URL(req.url, 'http://x').searchParams;
+      if (req.url.startsWith('/coins/wrapped-bitcoin/history')) {
+        const [dd, mm, yyyy] = q.get('date').split('-');
+        return res.end(JSON.stringify({ market_data: { current_price: { usd: wbtcOn(`${yyyy}-${mm}-${dd}`) } } }));
+      }
+      const midnight = Date.now() - (Date.now() % DAY);
+      const prices = [];
+      for (let k = Number(q.get('days')); k >= 0; k -= 1) {
+        const ts = midnight - k * DAY;
+        prices.push([ts, wbtcOn(new Date(ts).toISOString().slice(0, 10))]);
+      }
+      prices.push([Date.now(), 123456]);
+      return res.end(JSON.stringify({ prices }));
     }
     if (req.url.includes('/getUpdates')) {
       return res.end(JSON.stringify({ ok: true, result: mock.updates.splice(0) }));
@@ -140,6 +162,8 @@ const isolated = {
   ETHROUNDTRIP_BTC_PRICE: '',
   ETHROUNDTRIP_TELEGRAM_URL: MOCK,
   ETHROUNDTRIP_ETH_URL: MOCK,
+  // WBTC's daily prices, so a rate lookup never reaches the real CoinGecko.
+  ETHROUNDTRIP_BTC_URL: MOCK,
   ETHROUNDTRIP_FX_OFFLINE: '1',
   ETHROUNDTRIP_BOT_OFF: '1',
   TELEGRAM_BOT_TOKEN: '',
@@ -436,6 +460,41 @@ await check('amounts typed with a decimal comma read as written', async () => {
   assert.equal(r.data.borrow_amount, 32000);
   assert.equal(r.data.borrow_gas_usd, 3.2);
   assert.equal((await api('POST', '/api/trades', borrow({ borrow_amount: '1e5' }))).status, 400);
+});
+
+await check('a WBTC trade keeps its 8 places, and its prices are judged in WBTC', async () => {
+  const r = await api('POST', '/api/trades', borrow({ borrow_currency: 'wbtc', borrow_amount: '0,35012345' }));
+  assert.equal(r.status, 201);
+  assert.equal(r.data.borrow_currency, 'WBTC');
+  assert.equal(r.data.borrow_amount, 0.35012345);
+  const id = r.data.id;
+  // 0.035 WBTC an ETH is a purchase; refused in dollars, it is fine in WBTC.
+  const bought = await api('PATCH', `/api/trades/${id}`, { ...buy, buy_amount: '0.35012345', buy_eth: '10' });
+  assert.equal(bought.status, 200);
+  assert.equal(bought.data.buy_amount, 0.35012345);
+  const slipped = await api('PATCH', `/api/trades/${id}`, { ...buy, buy_amount: '0.35012345', buy_eth: '0.001' });
+  assert.equal(slipped.status, 400);
+  assert.equal(slipped.data.field, 'buy_eth');
+  assert.match(slipped.data.error, /WBTC per ETH/);
+  // About one WBTC per cbBTC is a price too.
+  const cb = await api('PATCH', `/api/trades/${id}`, { ...buy, asset: 'cbbtc', buy_amount: '0.35012345', buy_eth: '0.35' });
+  assert.equal(cb.status, 200);
+  await api('PATCH', `/api/trades/${id}`, { ...buy, asset: 'eth', buy_amount: '0.35012345', buy_eth: '10' });
+  // 0.004 WBTC is a real amount, hundreds of dollars; under a satoshi is not.
+  assert.equal((await api('POST', '/api/trades', borrow({ borrow_currency: 'WBTC', borrow_amount: '0.000000004' }))).status, 400);
+  const small = await api('POST', '/api/trades', borrow({ borrow_currency: 'WBTC', borrow_amount: '0.004' }));
+  assert.equal(small.status, 201);
+  // 30,000 USDC for 10 ETH switched to WBTC is 3,000 WBTC an ETH.
+  const usdc = (await api('POST', '/api/trades', borrow())).data;
+  await api('PATCH', `/api/trades/${usdc.id}`, buy);
+  assert.equal((await api('PATCH', `/api/trades/${usdc.id}`, { borrow_currency: 'WBTC' })).status, 400);
+  // A satoshi short of the loan is short, and said to the satoshi.
+  await api('PATCH', `/api/trades/${id}`, { sell_date: '2026-09-20', sell_amount: '0.38', sell_eth: '10', sell_gas_usd: '0' });
+  const short = await api('PATCH', `/api/trades/${id}`, { repay_date: '2026-09-20', repay_amount: '0.35012344' });
+  assert.equal(short.status, 400);
+  assert.match(short.data.error, /0\.35012345 borrowed/);
+  assert.equal((await api('PATCH', `/api/trades/${id}`, { repay_date: '2026-09-20', repay_amount: '0.35012345' })).status, 200);
+  for (const t of [id, small.data.id, usdc.id]) await api('DELETE', `/api/trades/${t}`);
 });
 
 // 10,000 USDC borrowed today and spent on 4 ETH, $1 + $3 of fees: an open
@@ -1391,6 +1450,57 @@ await check('/unwatch past the ten-command limit of a batch still stops the repo
   await bot.runBotTick();
   assert.equal(prepare('SELECT watch FROM bot_state WHERE id = 1').get().watch, 0);
   assert.match(mock.sent.at(-1) ?? '', /^Stopped\./);
+});
+
+/* -------------------------------------------------------------------- WBTC */
+
+await check('WBTC takes CoinGecko\'s daily price: a day, a span, and never a bad one', async () => {
+  const ago = (n) => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
+  // Days well inside the year CoinGecko gives, and clear of today's midnight.
+  const day = ago(20).endsWith('-13') ? ago(21) : ago(20);
+  const from = ago(40);
+  const to = ago(2);
+  mock.wbtcAsked.length = 0;
+  const r = await fxChild(`
+    const patch = await fx.fillFxColumns({ borrow_currency: 'WBTC', borrow_date: '${day}', buy_date: '${day}' });
+    const span = await fx.resolveRange('WBTC', '${from}', '${to}');
+    const old = await fx.resolveRate('WBTC', '${ago(400)}');
+    console.log(JSON.stringify({ patch, span: Object.fromEntries([...span].map(([d, h]) => [d, h.rate])), old }));
+  `);
+  assert.equal(r.patch.borrow_fx, wbtcOn(day));
+  assert.equal(r.patch.borrow_fx_date, day);
+  assert.equal(r.patch.fx_source, 'coingecko');
+  // The day once, by its own date; the span in one request; the year-old day not at all.
+  assert.equal(mock.wbtcAsked.filter((u) => u.includes('/history')).length, 1);
+  assert.equal(mock.wbtcAsked.filter((u) => u.includes('/market_chart')).length, 1);
+  assert.equal(r.span[to], wbtcOn(to));
+  // The live point at the end of the series is no day's rate, and $50 is not a bitcoin price.
+  assert.ok(!Object.values(r.span).includes(123456), 'the price now is not a day');
+  for (const d of Object.keys(r.span)) assert.ok(!d.endsWith('-13'), d);
+  assert.equal(r.old, null);
+});
+
+await check('WBTC\'s rate today is BTC\'s live price, and its alert adds up and says so', async () => {
+  mock.btc = 95000;
+  const r = await fxChild(`console.log(JSON.stringify(await fx.rateNow('WBTC')));`);
+  assert.equal(r.rate, 95000);
+  mock.btc = 90000;
+  const { alertMessage } = await import('../alerts.js');
+  const dollars = (v) => Number(v.replace(/[$,+]/g, ''));
+  // 0.35012344 WBTC on 10 ETH at $100,000, held, bitcoin at $95,000 today:
+  // $35,012.34 spent and +$1,750.62 of bitcoin's fall, 0.35012344 x 5,000.
+  const t = { id: 7, platform: 'aave', borrow_currency: 'WBTC', borrow_date: today, borrow_amount: 0.35012344,
+    borrow_apr: 1, borrow_fx: 100000, buy_date: today, buy_amount: 0.35012344, buy_eth: 10, buy_fx: 100000,
+    buy_gas_usd: 1.005 };
+  const text = alertMessage(t, { goal_price: 3450 }, 3450, { WBTC: 95000 });
+  assert.match(text, /borrowed 0\.35012344 WBTC/);
+  assert.match(text, /WBTC at \$95,000\.00 today, bought at \$100,000\.00: \+\$1,750\.62\)/);
+  const worth = dollars(text.match(/Worth now: (\$[\d,.]+)/)[1]);
+  const [, gain, interest, fees] = text.match(/Gain \(\$\): ([+-]?\$[\d,.]+) after (\$[\d,.]+) interest and (\$[\d,.]+) fees/);
+  const sum = Math.round((worth - (35012.34 - 1750.62) - dollars(interest) - dollars(fees)) * 100) / 100;
+  assert.equal(sum, dollars(gain), text);
+  const { holdingText } = await import('../report.js');
+  assert.match(holdingText([t], { ETH: 3450 }, { WBTC: 95000 }), /WBTC at \$95,000\.00/);
 });
 
 /* ------------------------------------------------------------------ the end */

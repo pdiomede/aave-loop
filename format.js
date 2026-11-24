@@ -12,7 +12,7 @@
  * look like two different figures.
  */
 
-import { assetMeta } from './lib/calc.js';
+import { assetMeta, coinDp } from './lib/calc.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -36,6 +36,16 @@ const fixed = (v, dp) =>
 
 export const n2 = (v) => fixed(v, 2);
 export const n4 = (v) => fixed(v, 4);
+
+/** A coin amount to the coin's own places, as the page prints it: 8 for WBTC. */
+export const coinAmount = (v, currency) => fixed(v, coinDp(currency));
+
+/**
+ * A coin's rate as the page states it: four places for one worth about a
+ * dollar, and bitcoin's price in dollars for WBTC.
+ */
+export const fxRate = (rate, currency) =>
+  coinDp(currency) === 2 ? fixed(rate, 4) : isNum(rate) ? `$${fixed(rate, 2)}` : MISSING;
 
 /**
  * A quantity of a trade's asset to that asset's own decimals (`ASSET_META.dp`):
