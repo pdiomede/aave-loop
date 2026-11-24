@@ -9,6 +9,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **WBTC can be borrowed,** to buy ETH or cbBTC. Its amounts are kept and printed to 8 places, not the cent; a stage's dollar rate is CoinGecko's WBTC price at 00:00 UTC that day (the past year only, keyless), and an open WBTC position is marked at WBTC's own live price, not BTC's, so a drift from bitcoin shows. A purchase's price is checked in WBTC (about 0.03 per ETH, 1 per cbBTC), where the dollar range refused it.
 
+### Changed
+
+- **The social card is redrawn as `landing/og6.png`** with WBTC among the borrowed coins; a new filename because scrapers cache by URL, and `og5.png` is removed.
+
 ## [2.1.8] - 2026-11-20
 
 ### Added

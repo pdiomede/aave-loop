@@ -36,8 +36,18 @@ coins. Then check:
   (`curl -sI https://ethroundtrip.com/landing/wbtc.png` answers 200).
 - A WBTC trade dated within the last year gets its rates (the card says "at
   $NN,NNN.NN on ..."), and amounts keep all 8 places.
-- The social card (`og5.png`) still lists only the stablecoins; it is an image and was
-  not redrawn.
+- The social card is redrawn as `og6.png`, with WBTC under Borrows; `og5.png` is gone.
+  Check it is served with no password asked, and the only one the page names:
+
+  ```bash
+  curl -sI https://ethroundtrip.com/landing/og6.png | head -5      # 200, image/png
+  curl -s https://ethroundtrip.com/ | grep -o 'landing/og[0-9]*\.png' | sort -u   # og6.png only
+  ```
+
+  Then have the sites that cached `og5.png` fetch the new one, as on 20 Nov (step 5
+  below): LinkedIn's [Post Inspector](https://www.linkedin.com/post-inspector/), and
+  for Telegram send the link to @WebpageBot. X refreshes on its own within about a
+  week.
 
 Work over SSH from the Mac's Terminal, not the Hetzner web console: the console drops
 the Shift key, so `&`, `|`, `*`, `"`, `+` and capital letters come out wrong (`&&`

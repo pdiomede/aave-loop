@@ -1,14 +1,14 @@
 <!doctype html>
 <!--
-  The landing page's social preview, landing/og5.png (1200x630), drawn from this
+  The landing page's social preview, landing/og6.png (1200x630), drawn from this
   file. It is the source, not a page: nothing serves it. Render it with
   headless Chrome from the repository root:
 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
       --hide-scrollbars --force-device-scale-factor=1 --window-size=1200,630 \
-      --virtual-time-budget=8000 --screenshot=landing/og6.png "file://$PWD/scripts/og.html"
+      --virtual-time-budget=8000 --screenshot=landing/og7.png "file://$PWD/scripts/og.html"
 
-  Give the result a new name (og6.png, og7.png...) and point both og:image and
+  Give the result a new name (og7.png, og8.png...) and point both og:image and
   twitter:image in landing/index.html at it: X, LinkedIn and Telegram cache a
   preview by its URL, so an image changed in place keeps showing the old one.
   The logos are the copies in landing/, and Inter comes from Google Fonts, so
@@ -51,7 +51,7 @@
 
   /* The right-hand card: where the loop runs, what it buys, what it borrows. */
   .card {
-    position: absolute; right: 72px; top: 112px; width: 480px;
+    position: absolute; right: 72px; top: 92px; width: 480px;
     padding: 30px 32px 32px;
     background: rgba(255, 255, 255, 0.86);
     border-radius: 22px;
@@ -69,13 +69,15 @@
     background: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14);
     object-fit: contain; flex: none;
   }
-  .stack { display: flex; }
+  /* Six coins and their names no longer fit one line of the card once WBTC
+     joined: the names wrap to a line of their own under the logos. */
+  .stack { display: flex; flex-wrap: wrap; }
   .stack img {
     width: 48px; height: 48px; border-radius: 50%;
     background: #ffffff; box-shadow: 0 0 0 3px #ffffff;
   }
   .stack img + img { margin-left: -10px; }
-  .stack-note { margin-left: 14px; align-self: center; white-space: nowrap; font-size: 19px; font-weight: 600; color: #37373c; }
+  .stack-note { flex-basis: 100%; margin-top: 14px; white-space: nowrap; font-size: 19px; font-weight: 600; color: #37373c; }
 </style>
 </head>
 <body>
@@ -120,7 +122,8 @@
         <img src="../landing/dai.svg" alt="" />
         <img src="../landing/gho.svg" alt="" />
         <img src="../landing/eurc.svg" alt="" />
-        <span class="stack-note">USD, EURC, DAI, GHO</span>
+        <img src="../landing/wbtc.png" alt="" />
+        <span class="stack-note">USD, EURC, DAI, GHO, WBTC</span>
       </div>
     </div>
   </div>
