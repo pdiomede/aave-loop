@@ -233,6 +233,17 @@ Accepted for now, worth knowing:
   do not start an older checkout against the same `ETHROUNDTRIP_DB`, and do not
   restore a backup taken on 2.2.0 onto an older install. A deploy is safe: it
   replaces the one copy.
+- **WBTC, low-severity findings from the 24 Nov bug hunt, left unfixed:**
+  - A missing or stale WBTC price is not explained on the page. WBTC has no row in
+    the header's ticker, so the estimate reads "-" with no reason given, and an old
+    price is used without its age. Alerts are safe: they fire on a fresh price only,
+    and `/holding` says which trades have no WBTC price.
+  - A quantity typed for ETH and left there after switching the asset to WBTC is not
+    flagged: 2.9 WBTC for $10,000 reads as "WBTC price $3,448.28". The plausibility
+    check allows $1 to $1,000,000 per unit for every asset, so cbBTC had the same gap
+    before; the odd price shows in the hint before saving.
+  - `/price` can name WBTC in its failure reason ("The WBTC price did not come back")
+    when ETH or BTC is missing too, though WBTC is never shown there.
 - **A command may be answered twice after a restart.** When the app stops in the
   middle of a reply, the bot rewinds to that command so nothing is lost. That command
   can get its answer twice.
