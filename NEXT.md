@@ -13,6 +13,14 @@ Done on the VPS on 24 Nov:
 - **Checked from outside, without a password:** the footer reads v2.2.0;
   `landing/wbtc.png` and `landing/og6.png` answer 200 and `og5.png` 404; the page
   names `og6.png` only, and lists WBTC under "Buy and sell".
+- **Step 2, the nginx hashes:** ETH Roundtrip's `script-src` now lists `'self'` and
+  the two current hashes only, and they match the live landing page's inline
+  scripts, so the theme button and the system theme work again. Changed with a
+  `sed` anchored on the old `idlxi` hash: the same file has UrlReporter's
+  `script-src 'self' https://www.googletagmanager.com`, which the broader command
+  in step 2 below would also have replaced. The previous file is
+  `all-sites.conf.bak` beside it. The comment above the line still speaks of four
+  hashes and `public/index.html`; it is two, on the two landing pages.
 
 Left from 24 Nov:
 
@@ -36,9 +44,6 @@ Done on the VPS on 20 Nov:
 
 Left from 20 Nov, not yet confirmed here:
 
-- **Monday 23 Nov, 19:00 CET: step 2, the nginx hashes** (a reminder is scheduled in
-  the Claude app). Until then only the landing page's theme button is blocked; the
-  app is unaffected.
 - **21 Nov:** check that the night's backup ran: `ls -lt /home/paolo/backup/aaveloop`
   should show a `myaave-...db` from about 03:00 UTC, and its log no error.
 
@@ -73,7 +78,7 @@ arrived as `77`).
 
 ## On the VPS
 
-Steps 1, 3 and 4 were done on 20 Nov; step 2 is left (see above).
+Steps 1, 3 and 4 were done on 20 Nov, step 2 on 24 Nov (see above).
 
 ### 1. Deploy `main`
 
@@ -138,15 +143,21 @@ The quickest way, keeping `'self'` and the rest of the line, with a backup first
 sudo grep -o "script-src[^;]*" /etc/nginx/sites-available/all-sites.conf
 ```
 
-(it should show only `'self'` and `'sha256-...'` values; if anything else is there,
-edit by hand instead)
+(it shows two lines: UrlReporter's, `'self' https://www.googletagmanager.com`, which
+stays as it is, and ETH Roundtrip's, with only `'self'` and `'sha256-...'` values; if
+that one holds anything else, edit it by hand instead)
 
 ```bash
 sudo cp /etc/nginx/sites-available/all-sites.conf /etc/nginx/sites-available/all-sites.conf.bak
 ```
 
+Careful: the same file also holds UrlReporter's `script-src 'self'
+https://www.googletagmanager.com`, so a pattern on `script-src 'self'` alone
+rewrites that one too. Anchor it on ETH Roundtrip's own first hash, whatever it is
+now (the `grep` above shows it: `idlxi` until 24 Nov, `ydfK` since):
+
 ```bash
-sudo sed -i -E "s#script-src 'self'[^;]*;#script-src 'self' 'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs=' 'sha256-W9be3A+UEXvbL09tjpkkWtuJt36Q7WGeXBruE3mVoH0=';#" /etc/nginx/sites-available/all-sites.conf
+sudo sed -i -E "s#script-src 'self' 'sha256-ydfK[^;]*;#script-src 'self' 'sha256-ydfKTROXhrKp+JMGg4E0f5iPi3jzeU8+11xdzEbfRvs=' 'sha256-W9be3A+UEXvbL09tjpkkWtuJt36Q7WGeXBruE3mVoH0=';#" /etc/nginx/sites-available/all-sites.conf
 ```
 
 Run the `grep` again to see the two hashes, then:
