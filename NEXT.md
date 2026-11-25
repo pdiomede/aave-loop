@@ -1,7 +1,7 @@
 # Next
 
 What is left to do on the VPS, and what to build next. Written 20 Nov 2026, after
-the day's bug hunt was pushed to `main`; brought up to date on 24 Nov.
+the day's bug hunt was pushed to `main`; brought up to date on 25 Nov.
 
 ## Where it stands (24 Nov)
 
@@ -45,6 +45,22 @@ Done on the VPS on 20 Nov:
 Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
 `/home/paolo/backup/aaveloop` holds one `myaave-...db` from 03:00 every night, 11 to
 24 Nov, fourteen in all as `--keep 14` asks.
+
+## 2.2.1 (25 Nov): Wallets, and a trade's wallet
+
+To do on the VPS. Deploy as in step 1 below (`git pull`, restart). No nginx, BotFather
+or settings change: no inline script changed and no command was added. The first
+start adds `trades.wallet_id` and the `wallets` table by itself; every existing trade
+starts with no wallet. Then check, behind the password:
+
+- The fourth tab reads **Wallets**; an old `#settings` link opens it.
+- Add your wallets there, then name each old trade's wallet from its Borrowed card's
+  Edit (the picker is after Platform). A new trade picks it after the platform.
+- Deleting a wallet a trade names is refused, naming the trade.
+- In the light theme, fields have a visible edge.
+
+Running 2.2.0 beside 2.2.1 on one database is safe (2.2.0 never names the column),
+but a 2.2.0 page cannot show or set a wallet.
 
 ## 2.2.0 (24 Nov): WBTC as an asset to buy
 
