@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ### Changed
 
 - **Add address sits beside Chain,** on the fields' line, and the Address field is narrower to make room.
+- **Stats shows a platform's Performance card only when it has trades** in the year shown; five cards saying "no trades" buried the ones that had some.
+- **Onchain Data's note is reworded:** "Every trade is listed under its corresponding wallet, as displayed in the Trades tab."
 
 ## [2.2.1] - 2026-11-25
 

@@ -3447,24 +3447,21 @@ function renderStatsView() {
       : `<button class="btn btn--sm" type="button" data-statement data-tip="${esc(statementTip)}"
           aria-description="${esc(statementTip)}">${STATEMENT_SVG} Statement</button>`;
 
-  // One Performance card per app, over the same trades on the same day as the
-  // card for all of them. Collapsed until opened, and remembered.
-  // Trades from before the platform was asked for. While there are any, an
-  // app with none recorded cannot be said to have had none.
-  const unrecorded = trades.filter((t) => !PLATFORMS.includes(t.platform)).length;
+  // One Performance card per app that has trades in the year shown, over the
+  // same trades on the same day as the card for all of them. Collapsed until
+  // opened, and remembered. An app with none has no card: five cards saying
+  // "no trades" buried the ones that had some. By Platform still lists trades
+  // from before the platform was asked for, as not recorded.
   const platformCards = PLATFORMS.map((p) => {
-    const label = PLATFORM_META[p].label;
     const mine = trades.filter((t) => t.platform === p);
+    if (!mine.length) return '';
+    const label = PLATFORM_META[p].label;
     const ra = summaryReport(mine, asOf);
     return collapsibleCard({
       key: p,
       title: `<span class="card__title-app">${platformLogo(p)}Performance (${esc(label)})</span>`,
-      note: mine.length ? perfNote(ra) : unrecorded ? 'none recorded' : 'no trades',
-      body: mine.length
-        ? perfGrid(ra, label)
-        : `<p class="muted">${unrecorded ? 'No trades recorded' : 'No trades'} on ${esc(label)}${
-            year === 'all' ? '' : ` in ${year}`
-          }.${unrecorded ? ` ${unrecorded} ${unrecorded === 1 ? 'trade has' : 'trades have'} no platform yet.` : ''}</p>`,
+      note: perfNote(ra),
+      body: perfGrid(ra, label),
       open: state.statsOpen.has(p),
     });
   }).join('');
