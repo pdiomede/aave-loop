@@ -3172,7 +3172,12 @@ const STATEMENT_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="non
  * above the button can never describe different trades. All is every trade.
  */
 function tradesForYear(year, asOf) {
-  return year === 'all' ? state.trades : state.trades.filter((t) => statsYear(t, asOf) === year);
+  // The rows the cards were drawn from, not `state.trades` now: the rate
+  // pick-up reloads the trades in the background without redrawing a tab
+  // that has focus, and the Statement then read +$402.10 under cards still
+  // saying "no rate" - or toasted that nothing had closed under one that had.
+  const rows = state.statsTrades ?? state.trades;
+  return year === 'all' ? rows : rows.filter((t) => statsYear(t, asOf) === year);
 }
 
 /**
@@ -3356,6 +3361,8 @@ function renderStatsView() {
   // file an open trade under one year for the tabs and another for the cards.
   const asOf = todayISO();
   state.statsAsOf = asOf;
+  // What the cards below are drawn from, for the buttons under them.
+  state.statsTrades = state.trades;
   const years = statsYears(state.trades, asOf);
   // A year that has lost its last trade - deleted, or its repayment moved to
   // another year - falls back to the newest rather than rendering empty cards.
