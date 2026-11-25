@@ -33,6 +33,7 @@ import {
   estimatedGainUsd,
   estimatedGainPct,
   estimateRate,
+  asPrinted,
   isUsdPegged,
   todayISO,
   intervalMs,
@@ -431,7 +432,7 @@ export function alertMessage(trade, alert, price, fxNow = {}, { when = 'now' } =
     // that cost, the interest and the fees came to +$2,876.60 above a gain of
     // -$723.40, the missing $3,600 being 30,000 EURC from 1.05 to 1.17.
     const moved =
-      marked && Number.isFinite(trade.buy_fx) ? -trade.buy_amount * (rate - trade.buy_fx) : null;
+      marked && Number.isFinite(trade.buy_fx) ? -asPrinted(trade.buy_amount) * (rate - trade.buy_fx) : null;
     const at = !marked
       ? ''
       : moved === null

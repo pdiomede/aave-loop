@@ -595,9 +595,12 @@ card of its own; a closing statement has no nothing-bought row.
   and an amount of the coin must print as at least 0.01; the server's `toNumber` and
   the form's `validateField` share both, as they share `priceInRange` (alert goals)
   and `unitPriceInRange` (what a purchase or sale implies per unit, against its
-  asset's own `ASSET_META.priceRange`: ETH $1-$100k, cbBTC and WBTC $10k-$1M, so a
-  quantity typed for one asset and left after switching to another is refused; the
-  form checks it again the moment the asset is picked, in `applyAsset`).
+  asset's own `ASSET_META.priceRange`: ETH $1-$10k (ETH's highest is about $4.9k;
+  at $100k it overlapped BTC's and kept a cbBTC quantity as ETH), cbBTC and WBTC
+  $10k-$1M, SOL and PSOL $1-$1k, so a quantity typed for one asset and left after
+  switching to another is refused; the form checks it again the moment the asset is
+  picked, in `applyAsset`, which on a sold trade also draws the sale's quantity so
+  both are re-read in one save).
 - **A missing or old market price is said where the estimate is.** `priceNote` in
   `public/app.js` puts a "no price" or "old price" chip on a Net gain cell, and
   `openGainLines` a line under the header's estimate, from the quote's `stale` flag

@@ -845,6 +845,20 @@ check('a held quantity is worth what it prints as, so the worth and the gain agr
   near(unrealisedUsd(d, 3500), 1664.55, 'gain from the worth as printed');
 });
 
+check('an estimate takes the purchase as its card prints it, not as stored', () => {
+  // Partial: spent 10,000.005 (printed 10,000.01) on 4 ETH, sold 1 for 3,000.
+  // 500.00 gross + 3 x 3,000 held - (10,000.01 - 2,500.00) = +1,999.99.
+  const partial = { id: 1, borrow_date: '2026-09-01', borrow_amount: 10000, borrow_currency: 'USDC', borrow_apr: 0,
+    borrow_gas_usd: 0, buy_date: '2026-09-01', buy_amount: 10000.005, buy_eth: 4, buy_gas_usd: 0,
+    sell_date: '2026-09-05', sell_amount: 3000, sell_eth: 1, sell_gas_usd: 0, platform: 'aave' };
+  near(estimatedGainUsd(partial, derive(partial, AS_OF), 3000, {}), 1999.99, 'partial sale');
+  // EURC with no purchase rate yet, at today's 1.1: 12,000.00 - 10,000.28 x 1.1
+  // (11,000.308, printed 11,000.31) = +999.69.
+  const eur = { id: 2, borrow_date: '2026-09-01', borrow_amount: 10000, borrow_currency: 'EURC', borrow_apr: 0,
+    borrow_gas_usd: 0, buy_date: '2026-09-01', buy_amount: 10000.275, buy_eth: 4, buy_gas_usd: 0, platform: 'aave' };
+  near(estimatedGainUsd(eur, derive(eur, AS_OF), 3000, { EURC: 1.1 }), 999.69, 'euro, no purchase rate');
+});
+
 check('SOL and PSOL are each valued at their own price', () => {
   const sol = held({ id: 3, asset: 'sol', buy_eth: 200 });
   const psol = held({ id: 4, asset: 'psol', buy_eth: 180 });

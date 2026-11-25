@@ -19,6 +19,7 @@ import {
   isUsdPegged,
   todayISO,
   cents,
+  asPrinted,
   ethHeldNow,
   PLATFORM_META,
   PLATFORMS,
@@ -265,7 +266,7 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
         // -$1,207.66 were called -$2,414.91. A partial sale's gain is marked
         // otherwise, so no move is claimed for it.
         if (Number.isFinite(t.buy_fx) && Number.isFinite(d.ethHeld)) {
-          moved += cents(-t.buy_amount * (today - t.buy_fx));
+          moved += cents(-asPrinted(t.buy_amount) * (today - t.buy_fx));
           movedKnown = true;
         } else moveGap = true;
       }

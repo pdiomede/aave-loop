@@ -414,6 +414,19 @@ await check('a Jupiter or Kamino trade saves its swaps with no cost: Solana reco
   await api('DELETE', `/api/trades/${sol.id}`);
 });
 
+await check("a cbBTC quantity left after switching to ETH is refused, not kept as ETH at $97,000", async () => {
+  const t = (
+    await api('POST', '/api/trades', {
+      borrow_date: '2026-09-01', borrow_amount: '9700', borrow_currency: 'USDC', borrow_apr: '4', platform: 'aave',
+      buy_date: '2026-09-01', buy_amount: '9700', buy_eth: '0.1', buy_gas_usd: '1', asset: 'cbbtc',
+    })
+  ).data;
+  const r = await api('PATCH', `/api/trades/${t.id}`, { asset: 'eth' });
+  assert.deepEqual([r.status, r.data.field], [400, 'buy_eth'], JSON.stringify(r.data));
+  assert.match(r.data.error, /97,000 USDC per ETH/);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 await check('an ETH price outside $1 to $1,000,000 is refused', async () => {
   // 30,000 for 80,773 ETH is $0.37 an ETH: 8.0773 typed without its point.
   const r = await api('PATCH', `/api/trades/${t1.id}`, { ...buy, buy_eth: '80773' });
@@ -825,7 +838,8 @@ await check('a trade can buy cbBTC, and its errors and its alert speak cbBTC and
   assert.match(text, /Gain \(\$\): -\$501\.00 after \$0\.00 interest and \$1\.00 fees$/);
 
   // A change of asset ends the goal, which was a BTC price, and not as "not sent".
-  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { asset: 'eth' })).status, 200);
+  // With an ETH's quantity: 0.1 left as ETH is $100,000 an ETH, refused.
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { asset: 'eth', buy_eth: '3' })).status, 200);
   const log = (await api('GET', '/api/alerts/log')).data.alerts.find((x) => x.id === a.id);
   assert.equal(log.status, 'closed');
   assert.equal(log.lastError, null);

@@ -1611,7 +1611,18 @@ function syncGasFields(form) {
   const picked = form?.elements?.platform;
   if (!picked) return;
   const off = !tracksGas({ platform: picked.value });
-  for (const wrap of form.querySelectorAll('[data-gas]')) wrap.hidden = off;
+  const saved = state.trades.find((t) => String(t.id) === form.dataset.trade) ?? {};
+  for (const wrap of form.querySelectorAll('[data-gas]')) {
+    wrap.hidden = off;
+    if (!off) continue;
+    // Hidden, it goes back to what is saved and drops any flag: "1..2" typed
+    // before Jupiter was picked kept its error out of sight, and Create trade
+    // then did nothing at all, with nothing on screen to say why.
+    const name = wrap.dataset.field;
+    const input = form.elements[name];
+    if (input) input.value = saved[name] ?? '';
+    clearFieldError(form, name);
+  }
 }
 
 /**
@@ -1739,12 +1750,19 @@ const assetBadge = (t) =>
 
 // Every label, unit, tip and placeholder here is the asset's: `t.asset` is the
 // picked one while the form is open (`applyAsset`), the saved one otherwise.
-function buyFields(t) {
+function buyFields(t, saved = t) {
   const { ticker, placeholder } = ASSET_META[assetOf(t)];
+  // A sold trade picked over to another asset: its sale's quantity is of the
+  // old one, and the server re-reads both for the new (`checkUnitPrice`). Its
+  // field joins the form, so both change in one save. Without it the Bought
+  // save was refused for the sale, a field it did not show, and the Sold save
+  // for the old asset - neither could go first.
+  const resold = assetOf(t) !== assetOf(saved) && saved.sell_date != null && saved.sell_eth != null;
   return `<div class="grid">
     ${field({ name: 'buy_date', label: 'Purchase date', tip: `Day you swapped the loan into ${ticker}.`, type: 'date', value: t.buy_date ?? t.borrow_date, autofocus: true })}
     ${field({ name: 'buy_amount', label: 'Amount spent', tip: 'Stablecoins spent on the swap.', type: 'number', value: t.buy_amount ?? t.borrow_amount, suffix: unitOf(t), placeholder: String(t.borrow_amount ?? '') })}
     ${field({ name: 'buy_eth', label: `${ticker} purchased`, tip: `${ticker} received from the swap.`, type: 'number', value: t.buy_eth ?? '', suffix: ticker, placeholder })}
+    ${resold ? field({ name: 'sell_eth', label: `${ticker} sold`, tip: `The sale's quantity, in ${ticker}: the sale was recorded in ${ASSET_META[assetOf(saved)].ticker}, and changes with the asset.`, type: 'number', value: t.sell_eth ?? '', suffix: ticker }) : ''}
     ${gasField(t, 'buy_gas_usd', SWAP_FEE, `What the swap into ${ticker} cost, in USD: gas plus any swap or aggregator fee.`, true)}
     ${gasField(t, 'buy_lend_gas_usd', 'Gas fee to lend', `Gas paid to supply the ${ticker} to the lending platform, in USD. Optional.`)}
   </div>`;
@@ -1772,7 +1790,7 @@ function applyAsset(form, trade) {
   const grid = form.querySelector('.grid');
   if (!grid || form.dataset.stageForm !== 'buy') return;
   const flagged = flaggedField(form);
-  grid.outerHTML = buyFields({ ...trade, ...payloadOf(form) });
+  grid.outerHTML = buyFields({ ...trade, ...payloadOf(form) }, trade ?? {});
   // A flagged field comes back flagged, judged again for the asset now picked:
   // rebuilt bare, 0.001 refused "per ETH" lost its error, and its hint priced
   // the purchase from the rejected figure.
@@ -2291,10 +2309,15 @@ function gainCellHtml(t, d) {
   // row, and as two items the figure floated mid-row with `est` pinned to the
   // far edge, apart from the number it qualifies.
   if (isNum(gain)) {
-    // An estimate on an old price says so in place of the plain `est`.
-    return `<span><span class="${gainClass(gain)}">${signedUsd(gain)}</span>${
-      isNum(d.netGainUsd) ? '' : ` ${priceNote(t, d) || estChip(t, d)}`
-    }</span>`;
+    // An estimate on an old price says so in place of the plain `est` - but
+    // not in place of the warning one, which says the trade's own rate is
+    // missing and today's stands in: hidden by "old price", a euro estimate
+    // on a stand-in rate was marked nowhere (Simulation's totals had the same
+    // fault).
+    const note = priceNote(t, d);
+    const standIn = !d.fxComplete && estimateRate(t, d, state.fxNow) !== null;
+    const chips = note ? (standIn ? `${note} ${estChip(t, d)}` : note) : estChip(t, d);
+    return `<span><span class="${gainClass(gain)}">${signedUsd(gain)}</span>${isNum(d.netGainUsd) ? '' : ` ${chips}`}</span>`;
   }
   // The chip only where a rate is what stands between the row and a figure.
   // A position waiting on its market's price would be sent to fetch rates that
@@ -2658,7 +2681,14 @@ function restoreDraft(draft) {
   // An asset picked but not saved: the fields were drawn for the saved one,
   // so they are drawn again for the pick, with the values just put back.
   const trade = state.trades.find((t) => t.id === draft.id);
-  if (trade && draft.values.asset && draft.values.asset !== assetOf(trade)) applyAsset(form, trade);
+  if (trade && draft.values.asset && draft.values.asset !== assetOf(trade)) {
+    applyAsset(form, trade);
+    // And what was typed into a field the pick drew - the sale's quantity.
+    for (const [name, value] of Object.entries(draft.values)) {
+      const input = form.elements[name];
+      if (input && input.value !== value) input.value = value;
+    }
+  }
   // The amount's ticker is drawn from the saved trade, and only the input
   // handler ever updated it. A currency changed in the form and then carried
   // across a re-render came back labelled with the old coin, beside a hint

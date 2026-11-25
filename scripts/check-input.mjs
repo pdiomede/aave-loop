@@ -257,7 +257,13 @@ check('a purchase price is judged against its own asset\'s range, not one for al
   assert.equal(validateField('buy_eth', '0.1', { asset: 'wbtc', borrow_currency: 'USDC', buy_amount: 9500 }), null);
   assert.equal(validateField('buy_eth', '1', { asset: 'wbtc', borrow_currency: 'USDC', buy_amount: 10000 }), null);
   assert.equal(validateField('buy_eth', '2.9', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 10000 }), null);
-  assert.equal(validateField('buy_eth', '1', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 100000 }), null);
+  assert.equal(validateField('buy_eth', '1', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 10000 }), null);
+  // A cbBTC's quantity left after switching to ETH: 0.1 for 9,700 is $97,000
+  // an ETH, which ETH's old $100,000 ceiling let through.
+  assert.equal(
+    validateField('buy_eth', '0.1', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 9700 }),
+    'That is 97,000 USDC per ETH. Check the amount and the ETH.',
+  );
   // SOL's range ends at $1,000: an ETH quantity left on SOL, 3 for 10,000.
   assert.equal(
     validateField('buy_eth', '3', { asset: 'sol', borrow_currency: 'USDC', buy_amount: 10000 }),
