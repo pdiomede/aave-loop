@@ -1205,6 +1205,89 @@ await check('an Optimism wallet is searched on its node, in spans the node allow
   await api('DELETE', `/api/wallets/${op.id}`);
 });
 
+await check("another trade's purchase is never this one's repayment", async () => {
+  // B's repayment of 30,001.09 and A's purchase of 30,000 are within 0.05%:
+  // a tie on amount, and A's purchase came first after B's sale.
+  const [day, next] = ['2026-08-25', '2026-08-26'];
+  mock.es.rows = [
+    xfer(101, `${day}T10:00:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(102, `${day}T10:05:00Z`, EURC_C, SCAN, ROUTER, 30000),
+    xfer(102, `${day}T10:05:00Z`, WETH_C, ROUTER, SCAN, 12.6491, 18, 'WETH'),
+    xfer(103, `${next}T13:00:00Z`, WETH_C, SCAN, ROUTER, 12.6491, 18, 'WETH'),
+    xfer(103, `${next}T13:00:00Z`, EURC_C, ROUTER, SCAN, 30127.92),
+    xfer(104, `${next}T13:10:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(105, `${next}T13:20:00Z`, EURC_C, SCAN, ROUTER, 30000),
+    xfer(105, `${next}T13:20:00Z`, WETH_C, ROUTER, SCAN, 12.5, 18, 'WETH'),
+    xfer(106, `${next}T14:00:00Z`, EURC_C, SCAN, POOL, 30001.09),
+  ];
+  const a = (await api('POST', '/api/trades', borrow({ borrow_date: next, borrow_amount: '30000', borrow_currency: 'EURC', wallet_id: scanWallet.id, buy_date: next, buy_amount: '30000', buy_eth: '12.5', buy_gas_usd: '1' }))).data;
+  const b = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  assert.equal((await find(a.id, 'buy')).data.hash, hashOf(105));
+  const repay = (await find(b.id, 'repay')).data;
+  assert.deepEqual([repay.hash, repay.others], [hashOf(106), 0]);
+  // Nor can it be pasted as this one's repayment.
+  const pasted = await api('PUT', `/api/trades/${b.id}/tx/sell`, { hash: hashOf(105) });
+  assert.equal(pasted.status, 400);
+  assert.match(pasted.data.error, new RegExp(`already the purchase of trade #${a.id}`));
+  await api('DELETE', `/api/trades/${a.id}`);
+  await api('DELETE', `/api/trades/${b.id}`);
+});
+
+await check('a swap from USDC to USDC.e is neither the loan nor the repayment', async () => {
+  const day = '2026-08-28';
+  const [USDC, USDCE] = ['0xaf88d065e77c8cc2239327c5edb3a432268e5831', '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8'];
+  const arb = (await api('POST', '/api/wallets', { name: 'Arb two', address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', network: 'arbitrum' })).data;
+  const w = arb.address.toLowerCase();
+  mock.es.rows = [
+    xfer(111, `${day}T08:00:00Z`, USDCE, POOL, w, 20000, 6, 'USDC.e'),
+    // The loan converted to native USDC two minutes on: not the loan.
+    xfer(112, `${day}T08:02:00Z`, USDCE, w, ROUTER, 20000, 6, 'USDC.e'),
+    xfer(112, `${day}T08:02:00Z`, USDC, ROUTER, w, 20000, 6, 'USDC'),
+    xfer(113, `${day}T13:00:00Z`, USDC, ROUTER, w, 20500, 6, 'USDC'),
+    // Native USDC swapped back to USDC.e to repay in: not the repayment.
+    xfer(114, `${day}T13:30:00Z`, USDC, w, ROUTER, 20001.5, 6, 'USDC'),
+    xfer(114, `${day}T13:30:00Z`, USDCE, ROUTER, w, 20001.5, 6, 'USDC.e'),
+    xfer(115, `${day}T14:00:00Z`, USDCE, w, POOL, 20001.5, 6, 'USDC.e'),
+  ];
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: day, borrow_amount: '20000', wallet_id: arb.id }))).data;
+  const loan = (await find(t.id, 'borrow')).data;
+  assert.deepEqual([loan.hash, loan.others], [hashOf(111), 0]);
+  // The repayment, on a trade recorded through to it.
+  const u = (await api('POST', '/api/trades', borrow({
+    borrow_date: day, borrow_amount: '20000', wallet_id: arb.id,
+    buy_date: day, buy_amount: '20000', buy_eth: '6', buy_gas_usd: '1',
+    sell_date: day, sell_amount: '20500', sell_eth: '6', sell_gas_usd: '1',
+    repay_date: day, repay_amount: '20001.5',
+  }))).data;
+  await api('DELETE', `/api/trades/${t.id}/tx/borrow`);
+  const repay = (await find(u.id, 'repay')).data;
+  assert.equal(repay.hash, hashOf(115));
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/trades/${u.id}`);
+  await api('DELETE', `/api/wallets/${arb.id}`);
+});
+
+await check("a pasted hash goes when the trade's wallet moves to another chain, and needs a wallet", async () => {
+  const day = '2026-08-30';
+  const arb = (await api('POST', '/api/wallets', { name: 'Arb three', address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', network: 'arbitrum' })).data;
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: day, wallet_id: scanWallet.id }))).data;
+  assert.equal((await api('PUT', `/api/trades/${t.id}/tx/borrow`, { hash: hashOf(120) })).status, 200);
+  // Another Ethereum wallet: same chain, the pasted hash stays.
+  const eth2 = (await api('POST', '/api/wallets', { name: 'Eth two', address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed' })).data;
+  await api('PATCH', `/api/trades/${t.id}`, { wallet_id: eth2.id });
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id]?.borrow?.hash, hashOf(120));
+  // Arbitrum: an Ethereum transaction is no page on Arbiscan.
+  await api('PATCH', `/api/trades/${t.id}`, { wallet_id: arb.id });
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id], undefined);
+  // No wallet: no chain to paste on.
+  await api('PATCH', `/api/trades/${t.id}`, { wallet_id: null });
+  const none = await api('PUT', `/api/trades/${t.id}/tx/borrow`, { hash: hashOf(121) });
+  assert.deepEqual([none.status, none.data.field], [400, 'wallet_id']);
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${arb.id}`);
+  await api('DELETE', `/api/wallets/${eth2.id}`);
+});
+
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {
   const before = mock.es.calls;
   // In a child of its own: `isolated` blanks the key, as an install without

@@ -59,6 +59,10 @@ starts with no wallet. Then check, behind the password:
 - Deleting a wallet a trade names is refused, naming the trade.
 - In both themes, an idle field has a visible edge.
 - Wallets > Simulation lists every trade under its wallet, then No wallet.
+- **Chains:** existing wallets are Ethereum (the column's default). A wallet used on
+  Base, Arbitrum or Optimism is added again with its chain. Arbitrum is searched on
+  Etherscan's free plan and Optimism on its public node; Base needs `BASE_RPC_URL` in
+  config.env (a node with a token, e.g. from publicnode/allnodes) or its hashes pasted.
 - **Etherscan:** add `ETHERSCAN_API_KEY=...` (your key from etherscan.io > API Keys)
   to `/var/www/aave/config.env`, then restart. Without it the magnifier on a
   closed trade's stages says the key is missing. Then open a closed trade in

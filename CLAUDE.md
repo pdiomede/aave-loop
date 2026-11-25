@@ -202,7 +202,7 @@ fullest year, all three assets included, leaves about 8.5pt. It is ASCII through
 escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
 `env.js`, `fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
-`report.js`, `etherscan.js` and `format.js` sit at the root **because they are server-only** — the
+`report.js`, `etherscan.js`, `chainnode.js` and `format.js` sit at the root **because they are server-only** — the
 browser is served `lib/` wholesale. `format.js` duplicates some of `public/app.js`'s
 formatters on purpose: the browser's escape their output for `innerHTML`, which would
 be wrong in a Telegram message.
@@ -349,9 +349,12 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
 
 The Wallets tab (`#wallets`; `#settings`, its first name, is an alias) keeps the
 wallets trades are run from in `wallets` (db.js): a required name, unique in any case,
-and an address stored only in its checksummed form, unique per `network` (Ethereum
-only, `NETWORKS` in `lib/address.js`; the column exists so another network needs no
-table rebuild). The API refuses changing an address in place: it is what trades are
+and an address stored only in its checksummed form, unique per `network`: Ethereum,
+Base, Arbitrum or Optimism (`NETWORKS` / `NETWORK_META` in `lib/address.js`, with each
+chain's `chainId` and explorer URLs; `networkOf(w)` reads it, Ethereum for a row that
+names none). The Add form's chain picker starts empty and is required, as the new
+trade's platform is; the API takes an absent `network` as Ethereum for older callers.
+The same address on two chains is two wallets. The API refuses changing an address in place: it is what trades are
 linked by. Every write is an immediate transaction, so its duplicate checks and the
 write hold the lock together. The Add form sits outside `#wallets-mount`, so the
 redraw a price triggers cannot wipe it, and a rename being typed lives in
@@ -378,6 +381,27 @@ finds the stage's transaction on Etherscan.
 
 ### Transactions on Etherscan
 
+Every search is asked of Etherscan's V2 API with the wallet's chain (`chainid`), using
+that chain's contracts (`STABLE` / `ASSET_TOKEN`, per chain; a rollup's USDC is the
+native and the bridged one); block and transfer caches are keyed by chain. The free
+plan answers Ethereum and Arbitrum and refuses Base and Optimism ("Free API access is
+not supported for this chain"): that is `kind: 'unsupported'`, remembered per chain for
+an hour (`UNSUPPORTED`), said on the card with the explorer to paste from, and counted
+per chain by Get onchain data, which carries on. Those two chains are read from a node
+instead when one is set (`chainnode.js`, `nodeUrl` in config.js): `OPTIMISM_RPC_URL`,
+defaulting to mainnet.optimism.io, which serves old blocks with no key, and
+`BASE_RPC_URL`, unset by default because no free keyless node serves Base's history
+(mainnet.base.org refuses log queries, publicnode wants a token for old blocks, others
+cap a query at 50 blocks or sit behind a bot check). A node is asked plain JSON-RPC:
+the block for a time is searched for by the times around it (Base's blocks went from 2 s
+to 0.2 s, so never worked out from a block time), Transfer logs come in spans the node
+allows, halved when refused, and are returned as Etherscan's rows so the matching is
+shared; each UTC day of a wallet is read once and kept (`nodeDays`). A node needs no
+Etherscan key, and its URL, which may carry a token, is never echoed. Base's and
+Optimism's contracts were checked against the contracts themselves (`symbol()`,
+`decimals()`); Blockscout's API sits behind a Cloudflare challenge and Routescan does not
+carry these chains.
+
 `etherscan.js` (server-only) finds a stage's transaction as the ERC-20 transfer of the
 trade's stablecoin into the wallet (loan, sale) or out of it (purchase, repayment), in
 the stage's days ±1 (the typed date is local, the chain UTC), within 1% of its amount:
@@ -387,7 +411,11 @@ tokens (address poisoning). Ranked by amount (within 0.05% or a cent is exact), 
 for a purchase or sale by the asset leg of the same transaction (WETH, cbBTC, WBTC)
 against the typed quantity; still tied, the loan is the last before its purchase, the
 repayment the first after its sale (`ANCHOR`), and a hash another trade holds for that
-stage is never offered. The purchase or sale it is settled against is the trade's own
+stage is never offered - at any stage: a transaction is one stage of one trade, and
+another trade's purchase was offered as a repayment when only the same stage was
+excluded. A loan or repayment never counts a transaction that moves the same coin back
+the other way (a USDC to USDC.e swap on a rollup), and one that also moves the asset
+ranks after a plain transfer. The purchase or sale it is settled against is the trade's own
 *pasted* hash when it has one; otherwise it is worked out again, and a guess passes
 its doubt (`others`) on to the loan, since a searched hash's doubt is not stored. So
 `txBasis` of the loan and repayment includes their anchor's fields, and pasting or
@@ -416,7 +444,8 @@ together linked one loan to two trades), and answers 200 found or not (the card 
 why). A PATCH that
 changes a stage's date, amount or quantity, or the trade's wallet, coin or asset,
 deletes that stage's searched hash in the same transaction; a pasted one (`PUT`) is
-kept. `scripts/check-server.mjs` mocks Etherscan on loopback.
+kept - unless the trade's wallet moves to another chain, or to none, which deletes them
+all: a hash is a transaction on one chain. A paste needs the trade to have a wallet. `scripts/check-server.mjs` mocks Etherscan on loopback.
 
 ### Platforms
 

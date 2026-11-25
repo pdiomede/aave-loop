@@ -352,12 +352,28 @@ function candidates(rows, t, stage, wallet, claimed) {
     const off = Math.abs(amount - want);
     if (!(off <= Math.max(0.01, want * TOLERANCE))) continue;
     const byAmount = off <= Math.max(0.01, want * NEAR) ? 0 : off / want;
+    const sameTx = rows.filter((x) => x.hash === row.hash);
     let byQty = 0;
+    if (!r.qty) {
+      // A loan or repayment moves the coin and nothing else back. A
+      // transaction that also moves the same coin the other way is a swap
+      // within it - USDC to USDC.e on a rollup, 20,001.5 out and 20,001.5 in -
+      // and was taken for the repayment that followed it. One that moves the
+      // asset is a purchase or a sale - a repayment and a 30,000 purchase are
+      // within 0.05% of each other - and ranks after a plain transfer rather
+      // than being ruled out, since a loop contract can borrow and swap in one.
+      const back = sameTx
+        .filter((x) => tokens.includes(lower(x.contractAddress)))
+        .filter((x) => (r.dir === 'in' ? lower(x.from) === w : lower(x.to) === w))
+        .reduce((sum, x) => sum + amountOf(x), 0);
+      if (back >= amount / 2) continue;
+      byQty = sameTx.some((x) => assetTokens.includes(lower(x.contractAddress))) ? 1 : 0;
+    }
     if (wantQty > 0) {
       // The asset leg of the same transaction, in the stage's direction; none
       // (a native ETH swap) ranks after any that has one.
-      const leg = rows
-        .filter((x) => x.hash === row.hash && assetTokens.includes(lower(x.contractAddress)))
+      const leg = sameTx
+        .filter((x) => assetTokens.includes(lower(x.contractAddress)))
         .filter((x) => (r.qtyDir === 'in' ? lower(x.to) === w : lower(x.from) === w))
         .reduce((s, x) => s + amountOf(x), 0);
       byQty = leg > 0 ? Math.abs(leg - wantQty) / wantQty : Infinity;
@@ -375,7 +391,7 @@ const SAME = 1e-6;
 
 /** The best fit for a stage, or null, with how many others fitted as well. */
 function pick(rows, t, stage, wallet, claimed, own = {}) {
-  const list = candidates(rows, t, stage, wallet, claimed[stage] ?? new Set());
+  const list = candidates(rows, t, stage, wallet, claimed);
   if (!list.length) return null;
   let tied = list.filter((c) => same(c.byAmount, list[0].byAmount) && same(c.byQty, list[0].byQty));
   if (tied.length > 1) {
@@ -406,13 +422,15 @@ function pick(rows, t, stage, wallet, claimed, own = {}) {
 
 /**
  * Search Etherscan for one stage of a trade. `wallet` is the trade's
- * (`{ name, address }`); `claimed` maps each stage to the hashes other trades
- * already hold for it; `own` the trade's own stored hashes, by stage. Answers `{ found: true, hash, at, amount, others }` or
+ * (`{ name, address, network }`); `claimed` is the set of hashes other
+ * trades hold, at any stage - a hash is one stage of one trade, and another
+ * trade's purchase was offered as this one's repayment when only the same
+ * stage was excluded; `own` the trade's own stored hashes, by stage. Answers `{ found: true, hash, at, amount, others }` or
  * `{ found: false, reason, kind }` (`kind` as `EtherscanError`'s, none for a
  * stage not found), never throws: a search that could not be done
  * is a result the card shows.
  */
-export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
+export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {}) {
   const network = networkOf(wallet);
   const chain = NETWORK_META[network];
   // A chain read from its node needs no Etherscan key.

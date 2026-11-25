@@ -2324,9 +2324,59 @@ const FOCUSABLE = '[tabindex], button, a[href], input, select, textarea';
 function setKeepingFocus(el, html) {
   if (!el) return;
   const active = document.activeElement;
-  const index = el.contains(active) && active !== el ? [...el.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
+  const inside = el.contains(active) && active !== el;
+  const index = inside ? [...el.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
+  const keys = inside ? focusKeys(active) : [];
+  let caret = null;
+  try {
+    if (inside && typeof active.selectionStart === 'number') caret = [active.selectionStart, active.selectionEnd];
+  } catch {
+    /* a control with no caret */
+  }
   el.innerHTML = html;
-  if (index >= 0) el.querySelectorAll(FOCUSABLE)[index]?.focus({ preventScroll: true });
+  if (!inside) return;
+  // The same control by what it is, then by its place. By place alone, a
+  // card's "Paste a hash" turning into "Searching…" during a scan moved every
+  // control after it by one: focus left the hash being typed for Cancel.
+  let target = null;
+  for (const sel of keys) {
+    target = el.querySelector(sel);
+    if (target) break;
+  }
+  target ??= index >= 0 ? el.querySelectorAll(FOCUSABLE)[index] : null;
+  if (!target) return;
+  target.focus({ preventScroll: true });
+  if (caret) {
+    try {
+      target.setSelectionRange(...caret);
+    } catch {
+      /* not a text control */
+    }
+  }
+}
+
+/**
+ * Selectors that find `el` again in markup drawn anew: its id, its own
+ * data-* attributes, or its name within a form known by id or data-*.
+ * Field ids carry a random part (`field`), so an id may not be found again.
+ */
+function focusKeys(el) {
+  const q = (v) => CSS.escape(v);
+  const data = (node) =>
+    [...node.attributes]
+      .filter((a) => a.name.startsWith('data-') && a.name !== 'data-tip')
+      .map((a) => `[${a.name}="${q(a.value)}"]`)
+      .join('');
+  const keys = [];
+  if (el.id) keys.push(`#${q(el.id)}`);
+  const own = data(el);
+  if (own) keys.push(`${el.tagName.toLowerCase()}${own}`);
+  const form = el.form ?? el.closest('form');
+  if (el.name && form) {
+    const formSel = form.id ? `#${q(form.id)}` : data(form) ? `form${data(form)}` : '';
+    if (formSel) keys.push(`${formSel} [name="${q(el.name)}"]`);
+  }
+  return keys;
 }
 
 /**
@@ -2343,6 +2393,10 @@ function focusInView(el) {
 }
 
 function refreshEstimateCells() {
+  // Simulation's rows and each wallet's Est. gain are drawn from the same
+  // price and rate; drawn only on a visit, they kept the price they were
+  // first drawn at while the header moved on.
+  if (state.view === 'wallets') renderSimulation();
   if (resortByEstimate()) return;
   for (const tr of document.querySelectorAll('#table-mount tr.row[data-trade]')) {
     const t = state.trades.find((x) => String(x.id) === tr.dataset.trade);
@@ -3661,7 +3715,7 @@ function renderWalletsView() {
       <p>Add the Ethereum wallets you trade from, each under a name.</p>
     </div>`;
   } else {
-    html = `<table class="table table--flush wallets-table">
+    html = `<div class="table-scroll"><table class="table table--flush wallets-table">
       <thead><tr>
         ${hintHead('Name', TIPS.wallets.name)}
         ${hintHead('Address', TIPS.wallets.address)}
@@ -3671,7 +3725,7 @@ function renderWalletsView() {
         <th><span class="sr-only">Rename or delete</span></th>
       </tr></thead>
       <tbody>${state.wallets.map(walletRow).join('')}</tbody>
-    </table>`;
+    </table></div>`;
   }
   setKeepingFocus(mount, html);
   renderSimulation();
@@ -3727,7 +3781,11 @@ function txLine(t, stage) {
       ${others}
     </div>`;
   }
-  if (state.txBusy.has(key)) return '<div class="tx-line"><span class="muted">Searching Etherscan…</span></div>';
+  if (state.txBusy.has(key)) return '<div class="tx-line"><span class="muted">Searching…</span></div>';
+  // No wallet, no chain: a hash pasted here would be linked to a guessed one.
+  if (t.wallet_id == null) {
+    return '<div class="tx-line"><span class="muted">Link a wallet on the Borrowed card to find or paste its hash.</span></div>';
+  }
   const reason = note?.reason ? `<p class="tx-line__reason">${esc(note.reason)}</p>` : '';
   if (state.txPaste[key] === undefined) {
     return `<div class="tx-line">${reason}<button class="link-btn" type="button" data-tx-paste="${key}">Paste a hash</button></div>`;
@@ -3827,9 +3885,11 @@ async function searchStage(key) {
   } catch (err) {
     // Refused (no wallet, a stage not recorded, a trade gone) is final for
     // this stage; no answer at all is the server or the network, and passes.
-    r = err.status
-      ? { found: false, reason: err.message }
-      : { found: false, reason: 'Could not reach the server.', kind: 'busy' };
+    // A 5xx is the ledger itself having trouble - busy, not "not found".
+    r =
+      err.status && err.status < 500
+        ? { found: false, reason: err.message }
+        : { found: false, reason: err.status ? err.message : 'Could not reach the server.', kind: 'busy' };
     state.txNote[key] = { reason: r.reason };
   } finally {
     state.txBusy.delete(key);
@@ -3902,6 +3962,8 @@ function scanPause(ms, scan) {
  */
 async function scanOnchain() {
   if (state.simScan?.running) {
+    // The second click of a double click is not Stop.
+    if (Date.now() - state.simScan.startedAt < 600) return;
     state.simScan.stopRequested = true;
     renderScanHead();
     return;
@@ -3910,24 +3972,32 @@ async function scanOnchain() {
     toast('The ledger is still loading. Try again in a moment.');
     return;
   }
-  await loadStageTxs();
-  const rank = new Map([...state.wallets].sort(byWalletName).map((w, i) => [w.id, i]));
-  const closed = sortedTrades()
-    .filter((t) => derive(t).status === 'CLOSED')
-    .sort((a, b) => (rank.get(a.wallet_id) ?? Infinity) - (rank.get(b.wallet_id) ?? Infinity));
+  // Claimed before the first wait: a double click otherwise started a second
+  // scan beside the first during that read, and Stop reached only one of them.
   const scan = {
     running: true,
+    startedAt: Date.now(),
     total: 0,
     done: 0,
     found: 0,
     flagged: [],
     notFound: [],
     had: 0,
-    skipped: closed.filter((t) => t.wallet_id == null).length,
-    closed: closed.length,
+    pasting: 0,
+    skipped: 0,
+    closed: 0,
     uncovered: {},
     stopped: null,
   };
+  state.simScan = scan;
+  renderScanHead();
+  await loadStageTxs();
+  const rank = new Map([...state.wallets].sort(byWalletName).map((w, i) => [w.id, i]));
+  const closed = sortedTrades()
+    .filter((t) => derive(t).status === 'CLOSED')
+    .sort((a, b) => (rank.get(a.wallet_id) ?? Infinity) - (rank.get(b.wallet_id) ?? Infinity));
+  scan.skipped = closed.filter((t) => t.wallet_id == null).length;
+  scan.closed = closed.length - scan.skipped;
   const queue = [];
   for (const t of closed.filter((x) => x.wallet_id != null)) {
     for (const stage of Object.keys(TX_CARD)) {
@@ -3936,11 +4006,14 @@ async function scanOnchain() {
     }
   }
   scan.total = queue.length;
-  if (!queue.length) {
-    await scanReport({ ...scan, running: false });
+  if (!queue.length || scan.stopRequested) {
+    if (scan.stopRequested && queue.length) scan.stopped = { kind: 'stop' };
+    scan.running = false;
+    state.simScan = null;
+    renderScanHead();
+    await scanReport(scan);
     return;
   }
-  state.simScan = scan;
   renderScanHead();
 
   for (const { id, stage } of queue) {
@@ -3953,6 +4026,14 @@ async function scanOnchain() {
       continue;
     }
     const key = txKey(id, stage);
+    // Its hash is being typed into its paste field: left to the hand pasting
+    // it. Searched, the field gave way to "Searching…" under the typing.
+    if (state.txPaste[key] !== undefined) {
+      scan.pasting += 1;
+      scan.done += 1;
+      renderScanHead();
+      continue;
+    }
     let r = await searchStage(key);
     for (const wait of SCAN_WAITS) {
       if (r.kind !== 'busy' || scan.stopRequested) break;
@@ -3995,33 +4076,44 @@ function scanReport(scan) {
   const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const item = (x, text) => `<li>Trade #${esc(x.id)} &middot; ${TX_CARD[x.stage]}: ${esc(text)}</li>`;
   const left = scan.total - scan.done;
+  // Said as it happened: a stage on a chain that cannot be searched was not
+  // searched, and "busy" is whatever kept answering no - Etherscan's limit,
+  // a node, or the ledger itself - in its own words.
+  const searched = scan.found + scan.notFound.length;
+  const uncovered = Object.values(scan.uncovered).reduce((n, u) => n + u.n, 0);
   let title;
   let lead;
   if (!scan.total) {
     title = 'Nothing to gather';
     lead = scan.closed
       ? 'Every stage of every closed trade with a wallet already has its transaction hash.'
-      : 'There is no closed trade yet.';
+      : scan.skipped
+        ? 'No closed trade names a wallet yet: link one on its Borrowed card.'
+        : 'There is no closed trade yet.';
   } else if (scan.stopped?.kind === 'setup') {
-    title = 'Etherscan could not be searched';
+    title = 'Could not search';
     lead = esc(scan.stopped.reason);
   } else if (scan.stopped?.kind === 'busy') {
-    title = 'Stopped: Etherscan is busy';
-    lead = `${esc(scan.stopped.reason)} The free tier's limit was reached and waiting did not clear it, so the scan stopped with ${plural(left, 'stage')} left. Run it again later; it carries on from there.`;
+    title = 'Stopped: no answer';
+    lead = `${esc(scan.stopped.reason)} Waiting 10 s and then 30 s did not clear it, so the scan stopped with ${plural(left, 'stage')} left. Run it again later; it carries on from there.`;
   } else if (scan.stopped?.kind === 'stop') {
     title = 'Stopped';
     lead = `Stopped with ${plural(left, 'stage')} left. Run it again to carry on.`;
+  } else if (!searched && uncovered) {
+    title = 'Nothing could be searched';
+    lead = `All ${plural(uncovered, 'stage')} still missing a hash are on chains that cannot be searched here; paste their hashes.`;
   } else {
     title = 'Onchain data gathered';
-    lead = `Searched ${plural(scan.total, 'stage')} of ${plural(scan.closed, 'closed trade')}.`;
+    lead = `Searched ${plural(searched, 'stage')} of ${plural(scan.closed, 'closed trade')} with a wallet.`;
   }
   const totals = [
     scan.total ? `<li><strong>${scan.found}</strong> found${scan.flagged.length ? `, ${scan.flagged.length} to check` : ''}</li>` : '',
     scan.total ? `<li><strong>${scan.notFound.length}</strong> not found</li>` : '',
     scan.had ? `<li><strong>${scan.had}</strong> already had a hash</li>` : '',
+    scan.pasting ? `<li><strong>${scan.pasting}</strong> left to the hash being pasted</li>` : '',
     scan.skipped ? `<li><strong>${scan.skipped}</strong> closed ${scan.skipped === 1 ? 'trade' : 'trades'} skipped: no wallet</li>` : '',
     ...Object.entries(scan.uncovered).map(
-      ([chain, { n }]) => `<li><strong>${n}</strong> on ${esc(chain)} skipped: not on Etherscan's free plan</li>`,
+      ([chain, { n }]) => `<li><strong>${n}</strong> on ${esc(chain)} not searched</li>`,
     ),
   ].join('');
   const lists = [
@@ -4079,15 +4171,22 @@ async function clearTx(key) {
     }
   }
   txWriteSeq += 1;
-  if (state.stageTxs?.[id]) {
-    const { [stage]: _gone, ...rest } = state.stageTxs[id];
-    state.stageTxs = { ...state.stageTxs, [id]: rest };
-  }
+  const dep = searchedDependent(id, stage);
+  dropStageTx(id, stage);
+  // The server forgets a searched loan or repayment found by way of this one
+  // too, so the page does, here: a reload to learn it was dropped whenever a
+  // scan's find landed first, and the card kept showing it.
+  if (dep) dropStageTx(id, dep);
   delete state.txNote[key];
   renderSimulation();
   document.querySelector(`[data-tx-find="${key}"]`)?.focus();
-  // The server forgets a loan or repayment found by way of this one too.
-  if (TX_DEPENDENT[stage]) loadStageTxs().then(renderSimulation);
+}
+
+/** Forget a stage's hash on the page, as the server has. */
+function dropStageTx(id, stage) {
+  if (!state.stageTxs?.[id]?.[stage]) return;
+  const { [stage]: _gone, ...rest } = state.stageTxs[id];
+  state.stageTxs = { ...state.stageTxs, [id]: rest };
 }
 
 async function pasteTx(form) {
@@ -4101,14 +4200,18 @@ async function pasteTx(form) {
   const done = beginSubmit(form);
   if (!done) return;
   try {
+    const before = state.stageTxs?.[id]?.[stage]?.hash;
+    const dep = searchedDependent(id, stage);
     const row = await api(`/api/trades/${id}/tx/${stage}`, { method: 'PUT', body: JSON.stringify({ hash }) });
     txWriteSeq += 1;
     state.stageTxs = { ...(state.stageTxs ?? {}), [id]: { ...(state.stageTxs?.[id] ?? {}), [stage]: row } };
+    // A new purchase or sale: the server dropped the searched loan or
+    // repayment found by way of the old one, and so does the page.
+    if (dep && before !== row.hash) dropStageTx(id, dep);
     delete state.txPaste[key];
     delete state.txNote[key];
     renderSimulation();
     document.querySelector(`[data-tx-clear="${key}"]`)?.closest('.sim-card')?.querySelector('.tx-line__hash')?.focus();
-    if (TX_DEPENDENT[stage]) loadStageTxs().then(renderSimulation);
   } catch (err) {
     showFormError(form, err.status ? err.message : 'Could not reach the server.', 'hash');
   } finally {
@@ -4142,7 +4245,14 @@ function simTotals(trades) {
     `<span>Closed ${s.closedCount}</span>`,
     `<span>Open ${s.openCount}${isNum(s.deployed) ? ` (${usd(s.deployed)})` : ''}${s.deployedMissingFx ? ` ${RATE_MISSING}` : ''}</span>`,
   ];
-  if (g?.rows.length) parts.push(`<span>Est. gain ${fig(g.total)}</span>`);
+  if (g?.rows.length) {
+    // Marked as the header marks it: a position with no price, or an old one,
+    // says so, and a sum that leaves a position out for want of a rate
+    // carries the chip - bare, a partial sum read as the wallet's whole.
+    const notes = [...new Set(trades.map((t) => priceNote(t, derive(t))).filter(Boolean))].join(' ');
+    const rateGap = g.missing && !notes ? ` ${RATE_MISSING}` : '';
+    parts.push(`<span>Est. gain ${fig(g.total)}${rateGap}${notes ? ` ${notes}` : ''}</span>`);
+  }
   return parts.join('');
 }
 
@@ -4219,7 +4329,10 @@ function renderSimulation() {
 
 async function refreshWalletsView() {
   await Promise.all([loadWallets(), loadTrades().catch(() => false), loadStageTxs()]);
-  if (state.view === 'wallets') renderWalletsView();
+  // `render`, not the view alone: the trades just read feed the header's
+  // tiles too, and redrawn below them only, the wallets' groups no longer
+  // added up to the header above.
+  if (state.view === 'wallets') render();
 }
 
 async function submitWallet(form) {

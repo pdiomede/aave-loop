@@ -743,6 +743,12 @@ app.patch('/api/trades/:id', async (req, res, next) => {
             for (const st of moved) {
               prepare("DELETE FROM stage_tx WHERE trade_id = ? AND stage = ? AND source = 'search'").run(current.id, st);
             }
+            // Moved to a wallet on another chain, or to none: a pasted hash is
+            // a transaction on the old chain, and kept it was drawn as a link
+            // to the new chain's explorer, a page for no such transaction.
+            if ('wallet_id' in patch && chainOfWallet(patch.wallet_id) !== chainOfWallet(current.wallet_id)) {
+              prepare('DELETE FROM stage_tx WHERE trade_id = ?').run(current.id);
+            }
           }
           return info;
         }).immediate();
@@ -1315,18 +1321,23 @@ function txTarget(req, res) {
   return { trade, stage };
 }
 
-/** The hashes other trades already hold, by stage: never offered again. */
+/**
+ * The hashes other trades already hold, at any stage: never offered again. A
+ * transaction is one stage of one trade; excluded only from the same stage,
+ * one trade's purchase was linked as another's repayment.
+ */
 function claimedHashes(tradeId) {
-  const out = {};
-  for (const row of prepare('SELECT stage, hash FROM stage_tx WHERE trade_id != ?').all(tradeId)) {
-    (out[row.stage] ??= new Set()).add(row.hash);
-  }
-  return out;
+  return new Set(prepare('SELECT hash FROM stage_tx WHERE trade_id != ?').all(tradeId).map((r) => r.hash));
 }
 
 // One search per trade and stage at a time: a second click, or a second tab,
 // waits for the first rather than asking Etherscan the same thing again.
 const txSearches = new Map();
+
+/** The chain of a wallet by id, or null for none. */
+function chainOfWallet(id) {
+  return id == null ? null : (prepare('SELECT network FROM wallets WHERE id = ?').get(id)?.network ?? null);
+}
 
 /**
  * The trade's own pasted hashes, by stage: what a loan's or repayment's tie is
@@ -1350,8 +1361,8 @@ function dropDependent(tradeId, stage) {
   return prepare("DELETE FROM stage_tx WHERE trade_id = ? AND stage = ? AND source = 'search'").run(tradeId, DEPENDENT[stage]).changes;
 }
 
-const takenBy = (stage, hash, tradeId) =>
-  prepare('SELECT trade_id FROM stage_tx WHERE stage = ? AND hash = ? AND trade_id != ?').get(stage, hash, tradeId);
+const takenBy = (hash, tradeId) =>
+  prepare('SELECT trade_id, stage FROM stage_tx WHERE hash = ? AND trade_id != ?').get(hash, tradeId);
 
 async function searchAndStore(trade, stage, wallet) {
   // Twice at most: a hash another trade took while this one searched is
@@ -1372,7 +1383,7 @@ async function searchAndStore(trade, stage, wallet) {
         if (txBasis(stage).some((k) => (now[k] ?? null) !== (trade[k] ?? null))) {
           return { found: false, reason: 'The trade was edited while it was being searched. Search again.' };
         }
-        const taken = takenBy(stage, r.hash, trade.id);
+        const taken = takenBy(r.hash, trade.id);
         if (taken) return { taken: taken.trade_id };
         prepare(
           'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
@@ -1431,14 +1442,15 @@ app.put('/api/trades/:id/tx/:stage', (req, res) => {
   if (!HASH.test(hash)) throw new BadRequest('A transaction hash is 0x and 64 characters of 0-9 and a-f.', 'hash');
   const lower = hash.toLowerCase();
   if (!stageRecorded(trade, stage)) throw new BadRequest(`Record the ${STAGE_NAMES[stage]} first.`, 'stage');
+  // A hash is a transaction on one chain, the trade's wallet's: with no
+  // wallet, its link would guess one.
+  if (trade.wallet_id == null) throw new BadRequest('Link a wallet on the Borrowed card first: a hash is on its chain.', 'wallet_id');
   const row = db
     .transaction(() => {
-      const other = prepare('SELECT trade_id FROM stage_tx WHERE stage = ? AND hash = ? AND trade_id != ?').get(
-        stage,
-        lower,
-        trade.id,
-      );
-      if (other) throw new BadRequest(`That transaction is already the ${STAGE_NAMES[stage]} of trade #${other.trade_id}.`, 'hash');
+      const other = takenBy(lower, trade.id);
+      if (other) {
+        throw new BadRequest(`That transaction is already the ${STAGE_NAMES[other.stage]} of trade #${other.trade_id}.`, 'hash');
+      }
       // A loan or repayment found by way of the purchase or sale this
       // replaces was settled against the old one.
       if (selectStageTx.get(trade.id, stage)?.hash !== lower) dropDependent(trade.id, stage);

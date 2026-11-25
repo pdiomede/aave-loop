@@ -1040,8 +1040,15 @@ html {
   font-size: 13px;
 }
 
-/* A wallet named on a Borrowed card: the name, and its address shortened. */
+/* A wallet named on a Borrowed card: the name, and its address shortened.
+   The name wraps - a long one ran past the card and, on a phone, gave the
+   page a sideways scroll - and the short address stays whole. */
 .wallet-ref {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.wallet-ref__short {
   white-space: nowrap;
 }
 
@@ -2813,6 +2820,14 @@ th[aria-sort="ascending"] .th-sort__caret {
 .field[data-field="wallet_address"] input,
 .wallet-address__hex {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+/* The address may wrap: the table's nowrap held the 42 characters on one
+   line and, between 761 and about 885px, pushed the page sideways. The table
+   sits in a scroll wrapper too, for whatever still does not fit. */
+.wallets-table tbody td:nth-child(2) {
+  white-space: normal;
 }
 
 .wallet-network--field {
