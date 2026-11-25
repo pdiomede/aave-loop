@@ -39,7 +39,7 @@ import {
   unitOf,
   TEXT_FIELDS,
 } from '/lib/input.js';
-import { NETWORK_META, parseAddress, walletName, walletNameError, shortAddress } from '/lib/address.js';
+import { NETWORKS, NETWORK_META, networkOf, parseAddress, walletName, walletNameError, shortAddress } from '/lib/address.js';
 
 /* ------------------------------------------------------------- formatters */
 
@@ -308,7 +308,7 @@ const TIPS = {
     address:
       'Checksummed (EIP-55): the mix of capitals is a check on the rest, so a typo in a pasted address shows. ' +
       'Typed all in one case, it is saved in this form.',
-    network: 'Ethereum mainnet, the only network for now.',
+    network: 'The chain the address is used on: Ethereum, Base, Arbitrum or Optimism.',
     added: 'When it was added to this list.',
     trades: 'Trades linked to this wallet. One in use cannot be deleted until they name another, or none.',
   },
@@ -1311,12 +1311,31 @@ const walletFace = (id) => {
   if (id === '' || id == null) return '<span class="coin-select__placeholder">No wallet</span>';
   const w = walletById(id);
   return w
-    ? `<span class="coin-select__ticker">${esc(w.name)}</span><span class="coin-select__name">${esc(shortAddress(w.address))}</span>`
+    ? `${chainMark(networkOf(w))}<span class="coin-select__ticker">${esc(w.name)}</span><span class="coin-select__name">${esc(shortAddress(w.address))}</span>`
     : `<span class="coin-select__ticker">Wallet #${esc(id)}</span>`;
 };
 
+/**
+ * A chain's mark: Ethereum's logo, and for the rollups a letter on the
+ * chain's colour (`.chain-mark--<id>`), no logo file being kept for them.
+ */
+function chainMark(network, size = 'sm') {
+  const meta = NETWORK_META[network];
+  if (!meta) return '';
+  return meta.art
+    ? `<img class="coin coin--art coin--${size}" src="${meta.art}" alt="" width="20" height="20" />`
+    : `<span class="chain-mark chain-mark--${network} chain-mark--${size}" aria-hidden="true">${esc(meta.mark)}</span>`;
+}
+
+// A chain in the Add address form's picker, or its prompt: no chain is
+// guessed, as no platform is on a new trade.
+const networkPickFace = (n) =>
+  NETWORK_META[n]
+    ? `${chainMark(n)}<span class="coin-select__ticker">${esc(NETWORK_META[n].label)}</span>`
+    : '<span class="coin-select__placeholder">Pick a chain</span>';
+
 // What each kind of picker draws on its button and in its list.
-const FACES = { coin: coinFace, platform: platformFace, asset: assetFace, wallet: walletFace };
+const FACES = { coin: coinFace, platform: platformFace, asset: assetFace, wallet: walletFace, network: networkPickFace };
 const faceOf = (box) => FACES[box.dataset.kind] ?? coinFace;
 
 const CHECK_SVG = `<svg class="coin-select__check" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -1498,6 +1517,8 @@ function field({
     control = coinSelect({ id, name, value, options, req, kind: 'platform' });
   } else if (options && name === 'wallet_id') {
     control = coinSelect({ id, name, value, options, req, kind: 'wallet' });
+  } else if (options && name === 'wallet_network') {
+    control = coinSelect({ id, name, value, options, req, kind: 'network' });
   } else if (options) {
     const opts = options
       .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`)
@@ -1586,7 +1607,8 @@ function walletCell(id) {
   if (id == null) return '<span class="muted">-</span>';
   const w = walletById(id);
   if (w) {
-    return `<span class="wallet-ref" tabindex="0" data-tip="${esc(w.address)}">${esc(w.name)}` +
+    const chain = NETWORK_META[networkOf(w)];
+    return `<span class="wallet-ref" tabindex="0" data-tip="${esc(`${w.address} on ${chain.label}`)}">${chainMark(networkOf(w))}${esc(w.name)}` +
       ` <span class="wallet-ref__short">${esc(shortAddress(w.address))}</span></span>`;
   }
   if (!walletsAskedFor.has(id)) {
@@ -3544,9 +3566,7 @@ const byWalletName = (a, b) => {
 
 const networkFace = (network) => {
   const meta = NETWORK_META[network];
-  return meta
-    ? `<span class="wallet-network"><img class="coin coin--art coin--sm" src="${meta.art}" alt="" width="20" height="20" />${esc(meta.label)}</span>`
-    : esc(network);
+  return meta ? `<span class="wallet-network">${chainMark(network)}${esc(meta.label)}</span>` : esc(network);
 };
 
 /** What is wrong with a field of either wallet form, or null. */
@@ -3567,11 +3587,7 @@ function fillWalletForm() {
   form.innerHTML = `<div class="wallet-form__grid">
       ${field({ name: 'wallet_name', label: 'Name', tip: 'What this wallet is called here, for example Ledger or Rabby hot. Up to 40 characters.', placeholder: 'Ledger' })}
       ${field({ name: 'wallet_address', label: 'Address', tip: 'The 0x address, pasted from your wallet. Its capitals are checked against its checksum, so a typo shows.', placeholder: '0x…' })}
-      <div class="field">
-        <div class="field__head"><span class="field__label">Network</span></div>
-        <div class="wallet-network--field">${networkFace('ethereum')}</div>
-        <div class="field__hint">The only one for now.</div>
-      </div>
+      ${field({ name: 'wallet_network', label: 'Chain', tip: 'The chain this address is used on. The same address on two chains is two wallets, each with its own name.', value: '', options: NETWORKS })}
     </div>
     <div class="form__actions">
       <span class="form__error" data-form-error role="alert"></span>
@@ -3696,12 +3712,14 @@ function txLine(t, stage) {
   const stored = state.stageTxs?.[t.id]?.[stage];
   const note = state.txNote[key];
   if (stored) {
-    const url = `${NETWORK_META.ethereum.txExplorer}${stored.hash}`;
+    // On the chain of the trade's wallet: a Base hash is no page on Etherscan.
+    const chain = NETWORK_META[networkOf(walletById(t.wallet_id))];
+    const url = `${chain.txExplorer}${stored.hash}`;
     const others = note?.others ? `<small class="tx-line__note">${note.others + 1} transfers fit equally; check it.</small>` : '';
     return `<div class="tx-line">
       <span class="tx-line__row">
         <a class="tx-line__hash" href="${esc(url)}" target="_blank" rel="noopener noreferrer"
-          aria-label="Open the ${TX_NOUN[stage]} transaction on Etherscan">${esc(shortHash(stored.hash))}<span aria-hidden="true"> &#8599;</span></a>
+          aria-label="Open the ${TX_NOUN[stage]} transaction on ${esc(chain.explorerLabel)}">${esc(shortHash(stored.hash))}<span aria-hidden="true"> &#8599;</span></a>
         <span class="tx-line__source">${stored.source === 'manual' ? 'pasted' : 'found'}</span>
         <button class="btn btn--ghost btn--sm tx-line__clear" type="button" data-tx-clear="${key}"
           data-tip="Forget this hash" aria-label="Forget the ${TX_NOUN[stage]} transaction">&times;</button>
@@ -3760,11 +3778,13 @@ function simStageCards(t, d) {
   return cards
     .map(([stage, name, rows]) => {
       const key = txKey(t.id, stage);
-      const tip = noWallet ? 'Link a wallet on the Borrowed card first' : 'Find on Etherscan';
+      const tip = noWallet
+        ? 'Link a wallet on the Borrowed card first'
+        : `Find on ${NETWORK_META[networkOf(walletById(t.wallet_id))].explorerLabel}`;
       const find = state.stageTxs?.[t.id]?.[stage]
         ? ''
         : `<button class="btn btn--ghost btn--sm sim-find" type="button" data-tx-find="${key}" data-tip="${tip}"
-            aria-label="${noWallet ? tip : `Find the ${TX_NOUN[stage]} on Etherscan`}"${
+            aria-label="${noWallet ? tip : `Find the ${TX_NOUN[stage]} on ${NETWORK_META[networkOf(walletById(t.wallet_id))].explorerLabel}`}"${
               noWallet || state.txBusy.has(key) ? ' disabled' : ''
             }>${MAGNIFIER_SVG}</button>`;
       return `<article class="stage is-done sim-card">
@@ -3905,6 +3925,7 @@ async function scanOnchain() {
     had: 0,
     skipped: closed.filter((t) => t.wallet_id == null).length,
     closed: closed.length,
+    uncovered: {},
     stopped: null,
   };
   const queue = [];
@@ -3950,6 +3971,12 @@ async function scanOnchain() {
     if (r.found) {
       scan.found += 1;
       if (r.others) scan.flagged.push({ id, stage, others: r.others });
+    } else if (r.kind === 'unsupported') {
+      // A chain the key's plan does not cover: counted per chain, and the
+      // scan carries on with the other wallets.
+      const chain = NETWORK_META[networkOf(walletById(state.trades.find((x) => x.id === id)?.wallet_id))].label;
+      scan.uncovered[chain] = scan.uncovered[chain] ?? { n: 0, reason: r.reason };
+      scan.uncovered[chain].n += 1;
     } else {
       scan.notFound.push({ id, stage, reason: r.reason });
     }
@@ -3993,11 +4020,19 @@ function scanReport(scan) {
     scan.total ? `<li><strong>${scan.notFound.length}</strong> not found</li>` : '',
     scan.had ? `<li><strong>${scan.had}</strong> already had a hash</li>` : '',
     scan.skipped ? `<li><strong>${scan.skipped}</strong> closed ${scan.skipped === 1 ? 'trade' : 'trades'} skipped: no wallet</li>` : '',
+    ...Object.entries(scan.uncovered).map(
+      ([chain, { n }]) => `<li><strong>${n}</strong> on ${esc(chain)} skipped: not on Etherscan's free plan</li>`,
+    ),
   ].join('');
   const lists = [
     scan.flagged.length
       ? `<h4 class="scan-report__head">To check</h4><ul class="scan-report__list">${scan.flagged
           .map((x) => item(x, `${x.others + 1} transfers fit equally; check the one linked.`))
+          .join('')}</ul>`
+      : '',
+    Object.keys(scan.uncovered).length
+      ? `<h4 class="scan-report__head">Not searched</h4><ul class="scan-report__list">${Object.values(scan.uncovered)
+          .map((u) => `<li>${esc(u.reason)}</li>`)
           .join('')}</ul>`
       : '',
     scan.notFound.length
@@ -4117,9 +4152,10 @@ function simTotals(trades) {
  * fold away under the heading. Closed until opened. A wallet with no trades
  * has nothing to fold, so its heading is no button.
  */
-function simGroup({ key, title, sub, trades }) {
+function simGroup({ key, title, sub, network, trades }) {
   const icon = `<span class="wallet-icon${key === 'none' ? ' wallet-icon--none' : ''}" aria-hidden="true"></span>`;
-  const label = `${icon}<span class="wallet-group__title">${title}${sub ? ` <span class="wallet-ref__short">${sub}</span>` : ''}</span>
+  const chain = network ? `<span class="wallet-group__chain">${networkFace(network)}</span>` : '';
+  const label = `${icon}<span class="wallet-group__title">${title}${sub ? ` <span class="wallet-ref__short">${sub}</span>` : ''}</span>${chain}
       <span class="wallet-group__count">${trades.length} trade${trades.length === 1 ? '' : 's'}</span>`;
   if (!trades.length) {
     return `<section class="wallet-group">
@@ -4164,6 +4200,7 @@ function renderSimulation() {
       key: `w${w.id}`,
       title: esc(w.name),
       sub: esc(shortAddress(w.address)),
+      network: networkOf(w),
       trades: rows.filter((t) => t.wallet_id === w.id),
     }));
     // Linked from another tab to a wallet this list has not read yet: named by
@@ -4191,13 +4228,15 @@ async function submitWallet(form) {
   if (nameError) return showFormError(form, nameError, 'wallet_name');
   const parsed = parseAddress(form.elements.wallet_address.value);
   if (parsed.error) return showFormError(form, parsed.error, 'wallet_address');
+  const network = form.elements.wallet_network.value;
+  if (!NETWORKS.includes(network)) return showFormError(form, 'Pick a chain.', 'wallet_network');
 
   const done = beginSubmit(form);
   if (!done) return;
   try {
     const row = await api('/api/wallets', {
       method: 'POST',
-      body: JSON.stringify({ name, address: parsed.address, network: 'ethereum' }),
+      body: JSON.stringify({ name, address: parsed.address, network }),
     });
     walletWriteSeq += 1;
     state.wallets = [...(state.wallets ?? []).filter((w) => w.id !== row.id), row].sort(byWalletName);
@@ -4206,9 +4245,9 @@ async function submitWallet(form) {
     form.querySelector('[data-form-error]').textContent = '';
     renderWalletsView();
     form.elements.wallet_name.focus();
-    toast(`${row.name} saved: ${shortAddress(row.address)}.`);
+    toast(`${row.name} saved: ${shortAddress(row.address)} on ${NETWORK_META[networkOf(row)].label}.`);
   } catch (err) {
-    const field = { name: 'wallet_name', address: 'wallet_address' }[err.field] ?? null;
+    const field = { name: 'wallet_name', address: 'wallet_address', network: 'wallet_network' }[err.field] ?? null;
     showFormError(form, err.status ? err.message : 'Could not reach the server, so the address was not saved.', field);
   } finally {
     done();

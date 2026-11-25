@@ -993,6 +993,53 @@ html {
   width: 230px;
 }
 
+/* A rollup's mark, where Ethereum has its logo: a letter on the chain's own
+   colour, the size of a coin. */
+.chain-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.chain-mark--base {
+  background: #0052ff;
+}
+
+.chain-mark--arbitrum {
+  background: #213147;
+  box-shadow: inset 0 0 0 1.5px #28a0f0;
+}
+
+.chain-mark--optimism {
+  background: #ff0420;
+}
+
+.wallet-ref .coin,
+.wallet-ref .chain-mark {
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  vertical-align: -3px;
+}
+
+.wallet-ref .chain-mark {
+  display: inline-grid;
+  font-size: 7.5px;
+}
+
+.wallet-group__chain {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 /* A wallet named on a Borrowed card: the name, and its address shortened. */
 .wallet-ref {
   white-space: nowrap;

@@ -28,28 +28,76 @@
 import { setting } from './env.js';
 import { etherscanKey } from './config.js';
 import { assetOf, parseDate } from './lib/calc.js';
+import { NETWORK_META, networkOf } from './lib/address.js';
 import { n2, fmtDate } from './format.js';
 
 export const TX_STAGES = ['borrow', 'buy', 'sell', 'repay'];
 
-// Mainnet contracts, lowercase as Etherscan writes them, each checked
-// against Etherscan's own token record (symbol and decimals) on 25 Nov 2026.
+// Each chain's contracts, lowercase as Etherscan writes them; a coin can
+// have two on a rollup (native USDC and the bridged USDC.e), and a coin with
+// none there (EURC on Arbitrum) cannot be searched on it. Ethereum's and
+// Arbitrum's were each checked against Etherscan's own token record (symbol
+// and decimals) on 25 Nov 2026. Base's and Optimism's could not be: the free
+// plan refuses those chains (`UNSUPPORTED` below), so they are the published
+// addresses, to be checked the first time a plan that covers them is used.
 const STABLE = {
-  DAI: '0x6b175474e89094c44da98b954eedeac495271d0f',
-  EURC: '0x1abaea1f7c830bd89acc67ec4af516284b1bc33c',
-  GHO: '0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f',
-  USDC: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
-  USDT: '0xdac17f958d2ee523a2206206994597c13d831ec7',
+  ethereum: {
+    DAI: ['0x6b175474e89094c44da98b954eedeac495271d0f'],
+    EURC: ['0x1abaea1f7c830bd89acc67ec4af516284b1bc33c'],
+    GHO: ['0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f'],
+    USDC: ['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'],
+    USDT: ['0xdac17f958d2ee523a2206206994597c13d831ec7'],
+  },
+  arbitrum: {
+    DAI: ['0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'],
+    GHO: ['0x7dff72693f6a4149b17e7c6314655f6a9f7c8b33'],
+    USDC: ['0xaf88d065e77c8cc2239327c5edb3a432268e5831', '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8'],
+    USDT: ['0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9'],
+  },
+  base: {
+    DAI: ['0x50c5725949a6f0c72e6c4a641f24049a917db0cb'],
+    EURC: ['0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42'],
+    USDC: ['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'],
+  },
+  optimism: {
+    DAI: ['0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'],
+    USDC: ['0x0b2c639c533813f4aa9d7837caf62653d097ff85', '0x7f5c764cbc14f9669b88837ca1490cca17c31607'],
+    USDT: ['0x94b008aa00579c1307b0ef2c499ad98a8ce58e58'],
+  },
 };
 
-// What a purchase brings in and a sale sends out. ETH is swapped as WETH by
-// the aggregators these loops use; a swap of native ETH moves no token, so it
-// simply has no asset leg to compare, for every candidate alike.
+// What a purchase brings in and a sale sends out, per chain. ETH is swapped
+// as WETH by the aggregators these loops use; a swap of native ETH moves no
+// token, so it simply has no asset leg to compare, for every candidate alike.
 const ASSET_TOKEN = {
-  eth: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-  cbbtc: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
-  wbtc: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
+  ethereum: {
+    eth: ['0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'],
+    cbbtc: ['0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'],
+    wbtc: ['0x2260fac5e5542a773aa44fbcfedf7c193bc2c599'],
+  },
+  arbitrum: {
+    eth: ['0x82af49447d8a07e3bd95bd0d56f35241523fbab1'],
+    cbbtc: ['0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'],
+    wbtc: ['0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f'],
+  },
+  base: {
+    eth: ['0x4200000000000000000000000000000000000006'],
+    cbbtc: ['0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'],
+  },
+  optimism: {
+    eth: ['0x4200000000000000000000000000000000000006'],
+    wbtc: ['0x68f180fcce6836688e9084f035309e29bf0a2095'],
+  },
 };
+
+// Chains Etherscan said the key's plan does not cover ("Free API access is not
+// supported for this chain"), until when: asked again an hour on, so a plan
+// upgraded meanwhile is noticed, and not on every stage of a scan before then.
+const UNSUPPORTED = new Map();
+const UNSUPPORTED_MS = 3_600_000;
+const unsupportedReason = (network) =>
+  `Etherscan's free plan does not cover ${NETWORK_META[network].label}. Paste the hash from ` +
+  `${new URL(NETWORK_META[network].txExplorer).host} instead.`;
 
 const RULE = {
   borrow: { dir: 'in', date: 'borrow_date', amount: 'borrow_amount', noun: 'loan' },
@@ -105,8 +153,9 @@ const redact = (text, key) => {
  * A search that could not be done, and what kind of failure it was, for the
  * page's Get onchain data to act on: `setup` (no key, or the key refused) ends
  * a scan at once, `busy` (the rate limit, a timeout, no answer, an answer that
- * is not Etherscan's) is waited out and tried again. A stage simply not found
- * is no error and has no kind.
+ * is not Etherscan's) is waited out and tried again, and `unsupported` (a chain
+ * the key's plan does not cover: Base and Optimism on the free one) skips that
+ * wallet's stages. A stage simply not found is no error and has no kind.
  */
 class EtherscanError extends Error {
   constructor(message, kind = 'busy') {
@@ -158,6 +207,9 @@ function callOnce(params, key) {
     // "No transactions found" is an empty answer, not a failure.
     if (Array.isArray(body?.result) && /no transactions found/i.test(body?.message ?? '')) return [];
     const said = String(body?.result ?? body?.message ?? `status ${res.status}`);
+    if (/not supported for this chain|upgrade your api plan/i.test(said)) {
+      throw new EtherscanError(said, 'unsupported');
+    }
     if (/invalid api key|missing\/invalid api key/i.test(said)) {
       throw new EtherscanError('Etherscan refused the ETHERSCAN_API_KEY in config.env.', 'setup');
     }
@@ -179,25 +231,26 @@ const blocks = new Map();
 const transfers = new Map();
 const TRANSFERS_MS = 120_000;
 
-async function blockAt(ms, closest, key) {
-  const k = `${ts(ms)}:${closest}`;
+// Per chain: a block number on Arbitrum is no block on Ethereum.
+async function blockAt(chainid, ms, closest, key) {
+  const k = `${chainid}:${ts(ms)}:${closest}`;
   if (blocks.has(k)) return blocks.get(k);
-  const n = Number(await call({ module: 'block', action: 'getblocknobytime', timestamp: ts(ms), closest }, key));
+  const n = Number(await call({ chainid, module: 'block', action: 'getblocknobytime', timestamp: ts(ms), closest }, key));
   if (!Number.isSafeInteger(n)) throw new EtherscanError('Etherscan gave no block for that day.');
   if (ms < Date.now() - 3_600_000) blocks.set(k, n);
   return n;
 }
 
-async function transfersBetween(address, fromMs, toMs, key) {
-  const startblock = await blockAt(fromMs, 'after', key);
-  const endblock = await blockAt(toMs, 'before', key);
-  const k = `${lower(address)}:${startblock}:${endblock}`;
+async function transfersBetween(chainid, address, fromMs, toMs, key) {
+  const startblock = await blockAt(chainid, fromMs, 'after', key);
+  const endblock = await blockAt(chainid, toMs, 'before', key);
+  const k = `${chainid}:${lower(address)}:${startblock}:${endblock}`;
   const kept = transfers.get(k);
   if (kept && Date.now() - kept.at < TRANSFERS_MS) return kept.rows;
   const out = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const rows = await call(
-      { module: 'account', action: 'tokentx', address, startblock, endblock, sort: 'asc', page, offset: PAGE },
+      { chainid, module: 'account', action: 'tokentx', address, startblock, endblock, sort: 'asc', page, offset: PAGE },
       key,
     );
     if (!Array.isArray(rows)) throw new EtherscanError('Etherscan answered without a list of transfers.');
@@ -239,14 +292,15 @@ const amountOf = (row) => Number(row.value) / 10 ** Number(row.tokenDecimal);
  */
 function candidates(rows, t, stage, wallet, claimed) {
   const r = RULE[stage];
-  const token = STABLE[t.borrow_currency];
+  const network = networkOf(wallet);
+  const tokens = STABLE[network]?.[t.borrow_currency] ?? [];
   const want = Number(t[r.amount]);
-  const w = lower(wallet);
-  const assetToken = ASSET_TOKEN[assetOf(t)];
+  const w = lower(wallet.address);
+  const assetTokens = ASSET_TOKEN[network]?.[assetOf(t)] ?? [];
   const wantQty = r.qty ? Number(t[r.qty]) : null;
   const out = [];
   for (const row of rows) {
-    if (lower(row.contractAddress) !== token) continue;
+    if (!tokens.includes(lower(row.contractAddress))) continue;
     if (r.dir === 'in' ? lower(row.to) !== w : lower(row.from) !== w) continue;
     if (claimed.has(lower(row.hash))) continue;
     const amount = amountOf(row);
@@ -258,7 +312,7 @@ function candidates(rows, t, stage, wallet, claimed) {
       // The asset leg of the same transaction, in the stage's direction; none
       // (a native ETH swap) ranks after any that has one.
       const leg = rows
-        .filter((x) => x.hash === row.hash && lower(x.contractAddress) === assetToken)
+        .filter((x) => x.hash === row.hash && assetTokens.includes(lower(x.contractAddress)))
         .filter((x) => (r.qtyDir === 'in' ? lower(x.to) === w : lower(x.from) === w))
         .reduce((s, x) => s + amountOf(x), 0);
       byQty = leg > 0 ? Math.abs(leg - wantQty) / wantQty : Infinity;
@@ -316,11 +370,16 @@ function pick(rows, t, stage, wallet, claimed, own = {}) {
 export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
   const { key, reason } = etherscanKey();
   if (!key) return { found: false, reason, kind: 'setup' };
-  if (!STABLE[t.borrow_currency]) return { found: false, reason: `${t.borrow_currency} has no known contract to search for.` };
+  const network = networkOf(wallet);
+  const chain = NETWORK_META[network];
+  if (!STABLE[network]?.[t.borrow_currency]?.length) {
+    return { found: false, reason: `${t.borrow_currency} has no known contract on ${chain.label} to search for. Paste the hash instead.` };
+  }
+  if ((UNSUPPORTED.get(network) ?? 0) > Date.now()) return { found: false, reason: unsupportedReason(network), kind: 'unsupported' };
   const { from, to } = windowOf(t, stage);
   try {
-    const rows = await transfersBetween(wallet.address, from, to, key);
-    const best = pick(rows, t, stage, wallet.address, claimed, own);
+    const rows = await transfersBetween(chain.chainId, wallet.address, from, to, key);
+    const best = pick(rows, t, stage, wallet, claimed, own);
     if (best) {
       return { found: true, hash: best.hash, at: new Date(best.at).toISOString(), amount: best.amount, others: best.others };
     }
@@ -330,9 +389,14 @@ export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
       found: false,
       reason:
         `No ${t.borrow_currency} transfer of about ${n2(Number(t[r.amount]))} ` +
-        `${r.dir === 'in' ? 'into' : 'out of'} ${wallet.name} ${span} fits this ${r.noun}. Paste its hash instead.`,
+        `${r.dir === 'in' ? 'into' : 'out of'} ${wallet.name}${network === 'ethereum' ? '' : ` on ${chain.label}`} ${span} ` +
+        `fits this ${r.noun}. Paste its hash instead.`,
     };
   } catch (err) {
+    if (err instanceof EtherscanError && err.kind === 'unsupported') {
+      UNSUPPORTED.set(network, Date.now() + UNSUPPORTED_MS);
+      return { found: false, reason: unsupportedReason(network), kind: 'unsupported' };
+    }
     return {
       found: false,
       reason: err instanceof EtherscanError ? redact(err.message, key) : 'The search failed. Try again.',

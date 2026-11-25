@@ -60,7 +60,7 @@ import {
 import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
 import { setting, oldSettingsNote } from './env.js';
 import { labelOf } from './lib/input.js';
-import { NETWORKS, parseAddress, walletName, walletNameError } from './lib/address.js';
+import { NETWORKS, NETWORK_META, parseAddress, walletName, walletNameError } from './lib/address.js';
 import { ANCHOR, TX_STAGES, findStageTx, stageRecorded, txBasis } from './etherscan.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -1180,7 +1180,11 @@ app.post('/api/wallets', (req, res) => {
   const body = bodyOf(req);
   const network =
     body.network === undefined ? NETWORKS[0] : typeof body.network === 'string' ? body.network.trim().toLowerCase() : '';
-  if (!NETWORKS.includes(network)) throw new BadRequest('Only Ethereum addresses for now.', 'network');
+  // Absent is Ethereum, for a caller from before chains could be picked; the
+  // page's form makes its reader pick one.
+  if (!NETWORKS.includes(network)) {
+    throw new BadRequest(`Pick a chain: ${NETWORKS.map((n) => NETWORK_META[n].label).join(', ')}.`, 'network');
+  }
   // In the form's order, so the first field it flags is the first one wrong.
   const name = walletNameIn(body);
   const parsed = parseAddress(body.address);
@@ -1189,7 +1193,9 @@ app.post('/api/wallets', (req, res) => {
   const row = db
     .transaction(() => {
       const same = walletAt.get(network, parsed.address);
-      if (same) throw new BadRequest(`That address is already saved, as "${same.name}".`, 'address');
+      if (same) {
+        throw new BadRequest(`That address is already saved on ${NETWORK_META[network].label}, as "${same.name}".`, 'address');
+      }
       refuseTakenName(name, null);
       const now = new Date().toISOString();
       const info = prepare(

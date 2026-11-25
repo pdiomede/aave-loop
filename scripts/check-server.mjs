@@ -64,6 +64,7 @@ const mockServer = http.createServer((req, res) => {
       const q = new URL(req.url, 'http://mock').searchParams;
       mock.es.calls += 1;
       mock.es.keys.add(q.get('apikey'));
+      mock.es.chains?.push(q.get('chainid'));
       if (mock.es.error) return res.end(JSON.stringify({ status: '0', message: 'NOTOK', result: mock.es.error }));
       if (q.get('module') === 'block') {
         return res.end(JSON.stringify({ status: '1', message: 'OK', result: String(Math.floor(Number(q.get('timestamp')) / 12)) }));
@@ -741,7 +742,7 @@ await check('the same address twice is refused in either case, and so is a name 
     const r = await api('POST', '/api/wallets', { name: 'Again', address });
     assert.equal(r.status, 400, address);
     assert.equal(r.data.field, 'address');
-    assert.match(r.data.error, /already saved, as "Ledger main"/);
+    assert.match(r.data.error, /already saved on Ethereum, as "Ledger main"/);
   }
   const named = await api('POST', '/api/wallets', { name: 'LEDGER MAIN', address: OTHER });
   assert.equal(named.status, 400);
@@ -749,15 +750,24 @@ await check('the same address twice is refused in either case, and so is a name 
   assert.equal((await api('GET', '/api/wallets')).data.wallets.length, 1);
 });
 
-await check('a wallet needs a name, an Ethereum address and nothing but Ethereum', async () => {
+await check('a wallet needs a name, an address and one of the four chains', async () => {
   const blank = await api('POST', '/api/wallets', { name: ' ', address: OTHER });
   assert.equal(blank.status, 400);
   assert.equal(blank.data.field, 'name');
   const noAddress = await api('POST', '/api/wallets', { name: 'Hot' });
   assert.equal(noAddress.data.field, 'address');
-  const base = await api('POST', '/api/wallets', { name: 'Hot', address: OTHER, network: 'base' });
-  assert.equal(base.status, 400);
-  assert.equal(base.data.field, 'network');
+  for (const network of ['solana', 'polygon', '', 8453]) {
+    const r = await api('POST', '/api/wallets', { name: 'Hot', address: OTHER, network });
+    assert.equal(r.status, 400, String(network));
+    assert.equal(r.data.field, 'network');
+    assert.match(r.data.error, /Ethereum, Base, Arbitrum, Optimism/);
+  }
+  // The same address on another chain is another wallet; twice on one is not.
+  const onBase = await api('POST', '/api/wallets', { name: 'Hot on Base', address: OTHER, network: 'Base' });
+  assert.deepEqual([onBase.status, onBase.data.network], [201, 'base']);
+  const again = await api('POST', '/api/wallets', { name: 'Hot again', address: OTHER.toLowerCase(), network: 'base' });
+  assert.match(again.data.error, /already saved on Base, as "Hot on Base"/);
+  assert.equal((await api('DELETE', `/api/wallets/${onBase.data.id}`)).status, 204);
   const zero = await api('POST', '/api/wallets', { name: 'Hot', address: `0x${'0'.repeat(40)}` });
   assert.match(zero.data.error, /zero address/);
   assert.equal((await api('POST', '/api/wallets', { name: 'Hot', address: OTHER, network: 'Ethereum' })).status, 201);
@@ -1088,6 +1098,43 @@ await check('two searches at once never link one transfer to two trades', async 
   assert.deepEqual([ra.data.hash, rb.data.hash].sort(), [hashOf(31), hashOf(32)]);
   await api('DELETE', `/api/trades/${a.id}`);
   await api('DELETE', `/api/trades/${b.id}`);
+});
+
+await check('a wallet on Arbitrum is searched on Arbitrum, with Arbitrum\'s contracts', async () => {
+  const day = '2026-08-20';
+  const ARB_USDC = '0xaf88d065e77c8cc2239327c5edb3a432268e5831';
+  const arb = (await api('POST', '/api/wallets', { name: 'Arb', address: '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359', network: 'arbitrum' })).data;
+  const a = arb.address.toLowerCase();
+  mock.es.rows = [
+    // Mainnet USDC's contract: no USDC on Arbitrum, however well it fits.
+    xfer(71, `${day}T10:00:00Z`, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', POOL, a, 15000, 6, 'USDC'),
+    xfer(72, `${day}T11:00:00Z`, ARB_USDC, POOL, a, 15000, 6, 'USDC'),
+  ];
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: day, borrow_amount: '15000', wallet_id: arb.id }))).data;
+  mock.es.chains = [];
+  const r = await find(t.id, 'borrow');
+  assert.deepEqual([r.data.found, r.data.hash], [true, hashOf(72)]);
+  assert.ok(mock.es.chains.length && mock.es.chains.every((c) => c === '42161'), mock.es.chains.join());
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${arb.id}`);
+});
+
+await check('a chain the plan does not cover is said once, then skipped without asking', async () => {
+  const day = '2026-08-22';
+  const onBase = (await api('POST', '/api/wallets', { name: 'Based', address: '0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB', network: 'base' })).data;
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: day, wallet_id: onBase.id }))).data;
+  mock.es.error = 'Free API access is not supported for this chain. Please upgrade your api plan for full chain coverage.';
+  const r = await find(t.id, 'borrow');
+  assert.deepEqual([r.data.found, r.data.kind], [false, 'unsupported']);
+  assert.match(r.data.reason, /does not cover Base\. Paste the hash from basescan\.org/);
+  const before = mock.es.calls;
+  assert.equal((await find(t.id, 'borrow')).data.kind, 'unsupported');
+  assert.equal(mock.es.calls, before, 'remembered, not asked again');
+  mock.es.error = null;
+  // Its hash, pasted, is kept as any other.
+  assert.equal((await api('PUT', `/api/trades/${t.id}/tx/borrow`, { hash: hashOf(80) })).status, 200);
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${onBase.id}`);
 });
 
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {
