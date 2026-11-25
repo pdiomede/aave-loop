@@ -16,6 +16,8 @@ import {
   ASSET_META,
   MARKETS,
   TICKER_MARKETS,
+  ASSET_WORDS,
+  PLATFORM_WORDS,
   assetOf,
   marketOf,
   priceFor,
@@ -39,7 +41,17 @@ import {
   unitOf,
   TEXT_FIELDS,
 } from '/lib/input.js';
-import { NETWORKS, NETWORK_META, networkOf, parseAddress, walletName, walletNameError, shortAddress } from '/lib/address.js';
+import {
+  NETWORKS,
+  NETWORK_META,
+  networkOf,
+  isSolana,
+  parseAddress,
+  parseTxHash,
+  walletName,
+  walletNameError,
+  shortAddress,
+} from '/lib/address.js';
 
 /* ------------------------------------------------------------- formatters */
 
@@ -244,7 +256,7 @@ const TIPS = {
   avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
     "Every fee on this tab's trades, open ones too: the borrow and repay gas, the swaps' costs and fees, " +
-    'and the gas to lend and unstake the ETH, cbBTC or WBTC. Unrecorded ones are counted below.',
+    `and the gas to lend and unstake the ${ASSET_WORDS}. Unrecorded ones are counted below.`,
   best:
     "The largest dollar result among closed trades that have one. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
@@ -414,7 +426,7 @@ function priceNote(t, d) {
 
 /** The asset's logo, small and decorative: its ticker is always written beside it. */
 const assetMark = (t, size = 15) =>
-  `<img class="asset-mark" src="${ASSET_META[assetOf(t)].art}" alt="" width="${size}" height="${size}" />`;
+  `<img class="asset-mark${ASSET_META[assetOf(t)].fill ? ' asset-mark--fill' : ''}" src="${ASSET_META[assetOf(t)].art}" alt="" width="${size}" height="${size}" />`;
 
 /* ------------------------------------------------------- sorting + paging */
 
@@ -1301,7 +1313,7 @@ const platformFace = (p) => {
 const assetFace = (a) => {
   const meta = ASSET_META[a] ?? ASSET_META[ASSETS[0]];
   return (
-    `<img class="coin coin--art coin--sm asset-art" src="${meta.art}" alt="" width="20" height="20" />` +
+    `<img class="coin coin--art coin--sm asset-art${meta.fill ? ' asset-mark--fill' : ''}" src="${meta.art}" alt="" width="20" height="20" />` +
     `<span class="coin-select__ticker">${esc(meta.ticker)}</span>`
   );
 };
@@ -1674,7 +1686,7 @@ function borrowFields(t = {}, { platform = false } = {}) {
   const wallets = platform ? walletChoices(t) : [];
   return `<div class="grid">${
     platform
-      ? field({ name: 'platform', label: 'Platform', tip: 'Where the loop was run: Aave, Ether.fi or Morpho.', value: t.platform ?? '', options: PLATFORMS })
+      ? field({ name: 'platform', label: 'Platform', tip: `Where the loop was run: ${PLATFORM_WORDS}.`, value: t.platform ?? '', options: PLATFORMS })
       : ''
   }${
     wallets.length > 1
@@ -2651,7 +2663,7 @@ function renderTable() {
   if (state.trades.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No trades yet</h3>
-      <p>Start with the stablecoin you borrowed, on Aave, Ether.fi or Morpho, then add each stage as it happens.</p>
+      <p>Start with the stablecoin you borrowed, on ${esc(PLATFORM_WORDS)}, then add each stage as it happens.</p>
     </div>`;
     return;
   }
@@ -3617,7 +3629,7 @@ function renderAlerts() {
   if (state.alertLog.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No alerts yet</h3>
-      <p>Set a goal price from the bell on a trade that is still holding ETH, cbBTC or WBTC.
+      <p>Set a goal price from the bell on a trade that is still holding ${esc(ASSET_WORDS)}.
          Every alert is kept here, including the ones already sent.</p>
     </div>`;
     return;
@@ -3668,10 +3680,21 @@ const networkFace = (network) => {
   return meta ? `<span class="wallet-network">${chainMark(network)}${esc(meta.label)}</span>` : esc(network);
 };
 
+/**
+ * The chain an Add form's address is read for: the one picked, or - the
+ * picker sits after the address - the kind the address looks like, 0x for
+ * the EVM chains and base58 for Solana, so it is judged as typed.
+ */
+function addressNetwork(form, value) {
+  const picked = form?.elements?.wallet_network?.value;
+  if (NETWORKS.includes(picked)) return picked;
+  return /^\s*0x/i.test(value) ? 'ethereum' : 'solana';
+}
+
 /** What is wrong with a field of either wallet form, or null. */
-function walletFieldError(name, value) {
+function walletFieldError(name, value, form) {
   if (name === 'wallet_name') return walletNameError(value);
-  if (name === 'wallet_address') return parseAddress(value).error ?? null;
+  if (name === 'wallet_address') return parseAddress(value, addressNetwork(form, value)).error ?? null;
   return null;
 }
 
@@ -3685,7 +3708,7 @@ function fillWalletForm() {
   if (!form || form.childElementCount) return;
   form.innerHTML = `<div class="wallet-form__grid">
       ${field({ name: 'wallet_name', label: 'Name', tip: 'What this wallet is called here, for example Ledger or Rabby hot. Up to 40 characters.', placeholder: 'Ledger' })}
-      ${field({ name: 'wallet_address', label: 'Address', tip: 'The 0x address, pasted from your wallet. Its capitals are checked against its checksum, so a typo shows.', placeholder: '0x…' })}
+      ${field({ name: 'wallet_address', label: 'Address', tip: 'The address, pasted from your wallet: 0x on Ethereum and its rollups, whose capitals are checked against a checksum; base58 on Solana, kept exactly as pasted.', placeholder: '0x… or Solana address' })}
       ${field({ name: 'wallet_network', label: 'Chain', tip: 'The chain this address is used on. The same address on two chains is two wallets, each with its own name.', value: '', options: NETWORKS })}
     </div>
     <div class="form__actions">
@@ -3865,7 +3888,7 @@ function txLine(t, stage) {
   return `<div class="tx-line">${reason}
     <form class="tx-paste" id="tx-paste-${key.replace(':', '-')}" data-tx-form="${key}" novalidate>
       <div class="field${pasteError ? ' is-invalid' : ''}" data-field="hash">
-        <div class="control"><input name="hash" type="text" value="${esc(state.txPaste[key])}" placeholder="0x…"
+        <div class="control"><input name="hash" type="text" value="${esc(state.txPaste[key])}" placeholder="${isSolana(networkOf(walletById(t.wallet_id))) ? 'Signature' : '0x…'}"
           aria-label="Transaction hash of the ${TX_NOUN[stage]}" aria-describedby="tx-${key.replace(':', '-')}-hint"
           ${pasteError ? 'aria-invalid="true" ' : ''}autocomplete="off" spellcheck="false" /></div>
         <div class="field__hint" id="tx-${key.replace(':', '-')}-hint" data-hint="hash">${esc(pasteError ?? '')}</div>
@@ -4318,12 +4341,16 @@ function dropStageTx(id, stage) {
 async function pasteTx(form) {
   const key = form.dataset.txForm;
   const [id, stage] = key.split(':');
-  const hash = form.elements.hash.value.trim();
-  if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-    state.txPasteError[key] = 'A transaction hash is 0x and 64 characters of 0-9 and a-f.';
+  // Read for the trade's chain, as the server reads it: a Solana signature
+  // is base58 and kept as pasted.
+  const t = state.trades.find((x) => String(x.id) === id);
+  const read = parseTxHash(form.elements.hash.value, networkOf(walletById(t?.wallet_id)));
+  if (read.error) {
+    state.txPasteError[key] = read.error;
     showFormError(form, state.txPasteError[key], 'hash');
     return;
   }
+  const { hash } = read;
   const done = beginSubmit(form);
   if (!done) return;
   try {
@@ -4481,7 +4508,8 @@ async function submitWallet(form) {
   const name = form.elements.wallet_name.value;
   const nameError = walletNameError(name);
   if (nameError) return showFormError(form, nameError, 'wallet_name');
-  const parsed = parseAddress(form.elements.wallet_address.value);
+  const address = form.elements.wallet_address.value;
+  const parsed = parseAddress(address, addressNetwork(form, address));
   if (parsed.error) return showFormError(form, parsed.error, 'wallet_address');
   const network = form.elements.wallet_network.value;
   if (!NETWORKS.includes(network)) return showFormError(form, 'Pick a chain.', 'wallet_network');
@@ -5011,6 +5039,9 @@ function syncNewTradeButton() {
  */
 const alertDialog = () => document.getElementById('alert-dialog');
 
+// A round goal in each market's own range, for the empty field.
+const GOAL_PLACEHOLDER = { ETH: '3000', BTC: '100000', WBTC: '100000', SOL: '200', PSOL: '220' };
+
 function alertDialogBody(t, d, a) {
   const c = t.borrow_currency;
   const cfg = state.alertConfig;
@@ -5087,7 +5118,8 @@ function alertDialogBody(t, d, a) {
           type: 'number',
           value: goal,
           prefix: '$',
-          placeholder: market === 'ETH' ? '3000' : '100000',
+          // A round figure in the market's own range: $100,000 suggested for SOL.
+          placeholder: GOAL_PLACEHOLDER[market] ?? '3000',
           autofocus: true,
         })}
         ${noBasis}
@@ -6174,7 +6206,7 @@ function wire() {
       // A wallet form judges its own fields: to `validateField` a name is a
       // figure that is not a number.
       if (form.dataset.walletForm) {
-        const error = walletFieldError(input.name, input.value);
+        const error = walletFieldError(input.name, input.value, form);
         if (error) showFormError(form, error, input.name, { focus: false });
         return;
       }

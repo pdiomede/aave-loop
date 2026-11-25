@@ -7,7 +7,7 @@
  *
  * Each hash's transaction is fetched on its trade's wallet's chain - Etherscan's
  * proxy calls for Ethereum and Arbitrum, the chain's node for Optimism and,
- * when BASE_RPC_URL is set, Base - and judged by the rules a search goes by
+ * when BASE_RPC_URL is set, Base, and Solana's node (HELIUS_API_KEY) - and judged by the rules a search goes by
  * (`auditStage` in etherscan.js): it succeeded; it moves the trade's coin into
  * the wallet (loan, sale) or out of it (purchase, repayment) for about the
  * stage's amount; a loan or repayment is no swap within the coin, nor a
@@ -96,7 +96,7 @@ for (const r of rows) {
     notes = ['the trade names no wallet, so no chain to look on'];
   } else {
     const wallet = { name: r.wallet_name, address: r.wallet_address, network: r.wallet_network };
-    const tx = await txTransfers(networkOf(wallet), r.hash);
+    const tx = await txTransfers(networkOf(wallet), r.hash, wallet.address);
     if (tx === null) {
       verdict = 'wrong';
       notes = [`no such transaction on ${NETWORK_META[networkOf(wallet)].label}`];

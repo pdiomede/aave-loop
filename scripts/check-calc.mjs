@@ -819,6 +819,35 @@ check('WBTC is valued at its own price, not at BTC\'s as cbBTC is', () => {
   near(g.total, -1006.63 - 1156.63, 'total');
 });
 
+check('SOL and PSOL are each valued at their own price', () => {
+  const sol = held({ id: 3, asset: 'sol', buy_eth: 200 });
+  const psol = held({ id: 4, asset: 'psol', buy_eth: 180 });
+  const prices = { ETH: 3450, BTC: 97000, WBTC: 96500, SOL: 150, PSOL: 165 };
+  assert.equal(priceFor(sol, prices), 150);
+  assert.equal(priceFor(psol, prices), 165);
+  assert.equal(priceFor(psol, { ...prices, PSOL: undefined }), null, 'no PSOL price is no price, not SOL\'s');
+  const g = openGainsUsd([sol, psol], prices, {}, AS_OF);
+  // SOL: 200 x 150 is 30,000.00, less the 30,000, 98.63 and 8: -106.63.
+  // PSOL: 180 x 165 is 29,700.00: -406.63. At SOL's price it would have read
+  // 27,000.00 - 30,106.63 = -3,106.63.
+  near(g.rows[0].gain, -106.63, 'SOL position');
+  near(g.rows[1].gain, -406.63, 'PSOL position');
+  near(g.total, -106.63 - 406.63, 'total');
+});
+
+check('Stats: Jupiter and Kamino have By Platform rows of their own, after Morpho, adding up', () => {
+  // 1,000 at 0% on 1 ETH each: Jupiter +40, Kamino -15, Morpho +25.
+  const r = summaryReport([
+    shut(1, '2026-03-11', 40, { platform: 'jupiter' }),
+    shut(2, '2026-03-12', -15, { platform: 'kamino' }),
+    shut(3, '2026-03-13', 25, { platform: 'morpho' }),
+  ], AS_OF);
+  assert.deepEqual(r.byPlatform.map((b) => b.platform), ['morpho', 'jupiter', 'kamino']);
+  assert.deepEqual(r.byPlatform.map((b) => b.netGain), [25, 40, -15]);
+  assert.equal(r.byPlatform.reduce((s, b) => s + b.netGain, 0), r.netGain);
+  assert.equal(r.netGain, 50);
+});
+
 check('openGainsUsd: no BTC price leaves the total unknown, not the ETH alone', () => {
   const g = openGainsUsd([held({ id: 1 }), btc({ id: 2 })], { ETH: 3450 }, {}, AS_OF);
   assert.equal(g.total, null);

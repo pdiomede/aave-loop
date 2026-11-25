@@ -216,9 +216,10 @@ check('a full year - twelve months, every coin, a warning - still fits one page'
       month: String(i + 1).padStart(2, '0'),
       currency,
       ...fx,
-      // A third each of ETH, cbBTC and WBTC, so By asset draws all its rows.
-      ...(i % 3 === 1 ? { asset: 'cbbtc', buy_eth: 1.2, sell_eth: 1.2 } : {}),
-      ...(i % 3 === 2 ? { asset: 'wbtc', buy_eth: 1.2, sell_eth: 1.2 } : {}),
+      // Every asset in turn, so By asset draws all its rows. A BTC's quantity
+      // for cbBTC and WBTC, a SOL's for SOL and PSOL, each in its range.
+      ...[{}, { asset: 'cbbtc', buy_eth: 1.2, sell_eth: 1.2 }, { asset: 'wbtc', buy_eth: 1.2, sell_eth: 1.2 },
+        { asset: 'sol', buy_eth: 900, sell_eth: 900 }, { asset: 'psol', buy_eth: 900, sell_eth: 900 }][i % 5],
     });
   });
   // Closed without a rate, so the warning line and every chip are drawn.
@@ -227,7 +228,7 @@ check('a full year - twelve months, every coin, a warning - still fits one page'
   assert.equal(pdf.match(/\/Type \/Page\b(?!s)/g).length, 1);
   for (const m of ['Jan 2026', 'Jun 2026', 'Dec 2026']) assert.ok(shows(pdf, m), m);
   for (const c of coins) assert.ok(shows(pdf, c), c);
-  for (const a of ['ETH', 'cbBTC', 'WBTC', 'By currency and asset']) assert.ok(shows(pdf, a), a);
+  for (const a of ['ETH', 'cbBTC', 'WBTC', 'SOL', 'PSOL', 'By currency and asset']) assert.ok(shows(pdf, a), a);
 });
 
 check('By asset: a row per asset, its figures adding up to the totals', () => {

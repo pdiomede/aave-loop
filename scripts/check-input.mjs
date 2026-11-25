@@ -12,7 +12,16 @@
 import assert from 'node:assert/strict';
 import { parseAmount } from '../lib/calc.js';
 import { sanitizeNumeric, validateField, contextFrom, unitOf, labelOf } from '../lib/input.js';
-import { keccak256, toChecksumAddress, parseAddress, walletName, walletNameError, shortAddress } from '../lib/address.js';
+import {
+  keccak256,
+  toChecksumAddress,
+  parseAddress,
+  parseTxHash,
+  base58Length,
+  walletName,
+  walletNameError,
+  shortAddress,
+} from '../lib/address.js';
 
 let passed = 0;
 function check(name, fn) {
@@ -195,12 +204,14 @@ check('a repayment is judged against the loan as printed, to the cent', () => {
   assert.notEqual(validateField('borrow_amount', '10000.005', { repay_amount: 10000 }), null);
 });
 
-check('the platform is required, one of Aave, Ether.fi or Morpho, and kept as a word', () => {
+check('the platform is required, one of Aave, Ether.fi, Morpho, Jupiter or Kamino, and kept as a word', () => {
   assert.equal(validateField('platform', ''), 'Platform is required.');
   assert.equal(validateField('platform', 'uniswap'), 'Pick a platform.');
   assert.equal(validateField('platform', 'aave'), null);
   assert.equal(validateField('platform', 'EtherFi'), null);
   assert.equal(validateField('platform', 'Morpho'), null);
+  assert.equal(validateField('platform', 'Jupiter'), null);
+  assert.equal(validateField('platform', 'kamino'), null);
   assert.equal(contextFrom({}, { platform: 'etherfi' }).platform, 'etherfi');
 });
 
@@ -211,11 +222,13 @@ check('the wallet is optional, and an id when given', () => {
   for (const raw of ['abc', '0', '1.5', '-3']) assert.equal(validateField('wallet_id', raw), 'Pick one of your saved wallets.', raw);
 });
 
-check('the asset is required, ETH or cbBTC, and kept as a word', () => {
+check('the asset is required, one of ETH, cbBTC, WBTC, SOL or PSOL, and kept as a word', () => {
   assert.equal(validateField('asset', ''), 'Asset is required.');
   assert.equal(validateField('asset', 'doge'), 'Pick an asset.');
   assert.equal(validateField('asset', 'cbbtc'), null);
   assert.equal(validateField('asset', 'wbtc'), null);
+  assert.equal(validateField('asset', 'SOL'), null);
+  assert.equal(validateField('asset', 'psol'), null);
   assert.equal(validateField('asset', 'ETH'), null);
   assert.equal(contextFrom({}, { asset: 'cbbtc' }).asset, 'cbbtc');
 });
@@ -241,6 +254,13 @@ check('a purchase price is judged against its own asset\'s range, not one for al
   assert.equal(validateField('buy_eth', '1', { asset: 'wbtc', borrow_currency: 'USDC', buy_amount: 10000 }), null);
   assert.equal(validateField('buy_eth', '2.9', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 10000 }), null);
   assert.equal(validateField('buy_eth', '1', { asset: 'eth', borrow_currency: 'USDC', buy_amount: 100000 }), null);
+  // SOL's range ends at $1,000: an ETH quantity left on SOL, 3 for 10,000.
+  assert.equal(
+    validateField('buy_eth', '3', { asset: 'sol', borrow_currency: 'USDC', buy_amount: 10000 }),
+    'That is 3,333 USDC per SOL. Check the amount and the SOL.',
+  );
+  assert.equal(validateField('buy_eth', '66.6667', { asset: 'sol', borrow_currency: 'USDC', buy_amount: 10000 }), null);
+  assert.equal(validateField('buy_eth', '60', { asset: 'psol', borrow_currency: 'USDC', buy_amount: 10000 }), null);
 });
 
 check('a cbBTC trade names its fields and its messages for cbBTC, and its goal for BTC', () => {
@@ -350,6 +370,31 @@ check('what is not an Ethereum address is refused, saying why', () => {
   assert.match(parseAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed0').error, /41 characters/);
   assert.match(parseAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaeg').error, /0-9 and a-f/);
   assert.match(parseAddress('0x0000000000000000000000000000000000000000').error, /zero address/);
+});
+
+check('a Solana address is base58 of 32 bytes, kept exactly as typed', () => {
+  const sol = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
+  assert.deepEqual(parseAddress(` ${sol} `, 'solana'), { address: sol });
+  // USDC's mint, and the system program (all ones, 32 zero bytes).
+  assert.equal(parseAddress('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'solana').address, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+  assert.equal(base58Length('1'.repeat(32)), 32);
+  // 0, O, I and l are not base58.
+  assert.match(parseAddress(`${sol.slice(0, -1)}0`, 'solana').error, /only base58/);
+  assert.match(parseAddress(sol.slice(0, 30), 'solana').error, /not a Solana address/);
+  assert.match(parseAddress(`${sol}abc`, 'solana').error, /not a Solana address/);
+  assert.match(parseAddress('0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359', 'solana').error, /A Solana address is base58/);
+  assert.match(parseAddress('toly.sol', 'solana').error, /\.sol names are not looked up/);
+  // And a base58 one is no Ethereum address.
+  assert.match(parseAddress(sol, 'ethereum').error, /starts with 0x/);
+});
+
+check('a transaction hash is read for its chain: 0x lowercase, or a Solana signature as pasted', () => {
+  const sig = '5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYjCJjBRnbJLgp8uirBgmQpjKhoR4tjF3ZpRzrFmBV6UjKdiSZkQUW';
+  assert.deepEqual(parseTxHash(` ${sig} `, 'solana'), { hash: sig });
+  assert.match(parseTxHash(sig.slice(0, 60), 'solana').error, /Solana transaction signature/);
+  assert.match(parseTxHash(`0x${'ab'.repeat(32)}`, 'solana').error, /Solana transaction signature/);
+  assert.deepEqual(parseTxHash(`0x${'AB'.repeat(32)}`, 'base'), { hash: `0x${'ab'.repeat(32)}` });
+  assert.match(parseTxHash(sig, 'ethereum').error, /0x and 64 characters/);
 });
 
 check('a wallet name is required, on one line, and at most 40 characters as seen', () => {

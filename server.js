@@ -60,7 +60,7 @@ import {
 import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
 import { setting, oldSettingsNote } from './env.js';
 import { labelOf } from './lib/input.js';
-import { NETWORKS, NETWORK_META, parseAddress, walletName, walletNameError } from './lib/address.js';
+import { NETWORKS, NETWORK_META, parseAddress, parseTxHash, walletName, walletNameError } from './lib/address.js';
 import { ANCHOR, TX_STAGES, findStageTx, stageRecorded, txBasis } from './etherscan.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -1199,8 +1199,9 @@ app.post('/api/wallets', (req, res) => {
     throw new BadRequest(`Pick a chain: ${NETWORKS.map((n) => NETWORK_META[n].label).join(', ')}.`, 'network');
   }
   // In the form's order, so the first field it flags is the first one wrong.
+  // The chain first: it says how the address is read (base58 on Solana).
   const name = walletNameIn(body);
-  const parsed = parseAddress(body.address);
+  const parsed = parseAddress(body.address, network);
   if (parsed.error) throw new BadRequest(parsed.error, 'address');
 
   const row = db
@@ -1305,7 +1306,6 @@ app.delete('/api/wallets/:id', (req, res) => {
  */
 const selectStageTx = prepare('SELECT * FROM stage_tx WHERE trade_id = ? AND stage = ?');
 const txView = (row) => ({ hash: row.hash, source: row.source, found_at: row.found_at });
-const HASH = /^0x[0-9a-fA-F]{64}$/;
 const STAGE_NAMES = { borrow: 'loan', buy: 'purchase', sell: 'sale', repay: 'repayment' };
 
 app.get('/api/stage-txs', (_req, res) => {
@@ -1453,27 +1453,28 @@ app.put('/api/trades/:id/tx/:stage', (req, res) => {
   const target = txTarget(req, res);
   if (!target) return;
   const { trade, stage } = target;
-  const raw = bodyOf(req).hash;
-  const hash = typeof raw === 'string' ? raw.trim() : '';
-  if (!HASH.test(hash)) throw new BadRequest('A transaction hash is 0x and 64 characters of 0-9 and a-f.', 'hash');
-  const lower = hash.toLowerCase();
   if (!stageRecorded(trade, stage)) throw new BadRequest(`Record the ${STAGE_NAMES[stage]} first.`, 'stage');
   // A hash is a transaction on one chain, the trade's wallet's: with no
   // wallet, its link would guess one.
   if (trade.wallet_id == null) throw new BadRequest('Link a wallet on the Borrowed card first: a hash is on its chain.', 'wallet_id');
+  // Read for that chain: an EVM hash lowercase, a Solana signature exactly as
+  // pasted - lowercased, it named a transaction that does not exist.
+  const parsed = parseTxHash(bodyOf(req).hash, chainOfWallet(trade.wallet_id));
+  if (parsed.error) throw new BadRequest(parsed.error, 'hash');
+  const { hash } = parsed;
   const row = db
     .transaction(() => {
-      const other = takenBy(lower, trade.id);
+      const other = takenBy(hash, trade.id);
       if (other) {
         throw new BadRequest(`That transaction is already the ${STAGE_NAMES[other.stage]} of trade #${other.trade_id}.`, 'hash');
       }
       // A loan or repayment found by way of the purchase or sale this
       // replaces was settled against the old one.
-      if (selectStageTx.get(trade.id, stage)?.hash !== lower) dropDependent(trade.id, stage);
+      if (selectStageTx.get(trade.id, stage)?.hash !== hash) dropDependent(trade.id, stage);
       prepare(
         'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
           "ON CONFLICT (trade_id, stage) DO UPDATE SET hash = excluded.hash, source = 'manual', found_at = excluded.found_at",
-      ).run(trade.id, stage, lower, 'manual', new Date().toISOString());
+      ).run(trade.id, stage, hash, 'manual', new Date().toISOString());
       return selectStageTx.get(trade.id, stage);
     })
     .immediate();

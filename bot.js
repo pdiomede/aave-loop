@@ -27,7 +27,7 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { db, prepare } from './db.js';
 import { telegramConfig } from './config.js';
-import { intervalMs } from './lib/calc.js';
+import { intervalMs, ASSET_WORDS } from './lib/calc.js';
 import { sendTelegramMessage } from './telegram.js';
 import { priceMessage, watchMessage, holdingMessage, holdingCount, summaryMessage, helpText } from './report.js';
 import { setting, settingName } from './env.js';
@@ -308,7 +308,7 @@ async function textFor(command, from = null) {
       // where they will arrive.
       setWatch(true, from);
       return `${await watchMessage()}\n\n<i>Watching. The prices every ${WATCH_EVERY} here until /unwatch${
-        holdingCount() === 0 ? ', sent while a trade holds ETH, cbBTC or WBTC - none does now' : ''
+        holdingCount() === 0 ? `, sent while a trade holds ${ASSET_WORDS} - none does now` : ''
       }.</i>`;
     case 'unwatch':
       setWatch(false);

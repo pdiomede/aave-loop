@@ -316,19 +316,21 @@ a.brand {
 /* ---------------------------------------------------------------- ticker */
 
 /*
- * What ETH and BTC cost, in the header, a row each. `.nav` carries
- * `margin-right: auto`, so this and the theme toggle sit together on the right
- * with nothing else to say.
+ * What BTC, ETH and SOL cost (`TICKER_MARKETS`), in the header, a row each.
+ * `.nav` carries `margin-right: auto`, so this and the theme toggle sit
+ * together on the right with nothing else to say.
  *
  * Empty until a price arrives, and hidden while it is, so a price service that
- * never answers leaves a header that looks exactly as it did before. Two rows
- * of 11.5px badges come to about 44px, inside the 58px header.
+ * never answers leaves a header that looks exactly as it did before. Three
+ * rows of compact badges - 16px each, 2px apart - come to 52px, inside the
+ * 58px header; at the two rows' 21px and 4px, SOL's took it to 72px and ETH's
+ * was cut off at the top of the window.
  */
 .ticker {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 2px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -345,6 +347,7 @@ a.brand {
 
 .ticker__price {
   font-weight: 600;
+  line-height: 16px;
   white-space: nowrap;
 }
 
@@ -356,7 +359,8 @@ a.brand {
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  padding: 2px 8px;
+  padding: 1px 8px;
+  line-height: 14px;
   border-radius: var(--radius-pill);
   background: var(--surface-sunken);
   color: var(--text-muted);
@@ -1721,6 +1725,14 @@ html {
 
 .asset-mark {
   flex: none;
+}
+
+/* Art that is an opaque square (SOL's) fills its disc rather than sitting in
+   it: padded and contained, at 11px it was a black square in a white ring. */
+.coin.asset-art.asset-mark--fill,
+.asset-mark.asset-mark--fill {
+  padding: 0;
+  object-fit: cover;
 }
 
 .row__stack {

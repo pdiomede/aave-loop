@@ -65,9 +65,9 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | --- | --- |
 | `ETHROUNDTRIP_DB` | database file. Always set it when testing. |
 | `ETHROUNDTRIP_FX_OFFLINE=1` / `ETHROUNDTRIP_ETH_OFFLINE=1` | no network lookups at all |
-| `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` / `ETHROUNDTRIP_WBTC_PRICE=96500` | a fixed ETH / BTC / WBTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
+| `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` / `ETHROUNDTRIP_WBTC_PRICE=96500` / `ETHROUNDTRIP_SOL_PRICE` / `ETHROUNDTRIP_PSOL_PRICE` | a fixed price per market (`<MARKET>_PRICE`), so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
 | `ETHROUNDTRIP_BOT_OFF=1` | no Telegram long-poll |
-| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` / `ETHROUNDTRIP_ETHERSCAN_URL` | point at a mock |
+| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` / `ETHROUNDTRIP_ETHERSCAN_URL` / `ETHROUNDTRIP_SOLANA_URL` | point at a mock |
 | `ETHROUNDTRIP_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
 | `ETHROUNDTRIP_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
 
@@ -156,7 +156,7 @@ lands.
 ## Architecture
 
 Express + better-sqlite3 + vanilla ES modules. Four stages per trade (borrow, buy
-the asset - ETH, cbBTC or WBTC - sell it, repay), each with its own date and amounts,
+the asset - ETH, cbBTC, WBTC, SOL or PSOL - sell it, repay), each with its own date and amounts,
 all denominated in `borrow_currency`, which is always a stablecoin. Everything is
 reported in USD.
 
@@ -173,7 +173,7 @@ drift between a hand-written SQL predicate and `stages()`.
 `estimatedGainUsd(t, d, price, fxNow)` is the same for an open position's estimate:
 the header's Open positions tile (`openGainsUsd`), the table's `est` figures and their
 sort, Telegram's `/holding` and the alert message all print it, so one trade never
-reads two ways. `/holding` lists only trades still holding ETH, cbBTC or WBTC (`ethHeldNow`), a
+reads two ways. `/holding` lists only trades still holding their asset (`ethHeldNow`), a
 part-sold one with what it kept; a trade sold in full and not repaid is open (the
 tile and `/summary` count it) but not in `/holding`. It takes the price of the
 trade's market (`priceFor`) and today's rate per coin as arguments rather
@@ -197,13 +197,14 @@ it is a closing statement, so an open position is in no figure on it. It imports
 `calc.js` and `lib/logo.js`, the logo's PNG data written by `scripts/make-logo.mjs`
 (rerun it if `public/ETHRoundtrip_logo_96.png` changes; the checks fail until you do).
 It is one A4 page by construction (a year has at most 12 months, drawn in two
-columns of six, `CURRENCIES` 5 coins and `ASSETS` 3) and throws rather than draw past
+columns of six, `CURRENCIES` 5 coins and `ASSETS` 5) and throws rather than draw past
 the bottom margin, so a layout change that overflows fails `npm run check`; the
-fullest year, all three assets included, leaves about 8.5pt. It is ASCII throughout - text beyond it as octal
+fullest year, all five assets included, leaves about 7.5pt (rows of 14pt for currencies
+and assets, 13pt for months, since SOL and PSOL ran it 15.5pt past at 17pt). It is ASCII throughout - text beyond it as octal
 escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
 `env.js`, `fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
-`report.js`, `etherscan.js`, `chainnode.js` and `format.js` sit at the root **because they are server-only** — the
+`report.js`, `etherscan.js`, `chainnode.js`, `solana.js` and `format.js` sit at the root **because they are server-only** — the
 browser is served `lib/` wholesale. `format.js` duplicates some of `public/app.js`'s
 formatters on purpose: the browser's escape their output for `innerHTML`, which would
 be wrong in a Telegram message.
@@ -357,10 +358,16 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
 
 The Wallets tab (`#wallets`; `#settings`, its first name, is an alias) keeps the
 wallets trades are run from in `wallets` (db.js): a required name, unique in any case,
-and an address stored only in its checksummed form, unique per `network`: Ethereum,
-Base, Arbitrum or Optimism (`NETWORKS` / `NETWORK_META` in `lib/address.js`, with each
-chain's `chainId` and explorer URLs; `networkOf(w)` reads it, Ethereum for a row that
-names none). The Add form's chain picker starts empty and is required, as the new
+and an address, unique per `network`: Ethereum, Base, Arbitrum, Optimism or Solana
+(`NETWORKS` / `NETWORK_META` in `lib/address.js`, with each EVM chain's `chainId` and
+every chain's explorer URLs, Solscan for Solana; `networkOf(w)` reads it, Ethereum for a
+row that names none). `parseAddress(raw, network)` stores an EVM address checksummed
+and a Solana one (base58, 32 bytes, `base58Length`) exactly as typed; `parseTxHash`
+likewise lowercases an EVM hash and keeps a Solana signature's case. **Never fold a
+Solana value to lowercase**: its capitals are part of it, and a lowercased signature
+names no transaction (`foldFor` in etherscan.js compares EVM values folded, Solana's
+exactly). The Add form reads the address for the chain picked, or by its look (0x or
+not) while none is. The Add form's chain picker starts empty and is required, as the new
 trade's platform is; the API takes an absent `network` as Ethereum for older callers.
 The same address on two chains is two wallets. The API refuses changing an address in place: it is what trades are
 linked by. Every write is an immediate transaction, so its duplicate checks and the
@@ -391,7 +398,17 @@ recorded stages of every trade with a wallet.
 
 ### Transactions on Etherscan
 
-Every search is asked of Etherscan's V2 API with the wallet's chain (`chainid`), using
+A Solana wallet is read from a Solana node instead (`solana.js`): Helius's with
+`HELIUS_API_KEY`, or any `SOLANA_RPC_URL` (`solanaNode` in config.js), plain JSON-RPC -
+`getSignaturesForAddress` paged back from now to the window, then `getTransaction` for
+each successful one in it, kept for good. Each transaction becomes Etherscan-shaped rows
+of the wallet's net change per mint (`pre/postTokenBalances` by owner) and of its SOL
+(`native:sol`: lamports with the fee put back; under 0.01 SOL is rent or a tip and
+dropped), so `candidates`/`pick` match Solana as they do EVM. Mints (`STABLE.solana`,
+`ASSET_TOKEN.solana`, SOL as native or wSOL) were read on chain. No key is `setup`; a
+401/403 is `setup`, a 429 is retried twice then `busy`.
+
+Every EVM search is asked of Etherscan's V2 API with the wallet's chain (`chainid`), using
 that chain's contracts (`STABLE` / `ASSET_TOKEN`, per chain; a rollup's USDC is the
 native and the bridged one); block and transfer caches are keyed by chain. The free
 plan answers Ethereum and Arbitrum and refuses Base and Optimism ("Free API access is
@@ -481,7 +498,7 @@ a matching rule was tightened are never looked at again. `scripts/check-server.m
 ### Platforms
 
 `PLATFORMS` / `PLATFORM_META` in `lib/calc.js` are where a trade ran (`aave`,
-`etherfi`, `morpho`), stored lowercase in `trades.platform`. The API requires it on a new trade
+`etherfi`, `morpho`, and Solana's `jupiter` and `kamino`), stored lowercase in `trades.platform`. The API requires it on a new trade
 and refuses to blank it; the column is nullable because a trade from before it was
 asked for has none, which shows as not recorded, never as Aave.
 `scripts/set-platform.mjs` fills those in (dry run unless `--apply`). Stats splits by
@@ -497,25 +514,28 @@ start closed, and keep their open/closed state in localStorage (`ethroundtrip-st
 
 ### Assets and markets
 
-A trade buys ETH, cbBTC or WBTC: `ASSETS` / `ASSET_META` in `lib/calc.js`, stored lowercase
+A trade buys ETH, cbBTC, WBTC, SOL or PSOL: `ASSETS` / `ASSET_META` in `lib/calc.js`, stored lowercase
 in `trades.asset`, `NOT NULL DEFAULT 'eth'` because ETH was the only choice before it
 (a fact, unlike the platform). `assetOf(t)` reads it, ETH for a row that names none.
 `buy_eth` / `sell_eth` and `derive`'s `ethHeld` / `retainedEth` / `costOfSoldEth` keep
 their names and hold units of the trade's asset; the CSV heads them `buy_qty` /
 `sell_qty`, and the swaps' "Costs & Fees" (`buy_gas_usd` / `sell_gas_usd`, gas plus
-the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, 8 for cbBTC and WBTC), and
+the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, SOL and PSOL, 8 for cbBTC and WBTC), and
 every "as printed" sum of quantities (`/holding`, `/summary`) uses it per asset and
 never adds two assets together. A sale is partial only if what it keeps prints as more
 than zero to those places: `derive`'s `isPartialSale` compares Bought and Sold as printed
 (`qtyAsPrinted`), and `retainedEth` after a partial sale is their printed difference, so
 the card's lines add up. 0.00004 ETH kept is a full exit, 0.00004 cbBTC a holding.
 
-Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC', 'WBTC']`,
+Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC', 'WBTC', 'SOL', 'PSOL']`,
 cbBTC's `market` is BTC and WBTC's is WBTC, its own price (`wrapped-bitcoin`), so a
-WBTC that drifts from bitcoin shows. Only `TICKER_MARKETS`, ETH and BTC, are shown
-for themselves - the header's ticker, `/price`, `/watch` - by the user's choice; WBTC's
-price is fetched to value WBTC trades and their alerts. `prices.js` (was `eth.js`)
-fetches all three in one CoinGecko request,
+WBTC that drifts from bitcoin shows; PSOL (Phantom Staked SOL, `phantom-staked-sol`)
+is likewise its own. Only `TICKER_MARKETS`, BTC, ETH and SOL in that order, are shown
+for themselves - the header's ticker (three compact rows inside the 58px header),
+`/price`, `/watch` - by the user's choice; WBTC's and PSOL's prices are fetched to
+value their trades and alerts. Sentences that list them come from `ASSET_WORDS`,
+`TICKER_WORDS` and `PLATFORM_WORDS`. `prices.js` (was `eth.js`)
+fetches every market in one CoinGecko request,
 reads each coin by its id, and caches a row per market in `market_price` (which
 replaced the single-row `eth_price`, left in place for an older copy). A partial
 answer caches what came back without the cooldown, so a missing BTC never holds ETH
@@ -624,9 +644,10 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
   without a password, besides `/` itself. An image at the root goes to the app, behind
   auth, and the browser shows a login prompt on the public page — the landing logo did
   exactly that, in every browser without saved credentials. Keep a copy in `landing/`:
-  the coin, platform (`aave.png`, `etherfi.png`, `morpho.jpg`) and asset (`eth.png`,
-  `cbbtc.png`, `wbtc.png`) marks are all copies, so a new platform or asset needs its
-  logo copied there and named on the landing page. The social card (`og6.png`, drawn
+  the coin, platform (`aave.png`, `etherfi.png`, `morpho.jpg`, `jupiter.jpg`, `kamino.jpg`)
+  and asset (`eth.png`, `cbbtc.png`, `wbtc.png`, `sol.jpg`, `psol.png`) marks are all
+  copies, so a new platform or asset needs its logo copied there and named on the landing
+  page. Opaque square art is drawn to fill its disc (`ASSET_META.fill`, SOL's). The social card (`og7.png`, drawn
   from `scripts/og.html` with headless Chrome) names the assets too; redraw it under
   a new name once production has served the old one, since scrapers cache by URL. `scripts/check-calc.mjs` reads every `src`,
   `srcset`, loading `<link>`, `og:image`/`twitter:image` and CSS `url()` of the public

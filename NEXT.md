@@ -75,6 +75,24 @@ starts with no wallet. Then check, behind the password:
 Running 2.2.0 beside 2.2.1 on one database is safe (2.2.0 never names the column),
 but a 2.2.0 page cannot show or set a wallet.
 
+**Solana, later the same day (still 2.2.1):** SOL and PSOL to buy, Jupiter and Kamino
+to run on, Solana wallets, and SOL in the header.
+
+- **Never run an older copy on this database once it has a SOL or PSOL trade**, and
+  never restore a newer backup onto an older install: an older copy reads `sol` and
+  `psol` as ETH, values them at ETH's price and closes their alerts as off market.
+- Add `HELIUS_API_KEY=...` (a free key from helius.dev > Dashboard > API Keys) to
+  `/var/www/aave/config.env` with `sudoedit`, then restart. Without it a Solana wallet's
+  magnifiers say the key is missing; pasting a signature still works.
+- Re-paste the bot's `/` menu (step 4): `/price` and `/watch` now name BTC, ETH and SOL.
+- The social card is now `og7.png`; `og6.png` is gone. Ask @WebpageBot (Telegram) and
+  LinkedIn's Post Inspector to fetch `https://ethroundtrip.com/` again.
+- Check: the header shows BTC, ETH and SOL, each on its own row; the landing page lists
+  Jupiter and Kamino under "Run the loop on" and SOL and PSOL under "Buy and sell";
+  `curl -sI https://ethroundtrip.com/landing/og7.png | head -1` answers 200.
+- Add the Solana wallet under Wallets (chain: Solana), name it on the Solana trades,
+  and press a magnifier in Simulation: the hash opens on Solscan.
+
 ## 2.2.0 (24 Nov): WBTC as an asset to buy
 
 Deployed on 24 Nov (see above); kept as the record of what it needed. Deploy as
@@ -236,10 +254,10 @@ moved.
 Send `/setcommands` to @BotFather, pick the bot, and paste:
 
 ```
-price - ETH and BTC prices now, with 24h, 7d and 30d change
-holding - trades still holding ETH, cbBTC or WBTC, one line each
+price - BTC, ETH and SOL prices now, with 24h, 7d and 30d change
+holding - trades still holding ETH, cbBTC, WBTC, SOL or PSOL, one line each
 summary - realized gain, annualized, closed, open and held
-watch - send the ETH and BTC prices every 20 minutes
+watch - send the BTC, ETH and SOL prices every 20 minutes
 unwatch - stop the price updates
 help - what this bot can do
 ```

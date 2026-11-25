@@ -26,10 +26,11 @@
  * the card can say to check it.
  */
 import { setting } from './env.js';
-import { etherscanKey } from './config.js';
+import { etherscanKey, solanaNode } from './config.js';
 import { assetOf, parseDate } from './lib/calc.js';
-import { NETWORK_META, networkOf } from './lib/address.js';
+import { NETWORK_META, networkOf, isSolana } from './lib/address.js';
 import { NodeError, nodeFor, nodeReceipt, nodeTransfersBetween } from './chainnode.js';
+import { SolanaError, NATIVE_SOL, solanaRows, solanaTx, hideSolana } from './solana.js';
 import { n2, fmtDate } from './format.js';
 
 export const TX_STAGES = ['borrow', 'buy', 'sell', 'repay'];
@@ -65,6 +66,13 @@ const STABLE = {
     USDC: ['0x0b2c639c533813f4aa9d7837caf62653d097ff85', '0x7f5c764cbc14f9669b88837ca1490cca17c31607'],
     USDT: ['0x94b008aa00579c1307b0ef2c499ad98a8ce58e58'],
   },
+  // Mints, in their own case: base58 is never folded. Each read on chain
+  // (getAccountInfo: an SPL mint, 6 places) on 25 Nov 2026.
+  solana: {
+    USDC: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'],
+    USDT: ['Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'],
+    EURC: ['HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr'],
+  },
 };
 
 // What a purchase brings in and a sale sends out, per chain. ETH is swapped
@@ -88,6 +96,13 @@ const ASSET_TOKEN = {
   optimism: {
     eth: ['0x4200000000000000000000000000000000000006'],
     wbtc: ['0x68f180fcce6836688e9084f035309e29bf0a2095'],
+  },
+  // SOL arrives as lamports (`NATIVE_SOL`, solana.js) or wrapped (wSOL, 9
+  // places); PSOL is its own mint, 9 places, CoinGecko's record of it and the
+  // chain agreeing on 25 Nov 2026.
+  solana: {
+    sol: [NATIVE_SOL, 'So11111111111111111111111111111111111111112'],
+    psol: ['pSo1f9nQXWgXibFtKf7NWYxb5enAM4qfP6UJSiXRQfL'],
   },
 };
 
@@ -340,6 +355,24 @@ async function nodeRows(network, address, fromMs, toMs) {
 }
 
 /**
+ * A Solana wallet's rows over a window, kept two minutes as Etherscan's
+ * answers are: a trade's four stages mostly search the same days, and each
+ * listing of the wallet's signatures is a call of its own. The transactions
+ * themselves are kept for good (solana.js).
+ */
+const solanaWindows = new Map();
+
+async function solanaWindow(address, fromMs, toMs) {
+  const k = `${address}:${fromMs}:${toMs}`;
+  const kept = solanaWindows.get(k);
+  if (kept && Date.now() - kept.at < TRANSFERS_MS) return kept.rows;
+  const rows = await solanaRows(address, fromMs, toMs);
+  for (const [old, v] of solanaWindows) if (Date.now() - v.at >= TRANSFERS_MS) solanaWindows.delete(old);
+  solanaWindows.set(k, { at: Date.now(), rows });
+  return rows;
+}
+
+/**
  * The days searched for a stage: its own, a day either side - the date typed
  * is the reader's local day and the chain keeps UTC - and, for the loan and
  * the repayment, the purchase or sale they are told apart by when it is
@@ -356,6 +389,10 @@ function windowOf(t, stage) {
 }
 
 const lower = (s) => String(s ?? '').toLowerCase();
+// How a chain's hashes, addresses and contracts are compared: folded on the
+// EVM chains, where Etherscan writes them lowercase and a checksum is only
+// capitals; exactly on Solana, whose base58 capitals are part of the value.
+const foldFor = (network) => (isSolana(network) ? (s) => String(s ?? '') : lower);
 const amountOf = (row) => Number(row.value) / 10 ** Number(row.tokenDecimal);
 
 /**
@@ -370,6 +407,7 @@ const amountOf = (row) => Number(row.value) / 10 ** Number(row.tokenDecimal);
 function candidates(rows, t, stage, wallet, claimed) {
   const r = RULE[stage];
   const network = networkOf(wallet);
+  const lower = foldFor(network);
   const tokens = STABLE[network]?.[t.borrow_currency] ?? [];
   const want = Number(t[r.amount]);
   const w = lower(wallet.address);
@@ -424,6 +462,7 @@ const SAME = 1e-6;
 
 /** The best fit for a stage, or null, with how many others fitted as well. */
 function pick(rows, t, stage, wallet, claimed, own = {}) {
+  const lower = foldFor(networkOf(wallet));
   const list = candidates(rows, t, stage, wallet, claimed);
   if (!list.length) return null;
   let tied = list.filter((c) => same(c.byAmount, list[0].byAmount) && same(c.byQty, list[0].byQty));
@@ -466,10 +505,11 @@ function pick(rows, t, stage, wallet, claimed, own = {}) {
 export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {}) {
   const network = networkOf(wallet);
   const chain = NETWORK_META[network];
-  // A chain read from its node needs no Etherscan key.
+  const solana = isSolana(network);
+  // A chain read from its node needs no Etherscan key; Solana needs its own.
   const node = nodeFor(network);
-  const { key, reason } = etherscanKey();
-  if (!key && !node) return { found: false, reason, kind: 'setup' };
+  const { key, reason } = solana ? { key: null, reason: solanaNode().reason } : etherscanKey();
+  if (solana ? !solanaNode().url : !key && !node) return { found: false, reason, kind: 'setup' };
   // Not searchable, as an uncovered chain is not: tagged so, Get onchain data
   // counts it as not searched rather than as searched and not found.
   if (!STABLE[network]?.[t.borrow_currency]?.length) {
@@ -483,7 +523,11 @@ export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {
   if (refused && refused.until > Date.now()) return { found: false, reason: refused.reason, kind: 'unsupported' };
   const { from, to } = windowOf(t, stage);
   try {
-    const rows = node ? await nodeRows(network, wallet.address, from, to) : await transfersBetween(chain.chainId, wallet.address, from, to, key);
+    const rows = solana
+      ? await solanaWindow(wallet.address, from, to)
+      : node
+        ? await nodeRows(network, wallet.address, from, to)
+        : await transfersBetween(chain.chainId, wallet.address, from, to, key);
     const best = pick(rows, t, stage, wallet, claimed, own);
     if (best) {
       return { found: true, hash: best.hash, at: new Date(best.at).toISOString(), amount: best.amount, others: best.others };
@@ -498,6 +542,7 @@ export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {
         `fits this ${r.noun}. Paste its hash instead.`,
     };
   } catch (err) {
+    if (err instanceof SolanaError) return { found: false, reason: hideSolana(err.message), kind: err.kind };
     const known = err instanceof EtherscanError || err instanceof NodeError;
     if (known && err.kind === 'unsupported') {
       const reason = unsupportedReason(network, err instanceof NodeError ? `${redact(err.message, key)}.` : null);
@@ -522,8 +567,19 @@ const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a
  * chain has no such transaction, or `{ reason }` when it could not be asked.
  * From Etherscan's proxy calls, or the chain's node where one is set.
  */
-export async function txTransfers(network, hash) {
+export async function txTransfers(network, hash, address = null) {
   const chain = NETWORK_META[network];
+  // Solana's rows are the wallet's own changes (solana.js), so its address is
+  // needed to read them.
+  if (isSolana(network)) {
+    if (!solanaNode().url) return { reason: solanaNode().reason };
+    try {
+      const tx = await solanaTx(hash, address);
+      return tx && { ok: tx.ok, at: tx.at, transfers: tx.rows };
+    } catch (err) {
+      return { reason: err instanceof SolanaError ? hideSolana(err.message) : 'It could not be fetched.' };
+    }
+  }
   let receipt;
   try {
     if (nodeFor(network)) {
@@ -570,7 +626,8 @@ export function auditStage(t, stage, wallet, tx) {
   const network = networkOf(wallet);
   const chain = NETWORK_META[network].label;
   const coin = t.borrow_currency;
-  const w = lower(wallet.address);
+  const fold = foldFor(network);
+  const w = fold(wallet.address);
   const notes = [];
   let verdict = 'ok';
   const flag = (level, note) => {

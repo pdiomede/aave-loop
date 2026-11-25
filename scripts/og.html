@@ -1,14 +1,14 @@
 <!doctype html>
 <!--
-  The landing page's social preview, landing/og6.png (1200x630), drawn from this
+  The landing page's social preview, landing/og7.png (1200x630), drawn from this
   file. It is the source, not a page: nothing serves it. Render it with
   headless Chrome from the repository root:
 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
       --hide-scrollbars --force-device-scale-factor=1 --window-size=1200,630 \
-      --virtual-time-budget=8000 --screenshot=landing/og7.png "file://$PWD/scripts/og.html"
+      --virtual-time-budget=8000 --screenshot=landing/og8.png "file://$PWD/scripts/og.html"
 
-  Give the result a new name (og7.png, og8.png...) and point both og:image and
+  Give the result a new name (og8.png, og9.png...) and point both og:image and
   twitter:image in landing/index.html at it: X, LinkedIn and Telegram cache a
   preview by its URL, so an image changed in place keeps showing the old one.
   The logos are the copies in landing/, and Inter comes from Google Fonts, so
@@ -62,10 +62,11 @@
     font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
     color: #584fe6; margin-bottom: 14px;
   }
-  .marks { display: flex; gap: 16px; }
-  .mark { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 600; color: #37373c; }
+  /* Five platforms and five assets: a row wraps, three marks over two. */
+  .marks { display: flex; flex-wrap: wrap; gap: 12px 16px; }
+  .mark { display: flex; align-items: center; gap: 9px; font-size: 19px; font-weight: 600; color: #37373c; }
   .disc {
-    width: 44px; height: 44px; border-radius: 50%; padding: 3px;
+    width: 38px; height: 38px; border-radius: 50%; padding: 2px;
     background: #ffffff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14);
     object-fit: contain; flex: none;
   }
@@ -86,7 +87,7 @@
     </div>
     <h1>Every loop,<br />measured.</h1>
     <p class="lede">
-      Borrow, buy <b>ETH</b>, <b>cbBTC</b> or <b>WBTC</b>,<br />
+      Borrow, buy <b>ETH</b>, <b>BTC</b> or <b>SOL</b>,<br />
       sell, repay. What the round trip<br />
       actually earned, after what it cost.
     </p>
@@ -103,6 +104,8 @@
         <span class="mark"><img class="disc" src="../landing/aave.png" alt="" />Aave</span>
         <span class="mark"><img class="disc" src="../landing/etherfi.png" alt="" />Ether.fi</span>
         <span class="mark"><img class="disc" src="../landing/morpho.jpg" alt="" />Morpho</span>
+        <span class="mark"><img class="disc" src="../landing/jupiter.jpg" alt="" />Jupiter</span>
+        <span class="mark"><img class="disc" src="../landing/kamino.jpg" alt="" />Kamino</span>
       </div>
     </div>
     <div class="row">
@@ -111,6 +114,8 @@
         <span class="mark"><img class="disc" src="../landing/eth.png" alt="" />ETH</span>
         <span class="mark"><img class="disc" src="../landing/cbbtc.png" alt="" />cbBTC</span>
         <span class="mark"><img class="disc" src="../landing/wbtc.png" alt="" />WBTC</span>
+        <span class="mark"><img class="disc" src="../landing/sol.jpg" alt="" />SOL</span>
+        <span class="mark"><img class="disc" src="../landing/psol.png" alt="" />PSOL</span>
       </div>
     </div>
     <div class="row">

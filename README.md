@@ -1,10 +1,10 @@
 # ETH Roundtrip
 
-Track leveraged trade cycles on Aave, Ether.fi and Morpho: borrow a stablecoin, buy ETH, cbBTC or WBTC, sell it, repay the loan, and see what the round trip actually earned.
+Track leveraged trade cycles on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, cbBTC, WBTC, SOL or PSOL, sell it, repay the loan, and see what the round trip actually earned.
 
-**Platforms:** Aave, Ether.fi and Morpho. **Assets bought:** ETH, and cbBTC (Coinbase's wrapped bitcoin), valued at BTC's price.
+**Platforms:** Aave, Ether.fi and Morpho; on Solana, Jupiter and Kamino. **Assets bought:** ETH; cbBTC (Coinbase's wrapped bitcoin), valued at BTC's price; WBTC, at its own; SOL; and PSOL (Phantom Staked SOL), at its own.
 
-A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH to four places and cbBTC to eight. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
+A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH, SOL and PSOL to four places and cbBTC and WBTC to eight. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
 
 ## Run
 
@@ -26,24 +26,24 @@ A trade starts with the borrow; each stage is added as it happens.
 | Stage | You enter | Status becomes |
 | --- | --- | --- |
 | Borrow | platform (Aave, Ether.fi or Morpho), date, currency, amount, APR, gas fee (optional) | `OPEN` |
-| Buy | asset (ETH, cbBTC or WBTC), date, amount spent, amount received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
+| Buy | asset (ETH, cbBTC, WBTC, SOL or PSOL), date, amount spent, amount received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
 | Sell | date, amount sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
 | Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
 
 Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank lend or unstake fee means none was paid.
 
 - **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on.
-- **Stats** shows performance for all platforms and, in cards that fold open, for Aave, Ether.fi and Morpho alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
+- **Stats** shows performance for all platforms and, in cards that fold open, for each platform alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
 - **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
 - **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.
-- **Wallets** keeps your wallet addresses, each under a name and on its chain (Ethereum, Base, Arbitrum or Optimism); a typo in a pasted address is caught by its checksum. A trade can name the wallet it was run from, picked after its platform, and the Simulation section lists every trade under its wallet with that wallet's totals. Any trade there, holding or closed, opens into its stages, and a magnifier on each recorded one finds its transaction on Etherscan (set `ETHERSCAN_API_KEY` in config.env, a free key from etherscan.io); **Get onchain data** finds every missing one in one go, with a report at the end, and `node scripts/audit-hashes.mjs` checks the stored ones against their trades. Each wallet is searched on its own chain: Ethereum and Arbitrum on Etherscan, Optimism on its public node, and Base on a node you name in `BASE_RPC_URL` (otherwise its hashes are pasted by hand).
-- **Open positions**, in the header, estimates what the open trades would make if closed today, at the current price of what each trade holds (ETH, or BTC for cbBTC) and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
+- **Wallets** keeps your wallet addresses, each under a name and on its chain (Ethereum, Base, Arbitrum, Optimism or Solana); a typo in a pasted 0x address is caught by its checksum, and a Solana address is kept exactly as pasted. A trade can name the wallet it was run from, picked after its platform, and the Simulation section lists every trade under its wallet with that wallet's totals. Any trade there, holding or closed, opens into its stages, and a magnifier on each recorded one finds its transaction on Etherscan (set `ETHERSCAN_API_KEY` in config.env, a free key from etherscan.io); **Get onchain data** finds every missing one in one go, with a report at the end, and `node scripts/audit-hashes.mjs` checks the stored ones against their trades. Each wallet is searched on its own chain: Ethereum and Arbitrum on Etherscan, Optimism on its public node, Base on a node you name in `BASE_RPC_URL` (otherwise its hashes are pasted by hand), and Solana on Helius's node with `HELIUS_API_KEY` (a free key from helius.dev) or one you name in `SOLANA_RPC_URL`, its signatures linked to Solscan.
+- **Open positions**, in the header, estimates what the open trades would make if closed today, at the current price of what each trade holds (ETH, BTC for cbBTC, or the asset's own price) and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
 
 ## The math
 
 | Figure | Formula |
 | --- | --- |
-| Buy / sell price (per ETH, cbBTC or WBTC) | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
+| Buy / sell price (per unit of the asset) | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
 | Gross gain | `sell_amount - buy_amount * (sell_eth / buy_eth)` |
 | Accrued interest | `borrow_amount * apr% * days / 365` |
 | Fees | the six stage fees, in dollars |
@@ -75,9 +75,9 @@ A loan cost can be negative: if the euro fell, the loan was cheaper in dollars t
 
 ## Price alerts
 
-While a trade holds ETH, cbBTC or WBTC, the **Bought** card has a bell. It takes one goal price and shows the message in full before saving. The goal is a price of the trade's market: ETH's for an ETH trade, BTC's for a cbBTC one, WBTC's for a WBTC one. A goal above today's price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it, and changing the trade's asset closes it.
+While a trade holds its asset, the **Bought** card has a bell. It takes one goal price and shows the message in full before saving. The goal is a price of the trade's market: ETH's for an ETH trade, BTC's for a cbBTC one, and every other asset's own. A goal above today's price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it, and changing the trade's asset closes it.
 
-The prices come from CoinGecko, ETH, BTC and WBTC in one request, without a key, every fifteen minutes, and only while an alert is armed. cbBTC is valued at BTC's price, WBTC at its own; the header shows ETH and BTC. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
+The prices come from CoinGecko, ETH, BTC, WBTC, SOL and PSOL in one request, without a key, every fifteen minutes, and only while an alert is armed. cbBTC is valued at BTC's price, WBTC and PSOL at their own; the header shows BTC, ETH and SOL. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
 
 ## Bot commands
 
@@ -85,20 +85,20 @@ The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat i
 
 | Command | Returns |
 | --- | --- |
-| `/price` | ETH and BTC now, each with 24h, 7d and 30d change |
-| `/holding` | each trade still holding ETH, cbBTC or WBTC, with its estimated gain at its own market's price, and a total per asset with what it is worth; when the trades span platforms, a line per platform with its trades, holdings and share of the gain; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
-| `/summary` | realized net gain, blended annualized, closed trades, open positions, and the ETH and cbBTC held |
-| `/watch` / `/unwatch` | the ETH and BTC prices every twenty minutes in the chat that asked, sent only while a trade holds ETH, cbBTC or WBTC, or stop. One watch at a time: `/watch` from the other chat moves it there |
+| `/price` | BTC, ETH and SOL now, each with 24h, 7d and 30d change |
+| `/holding` | each trade still holding its asset, with its estimated gain at its own market's price, and a total per asset with what it is worth; when the trades span platforms, a line per platform with its trades, holdings and share of the gain; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
+| `/summary` | realized net gain, blended annualized, closed trades, open positions, and what is held of each asset |
+| `/watch` / `/unwatch` | the BTC, ETH and SOL prices every twenty minutes in the chat that asked, sent only while a trade holds its asset, or stop. One watch at a time: `/watch` from the other chat moves it there |
 
 `/help`, `/start` and anything unrecognised list the commands. A `@name` suffix, capitals and arguments are fine. Commands are read by long polling, so nothing needs to be reachable from the internet; two copies of the app share one reader by a lease. `/watch` survives a restart.
 
 Telegram draws the Menu button only in a private chat. To get it, set `TELEGRAM_CHAT_ID` to your own user id, or keep the group and set `TELEGRAM_OWNER_ID` too; alerts still go to the group alone. To fill the `/` menu, send `/setcommands` to [@BotFather](https://t.me/BotFather) and paste:
 
 ```
-price - ETH and BTC prices now, with 24h, 7d and 30d change
-holding - trades still holding ETH, cbBTC or WBTC, one line each
+price - BTC, ETH and SOL prices now, with 24h, 7d and 30d change
+holding - trades still holding ETH, cbBTC, WBTC, SOL or PSOL, one line each
 summary - realized gain, annualized, closed, open and held
-watch - send the ETH and BTC prices every 20 minutes
+watch - send the BTC, ETH and SOL prices every 20 minutes
 unwatch - stop the price updates
 help - what this bot can do
 ```

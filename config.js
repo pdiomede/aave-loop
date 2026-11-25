@@ -209,3 +209,25 @@ export function nodeUrl(network) {
   if (!name) return null;
   return get(name) || NODE_DEFAULTS[network] || null;
 }
+
+/**
+ * The Solana node a Solana wallet's transactions are read from (solana.js),
+ * and the secret to take out of anything said about it: `{ url, secret,
+ * reason }`. SOLANA_RPC_URL names any node; otherwise Helius's, with
+ * HELIUS_API_KEY - Solscan's own API is paid and the public node refuses most
+ * history lookups, so with neither there is no search, and `reason` says why.
+ * `ETHROUNDTRIP_SOLANA_URL` points it at a mock for the checks.
+ */
+export function solanaNode() {
+  const own = get('SOLANA_RPC_URL');
+  const key = get('HELIUS_API_KEY');
+  const base = setting('SOLANA_URL');
+  if (own) return { url: own, secret: own, reason: null };
+  if (key) {
+    const url = new URL(base || 'https://mainnet.helius-rpc.com/');
+    url.searchParams.set('api-key', key);
+    return { url: url.toString(), secret: key, reason: null };
+  }
+  const name = path.basename(FILE);
+  return { url: null, secret: null, reason: fileProblem || `No HELIUS_API_KEY in ${name}, so Solana cannot be searched.` };
+}

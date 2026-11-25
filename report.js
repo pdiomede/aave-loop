@@ -26,6 +26,8 @@ import {
   ASSET_META,
   MARKETS,
   TICKER_MARKETS,
+  ASSET_WORDS,
+  TICKER_WORDS,
   assetOf,
   marketOf,
   priceFor,
@@ -484,10 +486,10 @@ export function helpText(every = '20 minutes') {
   return [
     '<b>ETH Roundtrip</b>',
     '',
-    '/price - ETH and BTC now, with 24h, 7d and 30d change',
-    '/holding - trades still holding ETH, cbBTC or WBTC, one line each',
+    `/price - ${TICKER_WORDS} now, with 24h, 7d and 30d change`,
+    `/holding - trades still holding ${ASSET_WORDS}, one line each`,
     '/summary - realized gain, annualized, closed, open and held',
-    `/watch - send the ETH and BTC prices every ${every}`,
+    `/watch - send the ${TICKER_WORDS} prices every ${every}`,
     '/unwatch - stop the price updates',
   ].join('\n');
 }

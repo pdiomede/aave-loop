@@ -51,7 +51,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // answers to sendMessage, [status, description]; empty means 200.
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
-const mock = { price: 3000, btc: 90000, wbtc: 89900, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 } };
+const mock = { price: 3000, btc: 90000, wbtc: 89900, sol: 150, psol: 165, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 } };
 // Etherscan's V2 API: a block per twelve seconds, the transfers in `rows`,
 // or `error` as its refusal. `calls` counts every request, `keys` every key.
 mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
@@ -59,6 +59,9 @@ mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
 // a search held there is one in flight, for what happens meanwhile.
 mock.es.gate = null;
 mock.es.held = 0;
+// A Solana node: `txs` is every transaction it knows, `{ sig, wallet,
+// blockTime, err, tx }`; `status` answers every call with that HTTP status.
+mock.sol_rpc = { calls: 0, keys: new Set(), byMethod: {}, txs: [], status: 0, error: null };
 // A chain's node (JSON-RPC), for chainnode.js: block n is two seconds after
 // RPC_T0 plus 2n, `logs` are its Transfer events, and a getLogs over more
 // than `max` blocks is refused the way mainnet.optimism.io refuses one.
@@ -106,6 +109,30 @@ const mockServer = http.createServer((req, res) => {
       }
       return res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'no such method' } }));
     }
+    if (req.url.startsWith('/solana')) {
+      const m = mock.sol_rpc;
+      m.calls += 1;
+      m.keys.add(new URL(req.url, 'http://mock').searchParams.get('api-key'));
+      const { method, params, id } = JSON.parse(body || '{}');
+      m.byMethod[method] = (m.byMethod[method] ?? 0) + 1;
+      if (m.status) {
+        res.statusCode = m.status;
+        return res.end('{"error":"refused"}');
+      }
+      if (m.error) return res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32000, message: m.error } }));
+      const reply = (result) => res.end(JSON.stringify({ jsonrpc: '2.0', id, result }));
+      if (method === 'getSignaturesForAddress') {
+        const [address, opts] = params;
+        let list = m.txs
+          .filter((x) => x.wallet === address)
+          .sort((x, y) => y.blockTime - x.blockTime)
+          .map((x) => ({ signature: x.sig, blockTime: x.blockTime, err: x.err ?? null }));
+        if (opts?.before) list = list.slice(list.findIndex((x) => x.signature === opts.before) + 1);
+        return reply(list.slice(0, opts?.limit ?? 1000));
+      }
+      if (method === 'getTransaction') return reply(m.txs.find((x) => x.sig === params[0])?.tx ?? null);
+      return res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'no such method' } }));
+    }
     if (req.url.startsWith('/etherscan')) {
       if (mock.es.gate) {
         mock.es.held += 1;
@@ -136,10 +163,12 @@ const mockServer = http.createServer((req, res) => {
     if (req.url.startsWith('/coins/markets')) {
       mock.asked += 1;
       // Every coin, whatever was asked, as CoinGecko answers a list of ids;
-      // a null `btc` or `wbtc` leaves that coin out of the answer.
+      // a null `btc`, `wbtc`, `sol` or `psol` leaves that coin out of the answer.
       const coins = [{ id: 'ethereum', current_price: mock.price }];
       if (mock.btc !== null) coins.push({ id: 'bitcoin', current_price: mock.btc });
       if (mock.wbtc !== null) coins.push({ id: 'wrapped-bitcoin', current_price: mock.wbtc });
+      if (mock.sol !== null) coins.push({ id: 'solana', current_price: mock.sol });
+      if (mock.psol !== null) coins.push({ id: 'phantom-staked-sol', current_price: mock.psol });
       return res.end(JSON.stringify(coins));
     }
     if (req.url.includes('/getUpdates')) {
@@ -215,6 +244,9 @@ const isolated = {
   // market a goal was watched against.
   ETHROUNDTRIP_ETH_PRICE: '',
   ETHROUNDTRIP_BTC_PRICE: '',
+  ETHROUNDTRIP_WBTC_PRICE: '',
+  ETHROUNDTRIP_SOL_PRICE: '',
+  ETHROUNDTRIP_PSOL_PRICE: '',
   ETHROUNDTRIP_TELEGRAM_URL: MOCK,
   ETHROUNDTRIP_ETH_URL: MOCK,
   ETHROUNDTRIP_FX_OFFLINE: '1',
@@ -227,8 +259,13 @@ const isolated = {
   // Never a real node: Optimism defaults to its public one when unset.
   OPTIMISM_RPC_URL: `${MOCK}/rpc`,
   BASE_RPC_URL: '',
+  // Never a real Solana node either.
+  HELIUS_API_KEY: '',
+  SOLANA_RPC_URL: '',
+  ETHROUNDTRIP_SOLANA_URL: `${MOCK}/solana`,
 };
 const ES_KEY = 'test-etherscan-key-5f2c';
+const SOL_KEY = 'test-helius-key-9d1e';
 
 /* ----------------------------------------------------------------- the API */
 
@@ -246,6 +283,7 @@ const server = spawn(process.execPath, ['server.js'], {
     ETHROUNDTRIP_WBTC_PRICE: '89000',
     ETHROUNDTRIP_ALERT_POLL_MS: '3600000',
     ETHERSCAN_API_KEY: ES_KEY,
+    HELIUS_API_KEY: SOL_KEY,
   },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
@@ -780,6 +818,8 @@ await check('a trade can buy cbBTC, and its errors and its alert speak cbBTC and
 
 const VITALIK = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
 const OTHER = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
+// A Solana address, base58 with capitals that matter.
+const SOL_WALLET = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
 
 await check('an address typed in lowercase is saved checksummed, with its name, and listed', async () => {
   const r = await api('POST', '/api/wallets', { name: '  Ledger \n main ', address: VITALIK.toLowerCase() });
@@ -812,18 +852,26 @@ await check('the same address twice is refused in either case, and so is a name 
   assert.equal((await api('GET', '/api/wallets')).data.wallets.length, 1);
 });
 
-await check('a wallet needs a name, an address and one of the four chains', async () => {
+await check('a wallet needs a name, an address and one of the five chains', async () => {
   const blank = await api('POST', '/api/wallets', { name: ' ', address: OTHER });
   assert.equal(blank.status, 400);
   assert.equal(blank.data.field, 'name');
   const noAddress = await api('POST', '/api/wallets', { name: 'Hot' });
   assert.equal(noAddress.data.field, 'address');
-  for (const network of ['solana', 'polygon', '', 8453]) {
+  for (const network of ['polygon', '', 8453]) {
     const r = await api('POST', '/api/wallets', { name: 'Hot', address: OTHER, network });
     assert.equal(r.status, 400, String(network));
     assert.equal(r.data.field, 'network');
-    assert.match(r.data.error, /Ethereum, Base, Arbitrum, Optimism/);
+    assert.match(r.data.error, /Ethereum, Base, Arbitrum, Optimism, Solana/);
   }
+  // Solana's address is base58 and kept as typed: a 0x one is refused there,
+  // and its capitals are never folded.
+  const evmOnSolana = await api('POST', '/api/wallets', { name: 'Phantom', address: OTHER, network: 'solana' });
+  assert.deepEqual([evmOnSolana.status, evmOnSolana.data.field], [400, 'address']);
+  assert.match(evmOnSolana.data.error, /A Solana address is base58/);
+  const sol = await api('POST', '/api/wallets', { name: 'Phantom', address: ` ${SOL_WALLET} `, network: 'Solana' });
+  assert.deepEqual([sol.status, sol.data.network, sol.data.address], [201, 'solana', SOL_WALLET]);
+  assert.equal((await api('DELETE', `/api/wallets/${sol.data.id}`)).status, 204);
   // The same address on another chain is another wallet; twice on one is not.
   const onBase = await api('POST', '/api/wallets', { name: 'Hot on Base', address: OTHER, network: 'Base' });
   assert.deepEqual([onBase.status, onBase.data.network], [201, 'base']);
@@ -1512,6 +1560,166 @@ await check('the audit keeps a shared hash on the trade it fits, and cannot chec
   await api('DELETE', `/api/wallets/${arb.id}`);
 });
 
+// Base58, for Solana signatures and mints in the checks below.
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+function b58(bytes) {
+  let n = BigInt(`0x${Buffer.from(bytes).toString('hex') || '0'}`);
+  let out = '';
+  while (n > 0n) {
+    out = B58[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  for (const b of bytes) {
+    if (b !== 0) break;
+    out = `1${out}`;
+  }
+  return out;
+}
+// A signature of 64 bytes, its capitals as a node writes them.
+const solSig = (n) => b58(Buffer.alloc(64, n + 7).map((v, i) => (v * (i + 3)) % 251 || 1));
+const SOL_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const SOL_FAKE_USDC = b58(Buffer.alloc(32, 9));
+/**
+ * A transaction as `getTransaction` answers it (jsonParsed): `tokens` maps a
+ * mint to [before, after] raw amounts held by `wallet`, `lamports` its SOL
+ * before and after; the wallet signed and paid the 5,000-lamport fee.
+ */
+function solTx({ n, at, wallet = SOL_WALLET, tokens = {}, lamports = [5e9, 5e9 - 5000], err = null }) {
+  const bal = (i) =>
+    Object.entries(tokens).map(([mint, amounts]) => ({
+      accountIndex: 1,
+      mint,
+      owner: wallet,
+      uiTokenAmount: { amount: String(amounts[i]), decimals: 6 },
+    }));
+  const sig = solSig(n);
+  return {
+    sig,
+    wallet,
+    blockTime: Math.floor(Date.parse(at) / 1000),
+    err,
+    tx: {
+      blockTime: Math.floor(Date.parse(at) / 1000),
+      meta: { err, fee: 5000, preBalances: [lamports[0]], postBalances: [lamports[1]], preTokenBalances: bal(0), postTokenBalances: bal(1) },
+      transaction: { signatures: [sig], message: { accountKeys: [{ pubkey: wallet, signer: true, writable: true }] } },
+    },
+  };
+}
+const usdc = (v) => Math.round(v * 1e6);
+const lam = (v) => Math.round(v * 1e9);
+
+await check('a Solana loop is found by its mints and its SOL, and each signature keeps its case', async () => {
+  const [day, next] = ['2026-06-20', '2026-06-21'];
+  const wallet = (await api('POST', '/api/wallets', { name: 'Phantom', address: SOL_WALLET, network: 'solana' })).data;
+  // The loan; a look-alike "USDC" sent to the wallet (address poisoning); the
+  // purchase - 20,000 USDC out, 133.33 SOL in - and another loop's purchase of
+  // the same 20,000 that brought 130 SOL; the sale; a failed repayment, then
+  // the one that went through.
+  mock.sol_rpc.txs = [
+    solTx({ n: 1, at: `${day}T10:00:00Z`, tokens: { [SOL_USDC]: [0, usdc(20000)] } }),
+    solTx({ n: 2, at: `${day}T10:01:00Z`, tokens: { [SOL_FAKE_USDC]: [0, usdc(20000)] } }),
+    solTx({ n: 3, at: `${day}T10:05:00Z`, tokens: { [SOL_USDC]: [usdc(20000), 0] }, lamports: [lam(1), lam(1 + 133.3333) - 5000] }),
+    solTx({ n: 4, at: `${day}T10:10:00Z`, tokens: { [SOL_USDC]: [usdc(20000), 0] }, lamports: [lam(1), lam(131) - 5000] }),
+    solTx({ n: 5, at: `${next}T09:00:00Z`, tokens: { [SOL_USDC]: [0, usdc(21000)] }, lamports: [lam(134.3333), lam(1) - 5000] }),
+    solTx({ n: 6, at: `${next}T09:04:00Z`, tokens: { [SOL_USDC]: [usdc(21000), usdc(995)] }, err: { InstructionError: [0, 'Custom'] } }),
+    solTx({ n: 7, at: `${next}T09:05:00Z`, tokens: { [SOL_USDC]: [usdc(21000), usdc(995)] } }),
+  ];
+  const t = (
+    await api('POST', '/api/trades', {
+      borrow_date: day, borrow_amount: '20000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter', wallet_id: wallet.id,
+      buy_date: day, buy_amount: '20000', buy_eth: '133.3333', buy_gas_usd: '0.01', asset: 'sol',
+      sell_date: next, sell_amount: '21000', sell_eth: '133.3333', sell_gas_usd: '0.01',
+      repay_date: next, repay_amount: '20005',
+    })
+  ).data;
+  assert.equal(t.asset, 'sol');
+  const want = { borrow: solSig(1), buy: solSig(3), sell: solSig(5), repay: solSig(7) };
+  for (const [stage, sig] of Object.entries(want)) {
+    const r = await find(t.id, stage);
+    assert.equal(r.data.found, true, `${stage}: ${r.data.reason}`);
+    assert.equal(r.data.hash, sig, `${stage}, exactly as the node wrote it`);
+    assert.notEqual(sig, sig.toLowerCase());
+  }
+  assert.ok(mock.sol_rpc.keys.has(SOL_KEY));
+  // A signature pasted keeps its capitals; an Ethereum hash is no Solana one.
+  const evm = await api('PUT', `/api/trades/${t.id}/tx/buy`, { hash: hashOf(3) });
+  assert.deepEqual([evm.status, evm.data.field], [400, 'hash']);
+  assert.match(evm.data.error, /Solana transaction signature/);
+  const pasted = await api('PUT', `/api/trades/${t.id}/tx/buy`, { hash: ` ${solSig(4)} ` });
+  assert.deepEqual([pasted.status, pasted.data.hash], [200, solSig(4)]);
+  // And Solscan is where it is opened: the page builds the link from this.
+  const { NETWORK_META } = await import('../lib/address.js');
+  assert.equal(NETWORK_META.solana.txExplorer, 'https://solscan.io/tx/');
+  await api('DELETE', `/api/trades/${t.id}`);
+  assert.equal((await api('DELETE', `/api/wallets/${wallet.id}`)).status, 204);
+});
+
+await check("Solana's node refusing the key, or a rate limit, is said in words, never with the key", async () => {
+  const day = '2026-06-24';
+  const wallet = (await api('POST', '/api/wallets', { name: 'Phantom', address: SOL_WALLET, network: 'solana' })).data;
+  mock.sol_rpc.txs = [];
+  const t = (
+    await api('POST', '/api/trades', {
+      borrow_date: day, borrow_amount: '20000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'kamino', wallet_id: wallet.id,
+    })
+  ).data;
+  mock.sol_rpc.status = 401;
+  const refused = (await find(t.id, 'borrow')).data;
+  assert.deepEqual([refused.found, refused.kind], [false, 'setup']);
+  assert.match(refused.reason, /refused the HELIUS_API_KEY/);
+  mock.sol_rpc.status = 429;
+  const limited = (await find(t.id, 'borrow')).data;
+  assert.deepEqual([limited.found, limited.kind], [false, 'busy']);
+  mock.sol_rpc.status = 0;
+  mock.sol_rpc.error = `Something went wrong for api-key=${SOL_KEY}`;
+  const said = (await find(t.id, 'borrow')).data;
+  assert.equal(said.kind, 'busy');
+  assert.ok(!JSON.stringify(said).includes(SOL_KEY), said.reason);
+  mock.sol_rpc.error = null;
+  // DAI has no Solana mint here: not searched, rather than not found.
+  await api('PATCH', `/api/trades/${t.id}`, { borrow_currency: 'DAI' });
+  assert.equal((await find(t.id, 'borrow')).data.kind, 'unsupported');
+  const nothing = (await find(t.id, 'borrow')).data;
+  assert.match(nothing.reason, /DAI has no known contract on Solana/);
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${wallet.id}`);
+});
+
+await check('the audit reads a Solana signature from its node and judges it as a search would', async () => {
+  const [day, next] = ['2026-06-27', '2026-06-28'];
+  const wallet = (await api('POST', '/api/wallets', { name: 'Phantom', address: SOL_WALLET, network: 'solana' })).data;
+  mock.sol_rpc.txs = [
+    solTx({ n: 11, at: `${day}T10:00:00Z`, tokens: { [SOL_USDC]: [0, usdc(15000)] } }),
+    solTx({ n: 12, at: `${day}T10:05:00Z`, tokens: { [SOL_USDC]: [usdc(15000), 0] }, lamports: [lam(1), lam(101) - 5000] }),
+  ];
+  const t = (
+    await api('POST', '/api/trades', {
+      borrow_date: day, borrow_amount: '15000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter', wallet_id: wallet.id,
+      buy_date: day, buy_amount: '15000', buy_eth: '100', buy_gas_usd: '0.01', asset: 'sol',
+    })
+  ).data;
+  // The purchase pasted as the loan: it moves USDC out, not in.
+  assert.equal((await api('PUT', `/api/trades/${t.id}/tx/borrow`, { hash: solSig(12) })).status, 200);
+  const out = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['scripts/audit-hashes.mjs'], {
+      cwd: root,
+      env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: path.join(tmp, 'api.db'), HELIUS_API_KEY: SOL_KEY },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let o = '';
+    let e = '';
+    child.stdout.on('data', (c) => (o += c));
+    child.stderr.on('data', (c) => (e += c));
+    child.on('close', (status) => (status === 0 ? resolve(o) : reject(new Error(e || o))));
+  });
+  const lines = out.split('\n');
+  const i = lines.findIndex((l) => l.includes(`#${t.id} Borrowed`));
+  assert.ok(i >= 0, out);
+  assert.match(lines.slice(i, i + 3).join('\n'), /^WRONG .*\n.*it moves no USDC into Phantom on Solana/);
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${wallet.id}`);
+});
+
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {
   const before = mock.es.calls;
   // In a child of its own: `isolated` blanks the key, as an install without
@@ -1850,12 +2058,12 @@ const { holdingText, helpText } = await import('../report.js');
 await check('/price explains a missing price with its own market\'s problem, never WBTC\'s', async () => {
   const { priceText } = await import('../report.js');
   const { marketPrices } = await import('../prices.js');
-  // ETH answers; BTC and WBTC do not. The reason under the missing BTC used to
-  // be every market's problem joined, WBTC's included.
+  // ETH and SOL answer; BTC and WBTC do not. The reason under the missing BTC
+  // used to be every market's problem joined, WBTC's included.
   mock.btc = null;
   mock.wbtc = null;
   const quotes = await marketPrices({ maxAgeMs: 0 });
-  const text = priceText({ ETH: quotes.ETH });
+  const text = priceText({ ETH: quotes.ETH, SOL: quotes.SOL });
   assert.match(text, /Could not get the BTC price\.\nThe BTC price did not come back\.$/);
   assert.doesNotMatch(text, /WBTC/);
   mock.btc = 90000;
@@ -1863,15 +2071,15 @@ await check('/price explains a missing price with its own market\'s problem, nev
   await marketPrices({ maxAgeMs: 0 });
 });
 
-await check('/price and /watch give ETH and BTC only, and say which could not be had', async () => {
+await check('/price and /watch give BTC, ETH and SOL in that order, and say which could not be had', async () => {
   const { priceText, watchMessage } = await import('../report.js');
   const text = await watchMessage();
-  assert.match(text, /^<b>ETH \$[\d,.]+<\/b>/);
-  assert.match(text, /\n\n<b>BTC \$[\d,.]+<\/b>/);
-  // WBTC values WBTC trades; it is not followed for itself.
-  assert.doesNotMatch(text, /WBTC/);
+  assert.match(text, /^<b>BTC \$[\d,.]+<\/b>/);
+  assert.match(text, /\n\n<b>ETH \$[\d,.]+<\/b>[^]*\n\n<b>SOL \$150\.00<\/b>/);
+  // WBTC and PSOL value their trades; they are not followed for themselves.
+  assert.doesNotMatch(text, /WBTC|PSOL/);
   const one = priceText({ ETH: { price: 3000, ageMs: 0, change24h: 1.25 }, WBTC: { price: 89900, ageMs: 0 } });
-  assert.match(one, /^<b>ETH \$3,000\.00<\/b>\n24h \+1\.3%\n\nCould not get the BTC price\./);
+  assert.match(one, /^<b>ETH \$3,000\.00<\/b>\n24h \+1\.3%\n\nCould not get the BTC or SOL price\./);
   assert.doesNotMatch(one, /WBTC/);
 });
 
