@@ -60,6 +60,7 @@ import {
 import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
 import { setting, oldSettingsNote } from './env.js';
 import { labelOf } from './lib/input.js';
+import { NETWORKS, parseAddress, walletName, walletNameError } from './lib/address.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -198,10 +199,13 @@ class BadRequest extends Error {
  * the form was opened. Carries the row as it is now, so the page can show it.
  */
 class Conflict extends Error {
-  constructor(message, field, current) {
+  // `view` is how the row is sent back: a trade with its derived figures, a
+  // wallet as it is stored.
+  constructor(message, field, current, view = (row) => withDerived(row)) {
     super(message);
     this.field = field;
     this.current = current;
+    this.view = view;
   }
 }
 
@@ -1101,6 +1105,113 @@ app.delete('/api/trades/:id', (req, res) => {
   res.status(204).end();
 });
 
+/* ---------------------------------------------------------------- wallets */
+
+/*
+ * The addresses kept in Settings (`wallets` in db.js). Each write runs in an
+ * immediate transaction, so its checks for a duplicate and the write itself
+ * hold the write lock together: the other copy of the app cannot save the same
+ * address, or the same name, between the two, and a duplicate is answered with
+ * the sentence below rather than a constraint error as a 500.
+ */
+const selectWallets = prepare('SELECT * FROM wallets ORDER BY name COLLATE NOCASE, id');
+const selectWallet = prepare('SELECT * FROM wallets WHERE id = ?');
+const walletAt = prepare('SELECT * FROM wallets WHERE network = ? AND address = ?');
+const walletNamed = prepare('SELECT * FROM wallets WHERE name = ? COLLATE NOCASE');
+
+const bodyOf = (req) => (req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {});
+
+/** The name a request asks for, as it is stored, or a 400 naming the field. */
+function walletNameIn(body) {
+  const error = walletNameError(body.name);
+  if (error) throw new BadRequest(error, 'name');
+  return walletName(body.name);
+}
+
+/** Names are how a wallet will be picked, so two cannot share one in any case. */
+function refuseTakenName(name, ownId) {
+  const other = walletNamed.get(name);
+  if (other && other.id !== ownId) throw new BadRequest(`Another address is already called "${other.name}".`, 'name');
+}
+
+app.get('/api/wallets', (_req, res) => res.json({ wallets: selectWallets.all() }));
+
+app.post('/api/wallets', (req, res) => {
+  const body = bodyOf(req);
+  const network =
+    body.network === undefined ? NETWORKS[0] : typeof body.network === 'string' ? body.network.trim().toLowerCase() : '';
+  if (!NETWORKS.includes(network)) throw new BadRequest('Only Ethereum addresses for now.', 'network');
+  // In the form's order, so the first field it flags is the first one wrong.
+  const name = walletNameIn(body);
+  const parsed = parseAddress(body.address);
+  if (parsed.error) throw new BadRequest(parsed.error, 'address');
+
+  const row = db
+    .transaction(() => {
+      const same = walletAt.get(network, parsed.address);
+      if (same) throw new BadRequest(`That address is already saved, as "${same.name}".`, 'address');
+      refuseTakenName(name, null);
+      const now = new Date().toISOString();
+      const info = prepare(
+        'INSERT INTO wallets (network, address, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+      ).run(network, parsed.address, name, now, now);
+      return selectWallet.get(info.lastInsertRowid);
+    })
+    .immediate();
+  res.status(201).json(row);
+});
+
+/**
+ * A new name, and nothing else. The address is what trades will be linked by,
+ * so changing it in place would move every one of them to another wallet
+ * unseen: it is deleted and added again instead.
+ *
+ * `base` is the name the page showed when Rename was pressed. Renamed in the
+ * meantime from another tab, the save is refused with the name as it is now,
+ * as a stage save is (`changedSince`), rather than writing over it unseen.
+ */
+app.patch('/api/wallets/:id', (req, res) => {
+  const id = idParam(req.params.id);
+  if (id === null) return res.status(404).json({ error: 'No such address.' });
+  const body = bodyOf(req);
+  for (const key of ['address', 'network']) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      throw new BadRequest("An address can't be changed: delete it and add it again.", key);
+    }
+  }
+  const name = walletNameIn(body);
+  const base = body.base && typeof body.base === 'object' && !Array.isArray(body.base) ? body.base : null;
+
+  const row = db
+    .transaction(() => {
+      const current = selectWallet.get(id);
+      if (!current) return null;
+      if (base && Object.prototype.hasOwnProperty.call(base, 'name') && base.name !== current.name) {
+        throw new Conflict(
+          `This address was renamed elsewhere after you pressed Rename: it is now "${current.name}". ` +
+            'Your name is still here; save again to replace it.',
+          'name',
+          current,
+          (r) => r,
+        );
+      }
+      if (name === current.name) return current;
+      refuseTakenName(name, id);
+      prepare('UPDATE wallets SET name = ?, updated_at = ? WHERE id = ?').run(name, new Date().toISOString(), id);
+      return selectWallet.get(id);
+    })
+    .immediate();
+  if (!row) return res.status(404).json({ error: 'No such address.' });
+  res.json(row);
+});
+
+app.delete('/api/wallets/:id', (req, res) => {
+  const id = idParam(req.params.id);
+  const info = id === null ? { changes: 0 } : prepare('DELETE FROM wallets WHERE id = ?').run(id);
+  if (info.changes === 0) return res.status(404).json({ error: 'No such address.' });
+  res.status(204).end();
+});
+
 /**
  * Anything reaching here matched no route and no file on disk.
  *
@@ -1136,7 +1247,7 @@ app.use((err, _req, res, _next) => {
     return res.status(400).json({ error: err.message, field: err.field });
   }
   if (err instanceof Conflict) {
-    return res.status(409).json({ error: err.message, field: err.field, current: withDerived(err.current) });
+    return res.status(409).json({ error: err.message, field: err.field, current: err.view(err.current) });
   }
   // express.json() rejects unparseable bodies with a SyntaxError.
   if (err instanceof SyntaxError && 'body' in err) {

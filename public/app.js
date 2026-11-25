@@ -39,6 +39,7 @@ import {
   unitOf,
   TEXT_FIELDS,
 } from '/lib/input.js';
+import { NETWORK_META, parseAddress, walletName, walletNameError, shortAddress } from '/lib/address.js';
 
 /* ------------------------------------------------------------- formatters */
 
@@ -301,6 +302,14 @@ const TIPS = {
       'Nothing held now (sold, or the purchase undone), so this goal is not checked. It closes at the next check.',
     set: 'When it was saved.',
     firedAt: 'When the goal was reached, and at what price. A dash until it is.',
+  },
+  wallets: {
+    name: 'What this wallet is called here. No two share a name, in any case.',
+    address:
+      'Checksummed (EIP-55): the mix of capitals is a check on the rest, so a typo in a pasted address shows. ' +
+      'Typed all in one case, it is saved in this form.',
+    network: 'Ethereum mainnet, the only network for now.',
+    added: 'When it was added to this list.',
   },
 };
 
@@ -734,6 +743,14 @@ const state = {
   statsYear: null,
   // The day the Stats view was last drawn for, which Export CSV reuses.
   statsAsOf: null,
+  // The addresses kept in Settings. Null until that view has been opened once,
+  // as `alertLog` is, so the table can tell "not read yet" from "none".
+  wallets: null,
+  walletsError: null,
+  // The wallet being renamed: `{ id, value, base }`, what is typed and the name
+  // it had when Rename was pressed. Kept here rather than read off the input,
+  // because a price landing redraws the view and the input with it.
+  walletRename: null,
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -865,6 +882,32 @@ async function loadAlertLog() {
     // "Failed to fetch" says nothing useful - the wording removeAlert and
     // deleteAllAlerts already use for that case.
     state.alertLogError = err.status ? err.message : 'Could not reach the server.';
+  }
+}
+
+/**
+ * The addresses, for Settings. Read on every visit, as the Alerts log is, and
+ * guarded the same way: a delete or a rename landing while this is on the wire
+ * would otherwise be undone on screen by its reply.
+ */
+let walletSeq = 0;
+let walletWriteSeq = 0;
+
+async function loadWallets() {
+  const seq = ++walletSeq;
+  const wroteAt = walletWriteSeq;
+  try {
+    const rows = (await api('/api/wallets')).wallets || [];
+    if (seq !== walletSeq || wroteAt !== walletWriteSeq) return;
+    state.wallets = rows;
+    state.walletsError = null;
+    // Deleted in another tab while it was being renamed here: its form goes too.
+    if (state.walletRename && !rows.some((w) => w.id === state.walletRename.id)) state.walletRename = null;
+  } catch (err) {
+    // A list already on screen stays: a refresh that could not get through
+    // does not make it untrue.
+    if (seq !== walletSeq) return;
+    state.walletsError = err.status ? err.message : 'Could not reach the server.';
   }
 }
 
@@ -3341,6 +3384,287 @@ function renderAlerts() {
   ${pager(total, 'alerts')}`;
 }
 
+/* ---------------------------------------------------------- settings view */
+
+// The server's order, `name COLLATE NOCASE, id`: SQLite's NOCASE folds ASCII
+// letters only, so this does too, and a row added or renamed here lands where
+// the next read would put it.
+const nocase = (s) => String(s).replace(/[A-Z]/g, (c) => c.toLowerCase());
+const byWalletName = (a, b) => {
+  const [x, y] = [nocase(a.name), nocase(b.name)];
+  return x < y ? -1 : x > y ? 1 : a.id - b.id;
+};
+
+const networkFace = (network) => {
+  const meta = NETWORK_META[network];
+  return meta
+    ? `<span class="wallet-network"><img class="coin coin--art coin--sm" src="${meta.art}" alt="" width="20" height="20" />${esc(meta.label)}</span>`
+    : esc(network);
+};
+
+/** What is wrong with a field of either wallet form, or null. */
+function walletFieldError(name, value) {
+  if (name === 'wallet_name') return walletNameError(value);
+  if (name === 'wallet_address') return parseAddress(value).error ?? null;
+  return null;
+}
+
+/**
+ * The Add address form, drawn once and never by `render`: it sits above the
+ * list's mount, so a price landing - which redraws the view - cannot take a
+ * half-pasted address with it.
+ */
+function fillWalletForm() {
+  const form = document.getElementById('wallet-form');
+  if (!form || form.childElementCount) return;
+  form.innerHTML = `<div class="wallet-form__grid">
+      ${field({ name: 'wallet_name', label: 'Name', tip: 'What this wallet is called here, for example Ledger or Rabby hot. Up to 40 characters.', placeholder: 'Ledger' })}
+      ${field({ name: 'wallet_address', label: 'Address', tip: 'The 0x address, pasted from your wallet. Its capitals are checked against its checksum, so a typo shows.', placeholder: '0x…' })}
+      <div class="field">
+        <div class="field__head"><span class="field__label">Network</span></div>
+        <div class="wallet-network--field">${networkFace('ethereum')}</div>
+        <div class="field__hint">The only one for now.</div>
+      </div>
+    </div>
+    <div class="form__actions">
+      <span class="form__error" data-form-error role="alert"></span>
+      <button class="btn btn--primary btn--sm" type="submit">Add address</button>
+    </div>`;
+}
+
+/**
+ * One address. Deliberately not `class="row"`: the handler that opens a
+ * trade's stages matches any `.row`, as the Alerts table notes.
+ */
+function walletRow(w) {
+  const meta = NETWORK_META[w.network];
+  const renaming = state.walletRename?.id === w.id;
+  const hintId = `wallet-rename-${w.id}-hint`;
+  const name = renaming
+    ? `<form class="wallet-rename" id="wallet-rename-${w.id}" data-wallet-form="rename" data-wallet="${w.id}" novalidate>
+        <div class="field" data-field="wallet_name">
+          <div class="control"><input name="wallet_name" type="text" value="${esc(state.walletRename.value)}"
+            aria-label="New name for ${esc(w.name)}" aria-describedby="${hintId}" autocomplete="off" spellcheck="false" /></div>
+          <div class="field__hint" id="${hintId}" data-hint="wallet_name"></div>
+        </div>
+        <span class="form__error" data-form-error role="alert"></span>
+        <span class="wallet-rename__buttons">
+          <button class="btn btn--ghost btn--sm" type="button" data-wallet-cancel="${w.id}">Cancel</button>
+          <button class="btn btn--primary btn--sm" type="submit">Save</button>
+        </span>
+      </form>`
+    : `<span class="wallet-name">${esc(w.name)}</span>`;
+  const explorer = meta?.explorer
+    ? `<a class="btn btn--ghost btn--sm" href="${esc(meta.explorer + w.address)}" target="_blank" rel="noopener noreferrer"
+        aria-label="Open ${esc(w.name)} on ${esc(meta.explorerLabel)}">${esc(meta.explorerLabel)}</a>`
+    : '';
+  return `<tr>
+    <td data-label="Name">${name}</td>
+    <td data-label="Address"><span class="wallet-address">
+      <code class="wallet-address__hex">${esc(w.address)}</code>
+      <span class="wallet-address__actions">
+        <button class="btn btn--ghost btn--sm" type="button" data-wallet-copy="${w.id}"
+          aria-label="Copy the address of ${esc(w.name)}">Copy</button>${explorer}
+      </span>
+    </span></td>
+    <td data-label="Network">${networkFace(w.network)}</td>
+    <td data-label="Added" class="num">${fmtDate(localDay(w.created_at))}</td>
+    <td data-label="" class="num wallets-table__act">${
+      renaming
+        ? ''
+        : `<button class="btn btn--ghost btn--sm" type="button" data-wallet-rename="${w.id}" aria-label="Rename ${esc(w.name)}">Rename</button>`
+    }<button class="btn btn--ghost btn--sm btn--danger" type="button" data-wallet-delete="${w.id}"
+        aria-label="Delete ${esc(w.name)}">Delete</button></td>
+  </tr>`;
+}
+
+/**
+ * The Addresses list. Through `setKeepingFocus`, since a price landing redraws
+ * the view: focus in the list - a rename half typed above all - stays where it
+ * was.
+ */
+function renderSettings() {
+  const mount = document.getElementById('wallets-mount');
+  if (!mount) return;
+  let html;
+  if (state.wallets === null) {
+    html = state.walletsError
+      ? `<div class="empty"><h3>Could not load the addresses</h3><p>${esc(state.walletsError)}</p></div>`
+      : '<div class="empty"><h3>Loading addresses</h3></div>';
+  } else if (state.wallets.length === 0) {
+    html = `<div class="empty">
+      <h3>No addresses yet</h3>
+      <p>Add the Ethereum wallets you trade from, each under a name.</p>
+    </div>`;
+  } else {
+    html = `<table class="table table--flush wallets-table">
+      <thead><tr>
+        ${hintHead('Name', TIPS.wallets.name)}
+        ${hintHead('Address', TIPS.wallets.address)}
+        ${hintHead('Network', TIPS.wallets.network)}
+        ${hintHead('Added', TIPS.wallets.added)}
+        <th><span class="sr-only">Rename or delete</span></th>
+      </tr></thead>
+      <tbody>${state.wallets.map(walletRow).join('')}</tbody>
+    </table>`;
+  }
+  setKeepingFocus(mount, html);
+}
+
+/** Read the list again and draw it: on every visit, and on coming back to the tab. */
+async function refreshSettingsView() {
+  await loadWallets();
+  if (state.view === 'settings') renderSettings();
+}
+
+async function submitWallet(form) {
+  const name = form.elements.wallet_name.value;
+  const nameError = walletNameError(name);
+  if (nameError) return showFormError(form, nameError, 'wallet_name');
+  const parsed = parseAddress(form.elements.wallet_address.value);
+  if (parsed.error) return showFormError(form, parsed.error, 'wallet_address');
+
+  const done = beginSubmit(form);
+  if (!done) return;
+  try {
+    const row = await api('/api/wallets', {
+      method: 'POST',
+      body: JSON.stringify({ name, address: parsed.address, network: 'ethereum' }),
+    });
+    walletWriteSeq += 1;
+    state.wallets = [...(state.wallets ?? []).filter((w) => w.id !== row.id), row].sort(byWalletName);
+    form.reset();
+    for (const f of ['wallet_name', 'wallet_address']) clearFieldError(form, f);
+    form.querySelector('[data-form-error]').textContent = '';
+    renderSettings();
+    form.elements.wallet_name.focus();
+    toast(`${row.name} saved: ${shortAddress(row.address)}.`);
+  } catch (err) {
+    const field = { name: 'wallet_name', address: 'wallet_address' }[err.field] ?? null;
+    showFormError(form, err.status ? err.message : 'Could not reach the server, so the address was not saved.', field);
+  } finally {
+    done();
+  }
+}
+
+function startWalletRename(id) {
+  const w = state.wallets?.find((x) => x.id === id);
+  if (!w) return;
+  state.walletRename = { id, value: w.name, base: w.name };
+  renderSettings();
+  const input = document.querySelector(`#wallet-rename-${id} input[name="wallet_name"]`);
+  if (input) {
+    focusInView(input);
+    input.select();
+  }
+}
+
+function endWalletRename() {
+  const id = state.walletRename?.id;
+  state.walletRename = null;
+  renderSettings();
+  if (id != null) document.querySelector(`[data-wallet-rename="${id}"]`)?.focus();
+}
+
+/**
+ * Save a new name. Sends the name the wallet had when Rename was pressed, and
+ * a 409 - renamed meanwhile in another tab - shows the name it has now and
+ * keeps what was typed, so a second Save replaces it knowingly.
+ */
+async function submitWalletRename(form) {
+  const id = Number(form.dataset.wallet);
+  const typed = form.elements.wallet_name.value;
+  const error = walletNameError(typed);
+  if (error) return showFormError(form, error, 'wallet_name');
+  const current = state.wallets?.find((w) => w.id === id);
+  if (current && walletName(typed) === current.name) return endWalletRename();
+
+  const done = beginSubmit(form);
+  if (!done) return;
+  const base = state.walletRename?.id === id ? state.walletRename.base : current?.name;
+  try {
+    const row = await api(`/api/wallets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: typed, base: { name: base } }),
+    });
+    walletWriteSeq += 1;
+    state.wallets = (state.wallets ?? []).map((w) => (w.id === id ? row : w)).sort(byWalletName);
+    state.walletRename = null;
+    renderSettings();
+    document.querySelector(`[data-wallet-rename="${id}"]`)?.focus();
+    toast(`Renamed to ${row.name}.`);
+  } catch (err) {
+    if (err.status === 409 && err.current) {
+      walletWriteSeq += 1;
+      state.wallets = (state.wallets ?? []).map((w) => (w.id === id ? err.current : w)).sort(byWalletName);
+      state.walletRename = { id, value: typed, base: err.current.name };
+      renderSettings();
+      const again = document.getElementById(`wallet-rename-${id}`);
+      if (again) showFormError(again, err.message, 'wallet_name');
+      return;
+    }
+    if (err.status === 404) {
+      walletWriteSeq += 1;
+      state.wallets = (state.wallets ?? []).filter((w) => w.id !== id);
+      state.walletRename = null;
+      renderSettings();
+      toast('That address was deleted elsewhere.');
+      return;
+    }
+    showFormError(
+      form,
+      err.status ? err.message : 'Could not reach the server, so the name was not changed.',
+      err.field === 'name' ? 'wallet_name' : null,
+    );
+  } finally {
+    done();
+  }
+}
+
+async function removeWallet(id) {
+  const w = state.wallets?.find((x) => x.id === id);
+  if (!w) return;
+  const ok = await confirmDialog({
+    title: `Delete ${w.name}?`,
+    body: `<code class="wallet-address__hex">${esc(w.address)}</code> goes from your addresses. You can add it again later.`,
+  });
+  if (!ok) return;
+
+  try {
+    await api(`/api/wallets/${id}`, { method: 'DELETE' });
+  } catch (err) {
+    // A 404 is what was wanted: it is already gone.
+    if (err.status !== 404) {
+      toast(err.status ? err.message : 'Could not reach the server, so the address is still saved.');
+      return;
+    }
+  }
+
+  // Focus to the Delete that takes this one's place, or the heading when the
+  // list is empty: the redraw takes the button pressed away.
+  const at = [...document.querySelectorAll('[data-wallet-delete]')].findIndex(
+    (b) => Number(b.dataset.walletDelete) === id,
+  );
+  state.wallets = (state.wallets ?? []).filter((x) => x.id !== id);
+  if (state.walletRename?.id === id) state.walletRename = null;
+  walletWriteSeq += 1;
+  renderSettings();
+  const left = document.querySelectorAll('[data-wallet-delete]');
+  (left.length ? left[Math.min(Math.max(at, 0), left.length - 1)] : document.getElementById('addresses-title'))?.focus();
+  toast(`${w.name} deleted.`);
+}
+
+async function copyAddress(id) {
+  const w = state.wallets?.find((x) => x.id === id);
+  if (!w) return;
+  try {
+    await navigator.clipboard.writeText(w.address);
+    toast(`Copied ${shortAddress(w.address)}.`);
+  } catch (err) {
+    toast('Could not copy it: select the address and copy it by hand.');
+  }
+}
+
 /**
  * What the Trades and Stats views say when the ledger never loaded.
  *
@@ -3364,12 +3688,14 @@ function render() {
   if (state.loadFailed) {
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
+    else if (state.view === 'settings') renderSettings();
     else document.getElementById(state.view === 'stats' ? 'stats-mount' : 'table-mount').innerHTML = LOAD_FAILED;
     return;
   }
   if (!state.loaded) {
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
+    else if (state.view === 'settings') renderSettings();
     else document.getElementById(state.view === 'stats' ? 'stats-mount' : 'table-mount').innerHTML = LOADING;
     return;
   }
@@ -3377,6 +3703,7 @@ function render() {
   renderHeroStats();
   if (state.view === 'stats') renderStatsView();
   else if (state.view === 'alerts') renderAlerts();
+  else if (state.view === 'settings') renderSettings();
   else renderTable();
 }
 
@@ -4125,7 +4452,7 @@ function toast(message) {
 
 /* ------------------------------------------------------------------ views */
 
-const VIEWS = ['trades', 'stats', 'alerts'];
+const VIEWS = ['trades', 'stats', 'alerts', 'settings'];
 
 /**
  * `#summary` is what the Stats view was called before it had year tabs. A
@@ -4186,6 +4513,8 @@ function setView(view, { updateHash = true } = {}) {
   // The trades too when the log names one this tab has not loaded - added in
   // another tab - or its row drew a bare "Trade #23" with no coin or date.
   if (state.view === 'alerts') refreshAlertsView();
+  // The addresses likewise: one added or renamed in another tab shows here.
+  if (state.view === 'settings') refreshSettingsView();
 }
 
 /**
@@ -4314,6 +4643,7 @@ function wire() {
     // never read it again: an alert that fired meanwhile still said ARMED,
     // and its bell stayed lit. Coming back to it is a visit too.
     if (state.view === 'alerts') refreshAlertsView({ keepFocus: true });
+    if (state.view === 'settings') refreshSettingsView();
   });
 
   document.getElementById('theme-toggle').addEventListener('click', () => {
@@ -4324,6 +4654,7 @@ function wire() {
   const borrowForm = document.getElementById('borrow-form');
 
   document.getElementById('delete-all-alerts').addEventListener('click', deleteAllAlerts);
+  fillWalletForm();
 
   document.getElementById('new-trade').addEventListener('click', () => {
     state.creating = !state.creating;
@@ -4405,6 +4736,16 @@ function wire() {
     const bell = e.target.closest('[data-alert-trade]');
     if (bell) {
       openAlertDialog(Number(bell.dataset.alertTrade));
+      return;
+    }
+
+    const wallet = e.target.closest('[data-wallet-rename], [data-wallet-cancel], [data-wallet-delete], [data-wallet-copy]');
+    if (wallet) {
+      const { walletRename, walletCancel, walletDelete, walletCopy } = wallet.dataset;
+      if (walletRename) startWalletRename(Number(walletRename));
+      else if (walletCancel) endWalletRename();
+      else if (walletDelete) removeWallet(Number(walletDelete));
+      else if (walletCopy) copyAddress(Number(walletCopy));
       return;
     }
 
@@ -4622,6 +4963,12 @@ function wire() {
   }
 
   document.body.addEventListener('keydown', (e) => {
+    // Escape in a rename puts the name back as it was.
+    if (e.key === 'Escape' && state.walletRename && e.target.closest?.('[data-wallet-form="rename"]')) {
+      e.preventDefault();
+      endWalletRename();
+      return;
+    }
     // The row itself, not a chip inside it: Enter on a "no rate" chip opened
     // the row and dropped focus, the click handler refocusing only a row that
     // had it.
@@ -4699,6 +5046,14 @@ function wire() {
       form.querySelector('[data-form-error]').textContent = '';
     }
 
+    // A rename's text lives in state, so a redraw puts it back (`walletRow`).
+    if (form.dataset.walletForm) {
+      if (form.dataset.walletForm === 'rename' && state.walletRename?.id === Number(form.dataset.wallet)) {
+        state.walletRename.value = input.value;
+      }
+      return;
+    }
+
     if (input.name === 'borrow_currency') {
       const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');
       if (unit) unit.textContent = input.value;
@@ -4727,6 +5082,13 @@ function wire() {
       if (!input.matches('input[name]')) return;
       const form = input.closest('form');
       if (!form || input.value.trim() === '') return;
+      // A wallet form judges its own fields: to `validateField` a name is a
+      // figure that is not a number.
+      if (form.dataset.walletForm) {
+        const error = walletFieldError(input.name, input.value);
+        if (error) showFormError(form, error, input.name, { focus: false });
+        return;
+      }
       // The trade the form belongs to: a stage's, or the alert window's, whose
       // goal is named for the trade's market. Judged against nothing, a cbBTC
       // trade's goal was "ETH goal price" on blur and "BTC goal price" on Save.
@@ -4743,6 +5105,13 @@ function wire() {
   );
 
   document.body.addEventListener('submit', (e) => {
+    const walletForm = e.target.closest('[data-wallet-form]');
+    if (walletForm) {
+      e.preventDefault();
+      if (walletForm.dataset.walletForm === 'rename') submitWalletRename(walletForm);
+      else submitWallet(walletForm);
+      return;
+    }
     const alertForm = e.target.closest('[data-alert-form]');
     if (alertForm) {
       e.preventDefault();

@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import { parseAmount } from '../lib/calc.js';
 import { sanitizeNumeric, validateField, contextFrom, unitOf, labelOf } from '../lib/input.js';
+import { keccak256, toChecksumAddress, parseAddress, walletName, walletNameError, shortAddress } from '../lib/address.js';
 
 let passed = 0;
 function check(name, fn) {
@@ -283,6 +284,83 @@ check('a goal is judged to the cent, and a quantity that prints as zero is refus
   assert.equal(validateField('buy_eth', '0.00004', { buy_amount: 0.12 }), 'ETH purchased must be at least 0.0001.');
   assert.equal(validateField('sell_eth', '0.00004', {}), 'ETH sold must be at least 0.0001.');
   assert.equal(validateField('buy_eth', '0.00000001', { asset: 'cbbtc', buy_amount: 0.01 }), null);
+});
+
+/* ------------------------------------------------- wallet addresses (lib/address.js) */
+
+check('Keccak-256 gives the published digests, not SHA3-256\'s', () => {
+  assert.equal(keccak256(''), 'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470');
+  assert.equal(keccak256('abc'), '4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45');
+  assert.equal(
+    keccak256('The quick brown fox jumps over the lazy dog'),
+    '4d741b6f1eb29cb2a9b9911c82f56fa8d73b04959d3d9d222895df6c0b28aa15',
+  );
+});
+
+// EIP-55's own test vectors, copied from the EIP: an address whose checksum
+// happens to be all capitals, all lowercase, and mixed.
+const EIP55 = [
+  '0x52908400098527886E0F7030069857D2E4169EE7',
+  '0x8617E340B3D01FA5F11F306F4090FD50E238070D',
+  '0xde709f2102306220921060314715629080e2fb77',
+  '0x27b1fdb04752bbc536007a920d24acb045561c26',
+  '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed',
+  '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359',
+  '0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB',
+  '0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb',
+];
+
+check('an address is checksummed as EIP-55 does it', () => {
+  for (const a of EIP55) {
+    assert.equal(toChecksumAddress(a.toLowerCase()), a);
+    assert.equal(toChecksumAddress(a.toUpperCase().replace('0X', '0x')), a);
+    assert.deepEqual(parseAddress(a), { address: a });
+  }
+});
+
+check('an address typed in one case is accepted and stored checksummed, spaces trimmed', () => {
+  const a = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+  assert.deepEqual(parseAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed'), { address: a });
+  assert.deepEqual(parseAddress('0x5AAEB6053F3E94C9B9A09F33669435E7EF1BEAED'), { address: a });
+  assert.deepEqual(parseAddress(`  ${a}\n`), { address: a });
+  // "0X" is the prefix in capitals, not a checksum.
+  assert.deepEqual(parseAddress('0X5aaeb6053f3e94c9b9a09f33669435e7ef1beaed'), { address: a });
+});
+
+check('an address whose capitals do not match its checksum is refused, not corrected', () => {
+  // One letter's case flipped: the last d of ...BeAed.
+  assert.match(parseAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD').error, /checksum/);
+  assert.match(parseAddress('0xfb6916095ca1df60bB79Ce92cE3Ea74c37c5d359').error, /checksum/);
+});
+
+check('what is not an Ethereum address is refused, saying why', () => {
+  assert.match(parseAddress('').error, /required/);
+  assert.match(parseAddress('   ').error, /required/);
+  assert.match(parseAddress(42).error, /text/);
+  assert.match(parseAddress('vitalik.eth').error, /ENS/);
+  assert.match(parseAddress('5aaeb6053f3e94c9b9a09f33669435e7ef1beaed').error, /starts with 0x/);
+  assert.match(parseAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beae').error, /39 characters after the 0x/);
+  assert.match(parseAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed0').error, /41 characters/);
+  assert.match(parseAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaeg').error, /0-9 and a-f/);
+  assert.match(parseAddress('0x0000000000000000000000000000000000000000').error, /zero address/);
+});
+
+check('a wallet name is required, on one line, and at most 40 characters as seen', () => {
+  assert.equal(walletName('  Ledger \n  main\t'), 'Ledger main');
+  assert.equal(walletNameError('Ledger'), null);
+  assert.match(walletNameError(''), /required/);
+  assert.match(walletNameError(' \n '), /required/);
+  assert.match(walletNameError(null), /text/);
+  assert.equal(walletNameError('x'.repeat(40)), null);
+  assert.match(walletNameError('x'.repeat(41)), /40 characters/);
+  // A flag is two code points and four UTF-16 units, and one character.
+  assert.equal(walletNameError('\u{1F1EE}\u{1F1F9}'.repeat(40)), null);
+  assert.match(walletNameError('\u{1F1EE}\u{1F1F9}'.repeat(41)), /40 characters/);
+  assert.match(walletNameError('a\u0007b'), /cannot be shown/);
+});
+
+check('a short address keeps the 0x, four characters and the last four', () => {
+  assert.equal(shortAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'), '0x5aAe…eAed');
 });
 
 if (process.exitCode) console.error(`\n${passed} passed, some failed.`);

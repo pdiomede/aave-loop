@@ -33,10 +33,11 @@
           <a class="nav__link is-active" href="#trades" data-view="trades" aria-current="page">Trades</a>
           <a class="nav__link" href="#stats" data-view="stats">Stats</a>
           <a class="nav__link" href="#alerts" data-view="alerts">Alerts</a>
+          <a class="nav__link" href="#settings" data-view="settings">Settings</a>
         </nav>
         <!--
           What ETH and BTC cost, a row each, written from JS. In the header rather than in the hero
-          because the header is outside the three view sections, so one ticker
+          because the header is outside the view sections, so one ticker
           serves every tab. aria-live is off on purpose: a figure that rewrites
           itself every few minutes must not interrupt whatever is being read.
         -->
@@ -111,6 +112,37 @@
           </div>
           <section class="card">
             <div id="alerts-mount"></div>
+          </section>
+        </section>
+
+        <section id="view-settings" hidden>
+          <div class="toolbar">
+            <h2 class="toolbar__title">Settings</h2>
+          </div>
+          <section class="card" aria-labelledby="addresses-title">
+            <div class="card__head">
+              <h3 class="card__title" id="addresses-title" tabindex="-1">Addresses</h3>
+            </div>
+            <div class="card__body">
+              <p class="settings__note muted">
+                The Ethereum wallets you trade from, each under a name. Linking them to trades comes next.
+              </p>
+              <!--
+                Outside the list's mount on purpose, and filled once by JS: a price
+                landing redraws the view, and must not take a half-pasted address
+                with it.
+              -->
+              <form id="wallet-form" data-wallet-form="add" novalidate></form>
+            </div>
+            <div id="wallets-mount"></div>
+          </section>
+          <section class="card" aria-labelledby="simulation-title">
+            <div class="card__head">
+              <h3 class="card__title" id="simulation-title">Simulation</h3>
+            </div>
+            <div class="card__body">
+              <p class="muted">Coming later.</p>
+            </div>
           </section>
         </section>
       </div>

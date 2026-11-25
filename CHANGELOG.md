@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A Settings tab** with an Addresses list: the Ethereum wallets you trade from, each under a name, with Copy and an Etherscan link. An address is checked against its checksum, so a mistyped capital is refused; typed in one case, it is saved checksummed. Rename keeps the address; to change it, delete and add again. Simulation is a placeholder for now.
+
 ## [2.2.0] - 2026-11-24
 
 ### Added

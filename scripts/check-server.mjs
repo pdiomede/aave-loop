@@ -693,6 +693,100 @@ await check('a trade can buy cbBTC, and its errors and its alert speak cbBTC and
   await api('DELETE', `/api/trades/${t.id}`);
 });
 
+/* ------------------------------------------------------------------ wallets */
+
+const VITALIK = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+const OTHER = '0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359';
+
+await check('an address typed in lowercase is saved checksummed, with its name, and listed', async () => {
+  const r = await api('POST', '/api/wallets', { name: '  Ledger \n main ', address: VITALIK.toLowerCase() });
+  assert.equal(r.status, 201);
+  assert.equal(r.data.address, VITALIK);
+  assert.equal(r.data.name, 'Ledger main');
+  assert.equal(r.data.network, 'ethereum');
+  const list = (await api('GET', '/api/wallets')).data.wallets;
+  assert.deepEqual(list.map((w) => [w.name, w.address]), [['Ledger main', VITALIK]]);
+});
+
+await check('an address whose capitals do not match its checksum is refused, naming the field', async () => {
+  const r = await api('POST', '/api/wallets', { name: 'Typo', address: `${VITALIK.slice(0, -1)}D` });
+  assert.equal(r.status, 400);
+  assert.equal(r.data.field, 'address');
+  assert.match(r.data.error, /checksum/);
+  assert.equal((await api('GET', '/api/wallets')).data.wallets.length, 1);
+});
+
+await check('the same address twice is refused in either case, and so is a name in another case', async () => {
+  for (const address of [VITALIK, VITALIK.toLowerCase(), `0x${VITALIK.slice(2).toUpperCase()}`]) {
+    const r = await api('POST', '/api/wallets', { name: 'Again', address });
+    assert.equal(r.status, 400, address);
+    assert.equal(r.data.field, 'address');
+    assert.match(r.data.error, /already saved, as "Ledger main"/);
+  }
+  const named = await api('POST', '/api/wallets', { name: 'LEDGER MAIN', address: OTHER });
+  assert.equal(named.status, 400);
+  assert.equal(named.data.field, 'name');
+  assert.equal((await api('GET', '/api/wallets')).data.wallets.length, 1);
+});
+
+await check('a wallet needs a name, an Ethereum address and nothing but Ethereum', async () => {
+  const blank = await api('POST', '/api/wallets', { name: ' ', address: OTHER });
+  assert.equal(blank.status, 400);
+  assert.equal(blank.data.field, 'name');
+  const noAddress = await api('POST', '/api/wallets', { name: 'Hot' });
+  assert.equal(noAddress.data.field, 'address');
+  const base = await api('POST', '/api/wallets', { name: 'Hot', address: OTHER, network: 'base' });
+  assert.equal(base.status, 400);
+  assert.equal(base.data.field, 'network');
+  const zero = await api('POST', '/api/wallets', { name: 'Hot', address: `0x${'0'.repeat(40)}` });
+  assert.match(zero.data.error, /zero address/);
+  assert.equal((await api('POST', '/api/wallets', { name: 'Hot', address: OTHER, network: 'Ethereum' })).status, 201);
+  assert.deepEqual((await api('GET', '/api/wallets')).data.wallets.map((w) => w.name), ['Hot', 'Ledger main']);
+});
+
+await check('a wallet can be renamed, not over a rename made elsewhere, nor to a name in use', async () => {
+  const [hot, ledger] = (await api('GET', '/api/wallets')).data.wallets;
+  const r = await api('PATCH', `/api/wallets/${hot.id}`, { name: 'Rabby hot', base: { name: 'Hot' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.name, 'Rabby hot');
+  assert.equal(r.data.address, OTHER);
+  // A second tab that pressed Rename while it was still "Hot".
+  const stale = await api('PATCH', `/api/wallets/${hot.id}`, { name: 'Phone', base: { name: 'Hot' } });
+  assert.equal(stale.status, 409);
+  assert.equal(stale.data.field, 'name');
+  assert.equal(stale.data.current.name, 'Rabby hot');
+  assert.equal(stale.data.current.derived, undefined, 'a wallet, not a trade');
+  const taken = await api('PATCH', `/api/wallets/${hot.id}`, { name: 'ledger MAIN' });
+  assert.equal(taken.status, 400);
+  assert.equal(taken.data.field, 'name');
+  // Its own name in another case is no clash.
+  assert.equal((await api('PATCH', `/api/wallets/${ledger.id}`, { name: 'Ledger Main' })).data.name, 'Ledger Main');
+});
+
+await check('a wallet\'s address cannot be changed in place', async () => {
+  const [hot] = (await api('GET', '/api/wallets')).data.wallets.filter((w) => w.address === OTHER);
+  for (const body of [{ name: 'X', address: VITALIK }, { name: 'X', network: 'ethereum' }]) {
+    const r = await api('PATCH', `/api/wallets/${hot.id}`, body);
+    assert.equal(r.status, 400);
+    assert.match(r.data.error, /delete it and add it again/);
+  }
+  const after = (await api('GET', '/api/wallets')).data.wallets.find((w) => w.id === hot.id);
+  assert.deepEqual([after.name, after.address], ['Rabby hot', OTHER]);
+});
+
+await check('a wallet is deleted once, and an id that is not plain digits reaches none', async () => {
+  const [w] = (await api('GET', '/api/wallets')).data.wallets;
+  for (const id of [`0x${w.id.toString(16)}`, `${w.id}.0`, `${w.id}e0`]) {
+    assert.equal((await api('DELETE', `/api/wallets/${id}`)).status, 404, id);
+    assert.equal((await api('PATCH', `/api/wallets/${id}`, { name: 'Y' })).status, 404, id);
+  }
+  assert.equal((await api('DELETE', '/api/wallets/')).status, 404);
+  assert.equal((await api('DELETE', `/api/wallets/${w.id}`)).status, 204);
+  assert.equal((await api('DELETE', `/api/wallets/${w.id}`)).status, 404);
+  assert.equal((await api('PATCH', `/api/wallets/${w.id}`, { name: 'Gone' })).status, 404);
+  assert.equal((await api('GET', '/api/wallets')).data.wallets.length, 1);
+});
+
 server.kill('SIGTERM');
 await new Promise((r) => server.once('exit', r));
 if (process.exitCode && serverErr) warn(`server stderr:\n${serverErr}`);

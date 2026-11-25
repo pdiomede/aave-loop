@@ -23,8 +23,9 @@ printed - and the CSV's rounding, against hand-worked figures on a fixed date; a
 case there when you change a formula, with the expected value worked out from the
 inputs rather than by calling the function again.
 `scripts/check-input.mjs` covers `lib/input.js` - how a typed or pasted figure is read
-and what the forms accept - typing each figure a keystroke at a time as the page does;
-add a case there when you change an input rule.
+and what the forms accept - typing each figure a keystroke at a time as the page does -
+and `lib/address.js` against Keccak's and EIP-55's published vectors; add a case there
+when you change an input rule.
 `scripts/check-statement.mjs` covers `lib/statement.js`, the Statement PDF: that the
 hand-written file is a valid one-page PDF, that the figures it sets match ones worked
 out by hand, and that `lib/logo.js` still matches the app's logo; add a case there
@@ -182,6 +183,12 @@ position is marked to today's exchange rate; `derive`'s own figures never are.
 labels - out of `public/app.js` so it can be checked; like `lib/csv.js` it imports
 `calc.js` and nothing else, and keeps no DOM.
 
+`lib/address.js` reads a wallet address for Settings (`parseAddress`, `walletNameError`)
+on both sides, and like `calc.js` it imports nothing. That is why it carries its own
+Keccak-256: EIP-55's checksum needs it, Node's crypto has only SHA3-256 (other
+padding) and the browser neither. Mixed case that misses its checksum is refused, not
+corrected; one case is accepted and stored checksummed.
+
 `lib/statement.js` writes the Stats Statement button's PDF by hand - no library, so
 nothing is bundled and the CSP is untouched - from the same `summaryReport` the Stats
 view calls, over the year's **closed trades only** (`closedTrades`, by `isRealized`):
@@ -337,6 +344,18 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   its hidden input joins the form by `form="borrow-form"`; `fieldWrap` finds a field
   tied in that way (`data-field-of`). It starts empty: the platform is required and
   never guessed.
+
+### Wallets
+
+Settings > Addresses keeps the wallets trades are run from in `wallets` (db.js): a
+required name, unique in any case, and an address stored only in its checksummed form,
+unique per `network` (Ethereum only, `NETWORKS` in `lib/address.js`; the column exists
+so another network needs no table rebuild). The API refuses changing an address in
+place: it is what trades will be linked by. Every write is an immediate transaction,
+so its duplicate checks and the write hold the lock together. Nothing links a trade to
+a wallet yet; NEXT.md has the plan. The Add form sits outside `#wallets-mount`, so the
+redraw a price triggers cannot wipe it, and a rename being typed lives in
+`state.walletRename` for the same reason.
 
 ### Platforms
 

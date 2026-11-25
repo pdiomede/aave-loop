@@ -149,7 +149,40 @@ db.exec(`
     watch_chat    TEXT,
     updated_at    TEXT    NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS wallets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    network    TEXT    NOT NULL DEFAULT 'ethereum',
+    address    TEXT    NOT NULL,
+    name       TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    updated_at TEXT    NOT NULL,
+    UNIQUE (network, address)
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_name ON wallets (name COLLATE NOCASE);
 `);
+
+/**
+ * The wallets a trade can be run from, kept in Settings: a name and an address
+ * on a network, Ethereum mainnet only for now (NETWORKS in lib/address.js).
+ *
+ * `network` is stored although it has one value, because SQLite cannot change
+ * a UNIQUE constraint without rebuilding the table - the rebuild below that
+ * alerts needed - and an address is unique per network, not across them.
+ *
+ * `address` is stored in its EIP-55 checksummed form and nothing else
+ * (`parseAddress`), so one wallet has one spelling and the plain UNIQUE is
+ * enough; typed in lowercase or in capitals it is the same row. Names are
+ * unique in any case, since they are how a wallet will be picked.
+ *
+ * Nothing references this table yet. When trades are linked to a wallet it is
+ * `trades.wallet_id INTEGER REFERENCES wallets(id)` with no ON DELETE action,
+ * nullable because a trade need not say: with `foreign_keys` ON a wallet in use
+ * then cannot be deleted, which is the rule wanted - a trade never loses its
+ * wallet unseen. An older copy of the app pointed at this file ignores the
+ * table.
+ */
 
 /**
  * Everything the Telegram bot has to remember between one poll and the next,

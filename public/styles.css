@@ -2332,7 +2332,9 @@ th[aria-sort="ascending"] .th-sort__caret {
 /* The delete column carries a button and no figure, so it takes only the width
    it needs and leaves the rest to the columns that are read. */
 .alerts-table th:last-child,
-.alerts-table__act {
+.alerts-table__act,
+.wallets-table th:last-child,
+.wallets-table__act {
   width: 1%;
   white-space: nowrap;
 }
@@ -2341,13 +2343,104 @@ th[aria-sort="ascending"] .th-sort__caret {
    outer columns get the table's usual 20px back - the logo and TRADE sat on
    the card's edge. */
 .alerts-table thead th:first-child,
-.alerts-table tbody td:first-child {
+.alerts-table tbody td:first-child,
+.wallets-table thead th:first-child,
+.wallets-table tbody td:first-child {
   padding-left: 20px;
 }
 
 .alerts-table thead th:last-child,
-.alerts-table tbody td:last-child {
+.alerts-table tbody td:last-child,
+.wallets-table thead th:last-child,
+.wallets-table tbody td:last-child {
   padding-right: 20px;
+}
+
+/* ------------------------------------------------------------- settings */
+
+.settings__note {
+  margin-bottom: 16px;
+}
+
+/* The address takes the room; the name and the network, little. */
+.wallet-form__grid {
+  display: grid;
+  gap: 14px 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr) auto;
+  align-items: start;
+}
+
+.field[data-field="wallet_address"] input,
+.wallet-address__hex {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.wallet-network--field {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+}
+
+.wallet-network {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.wallet-name {
+  font-weight: 600;
+}
+
+/* Name, address and network are words, not figures: they read from the left,
+   where a table's columns default to the right. */
+.wallets-table thead th:nth-child(-n + 3),
+.wallets-table tbody td:nth-child(-n + 3) {
+  text-align: left;
+}
+
+.wallet-address {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Forty hex digits do not fit a phone's row, and a break anywhere in them is
+   no worse than one at a space they do not have. */
+.wallet-address__hex {
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.wallet-address__actions,
+.wallet-rename__buttons {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.wallets-table__act .btn + .btn {
+  margin-left: 6px;
+}
+
+.wallet-rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px 8px;
+}
+
+.wallet-rename .field {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.wallet-rename .field__hint:empty {
+  display: none;
+}
+
+.wallet-rename .form__error:empty {
+  display: none;
 }
 
 /* An alert closed because its trade sold. Not the green of a CLOSED trade:
@@ -2511,18 +2604,24 @@ th[aria-sort="ascending"] .th-sort__caret {
      rather than pressed, and the trades table is wider than this band whatever
      its padding. */
   .alerts-table thead th,
-  .alerts-table tbody td {
+  .alerts-table tbody td,
+  .wallets-table thead th,
+  .wallets-table tbody td {
     padding-left: 8px;
     padding-right: 8px;
   }
 
   .alerts-table thead th:first-child,
-  .alerts-table tbody td:first-child {
+  .alerts-table tbody td:first-child,
+  .wallets-table thead th:first-child,
+  .wallets-table tbody td:first-child {
     padding-left: 14px;
   }
 
   .alerts-table thead th:last-child,
-  .alerts-table tbody td:last-child {
+  .alerts-table tbody td:last-child,
+  .wallets-table thead th:last-child,
+  .wallets-table tbody td:last-child {
     padding-right: 14px;
   }
 
@@ -2736,17 +2835,46 @@ th[aria-sort="ascending"] .th-sort__caret {
     content: none;
   }
 
+  /* As specific as the card rule above, or its empty label kept the left slot
+     and spread Rename into the middle of the row, away from Delete. */
+  .wallets-table tbody td.wallets-table__act {
+    justify-content: flex-end;
+    gap: 6px;
+    width: auto;
+  }
+
+  .wallets-table tbody td.wallets-table__act::before {
+    content: none;
+  }
+
+  /* A name or address cell holds a form or two lines, not one figure: the
+     label goes above it rather than beside it. */
+  .wallets-table tbody td:first-child,
+  .wallets-table tbody td:nth-child(2) {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: left;
+    gap: 4px;
+  }
+
+  .wallet-form__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   /* As cards the gutter goes on the row, since every cell spans it. Its card
      has no padding of its own, so the cells sat on the card's edge here too,
      and the 20px the outer columns take on a wide screen would push only the
      first and last cell of each card in. */
-  .alerts-table tbody tr {
+  .alerts-table tbody tr,
+  .wallets-table tbody tr {
     padding-left: 16px;
     padding-right: 16px;
   }
 
   .alerts-table tbody td:first-child,
-  .alerts-table tbody td:last-child {
+  .alerts-table tbody td:last-child,
+  .wallets-table tbody td:first-child,
+  .wallets-table tbody td:last-child {
     padding-left: 0;
     padding-right: 0;
   }

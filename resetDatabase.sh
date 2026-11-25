@@ -29,7 +29,8 @@ usage() {
   cat <<'USAGE'
 Usage: ./resetDatabase.sh [options]
 
-Deletes every trade and leaves an empty ledger. You are asked to confirm twice.
+Deletes every trade, alert and saved address and leaves an empty ledger. You are
+asked to confirm twice.
 
   --no-backup   Do not copy the current database into data/backups first.
   --yes         Skip both prompts. For scripts only; there is no undo.
