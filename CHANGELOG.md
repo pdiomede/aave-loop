@@ -15,6 +15,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Performance's first row reads Total borrowed, Interest paid, Total fees paid, Average hold;** the second row is as it was. The Statement PDF follows the same order.
 - **Add address sits beside Chain,** on the fields' line, and the Address field is narrower to make room.
 - **Stats shows a platform's Performance card only when it has trades** in the year shown; five cards saying "no trades" buried the ones that had some.
+- **Onchain Data's wallet headings line up in columns:** the chain, address, trade count and each totals figure stand under the same ones on every wallet, whatever the name's length.
 - **Onchain Data's note is reworded:** "Every trade is listed under its corresponding wallet, as displayed in the Trades tab."
 
 ### Fixed

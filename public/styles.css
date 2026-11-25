@@ -1211,6 +1211,54 @@ html {
   font-variant-numeric: tabular-nums;
 }
 
+/* Every group on one set of columns, shared through subgrid, so the parts of
+   each heading - wallet, name, address, chain, count, chevron - and of each
+   totals line stand one under another from wallet to wallet, whatever the
+   length of a name or a figure. Laid out in a row of their own per group,
+   they moved with each name. The totals line spans its columns by the
+   heading's: realized under the name and address, Closed under the chain,
+   Open under the count, Est. gain after. Below 761px the parts wrap as a
+   line again. */
+@media (min-width: 761px) {
+  .wallet-groups {
+    display: grid;
+    grid-template-columns: auto auto auto auto auto minmax(0, 1fr) auto;
+    column-gap: 12px;
+  }
+
+  .wallet-group,
+  .wallet-group__heading,
+  .wallet-group__head,
+  .wallet-group__totals {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    align-items: center;
+  }
+
+  .wallet-group__totals {
+    column-gap: inherit;
+  }
+
+  .wallet-group__totals > :nth-child(1) {
+    grid-column: 1 / 4;
+  }
+
+  .wallet-group__totals > :nth-child(4) {
+    grid-column: 6 / -1;
+  }
+
+  .wallet-group__chevron {
+    grid-column: -2;
+    justify-self: end;
+  }
+
+  .wallet-group > .table-scroll,
+  .wallet-group__empty {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Get onchain data, at the right of the Onchain Data title, and the scan's
    progress along the divider under it. */
 .sim-head {

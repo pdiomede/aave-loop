@@ -4629,8 +4629,11 @@ function simTotals(trades) {
  */
 function simGroup({ key, title, sub, network, trades }) {
   const icon = `<span class="wallet-icon${key === 'none' ? ' wallet-icon--none' : ''}" aria-hidden="true"></span>`;
-  const chain = network ? `<span class="wallet-group__chain">${networkFace(network)}</span>` : '';
-  const label = `${icon}<span class="wallet-group__title">${title}${sub ? ` <span class="wallet-ref__short">${sub}</span>` : ''}</span>${chain}
+  // One span per column, empty ones too: every group's heading lays its
+  // parts in the same columns (`.wallet-groups`), so the chains, addresses
+  // and counts stand one under another whatever each name's length.
+  const chain = `<span class="wallet-group__chain">${network ? networkFace(network) : ''}</span>`;
+  const label = `${icon}<span class="wallet-group__title">${title}</span><span class="wallet-ref__short wallet-group__addr">${sub || ''}</span>${chain}
       <span class="wallet-group__count">${trades.length} trade${trades.length === 1 ? '' : 's'}</span>`;
   if (!trades.length) {
     return `<section class="wallet-group">
@@ -4692,7 +4695,7 @@ function renderOnchainData() {
     }
     const none = rows.filter((t) => t.wallet_id == null);
     if (none.length) groups.push({ key: 'none', title: 'No wallet', sub: '', trades: none });
-    html = groups.map(simGroup).join('');
+    html = `<div class="wallet-groups">${groups.map(simGroup).join('')}</div>`;
   }
   setKeepingFocus(mount, html);
 }
