@@ -3866,17 +3866,21 @@ function walletRow(w) {
         </span>
       </form>`
     : `<span class="wallet-name">${esc(w.name)}</span>`;
+  // Icons, not words: the two text buttons wrapped under the address and
+  // doubled each row's height. The tooltip says what each does; the label
+  // names the wallet and its explorer for a screen reader.
   const explorer = meta?.explorer
-    ? `<a class="btn btn--ghost btn--sm" href="${esc(meta.explorer + w.address)}" target="_blank" rel="noopener noreferrer"
-        aria-label="Open ${esc(w.name)} on ${esc(meta.explorerLabel)}">${esc(meta.explorerLabel)}</a>`
+    ? `<a class="icon-act" href="${esc(meta.explorer + w.address)}" target="_blank" rel="noopener noreferrer"
+        data-tip="View on block explorer" aria-label="View ${esc(w.name)} on ${esc(meta.explorerLabel)}">${EXTERNAL_SVG}</a>`
     : '';
+  const copied = state.walletCopied === w.id;
   return `<tr>
     <td data-label="Name">${name}</td>
     <td data-label="Address"><span class="wallet-address">
       <code class="wallet-address__hex">${esc(w.address)}</code>
       <span class="wallet-address__actions">
-        <button class="btn btn--ghost btn--sm" type="button" data-wallet-copy="${w.id}"
-          aria-label="Copy the address of ${esc(w.name)}">Copy</button>${explorer}
+        <button class="icon-act${copied ? ' is-copied' : ''}" type="button" data-wallet-copy="${w.id}"
+          data-tip="${copied ? 'Copied' : 'Copy address'}" aria-label="Copy the address of ${esc(w.name)}">${copied ? COPIED_SVG : COPY_SVG}</button>${explorer}
       </span>
     </span></td>
     <td data-label="Network">${networkFace(w.network)}</td>
@@ -3938,6 +3942,13 @@ function renderWalletsView() {
  * here although the server would have allowed it.
  */
 /* ---------------------------------------------------- onchain data groups */
+
+// The Addresses table's actions: copy (two squares), open the explorer (a
+// box with an arrow out of it), and the tick a copy turns into.
+const ICON_ATTRS = 'width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const COPY_SVG = `<svg ${ICON_ATTRS}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>`;
+const EXTERNAL_SVG = `<svg ${ICON_ATTRS}><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>`;
+const COPIED_SVG = `<svg ${ICON_ATTRS}><path d="M20 6 9 17l-5-5" /></svg>`;
 
 const MAGNIFIER_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -4831,6 +4842,15 @@ async function copyAddress(id) {
   try {
     await navigator.clipboard.writeText(w.address);
     toast(`Copied ${shortAddress(w.address)}.`);
+    // The icon turns to a tick for a moment, where the click was; drawn from
+    // state, so a redraw meanwhile (a price landing) keeps it.
+    state.walletCopied = id;
+    renderWalletsView();
+    setTimeout(() => {
+      if (state.walletCopied !== id) return;
+      state.walletCopied = null;
+      renderWalletsView();
+    }, 1500);
   } catch (err) {
     toast('Could not copy it: select the address and copy it by hand.');
   }

@@ -11,6 +11,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Changed
 
+- **Addresses' Copy and explorer links are icons,** a copy icon and an open-in-new-tab icon beside the address on one line, with tooltips; a copied address shows a tick for a moment.
 - **Performance's first row reads Total borrowed, Interest paid, Total fees paid, Average hold;** the second row is as it was. The Statement PDF follows the same order.
 - **Add address sits beside Chain,** on the fields' line, and the Address field is narrower to make room.
 - **Stats shows a platform's Performance card only when it has trades** in the year shown; five cards saying "no trades" buried the ones that had some.

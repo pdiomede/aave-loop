@@ -2927,24 +2927,63 @@ th[aria-sort="ascending"] .th-sort__caret {
   overflow-wrap: anywhere;
 }
 
-/* Every row asks the same width, so Copy and the explorer link start at the
-   same place on each: the address in a column as wide as the longest one (44
-   characters, a Solana address; 0x ones are 42), and every explorer link as
-   wide as the longest (OP Etherscan). Sized to their text, a Solana address
-   pushed the buttons a few characters right of the rows above, and OP
-   Etherscan's row wrapped its buttons under the address while the others did
-   not. Short of room, every row now wraps them alike. Below 761px the table
-   is a stack of cards. */
-@media (min-width: 761px) {
-  .wallets-table .wallet-address__hex {
-    flex: 0 1 44ch;
-    min-width: 0;
-  }
+/* The address and its two icons on one line, the address in a column as
+   wide as the longest one (44 characters, a Solana address; 0x ones are 42),
+   so the icons stand at the same place on every row: sized to its text, a
+   Solana address pushed them right of the rows above. Short of room the
+   address wraps, not the icons. */
+.wallets-table .wallet-address {
+  flex-wrap: nowrap;
+}
 
-  .wallets-table .wallet-address__actions a {
-    min-width: 8.25em;
-    justify-content: flex-start;
-  }
+.wallets-table .wallet-address__hex {
+  flex: 0 1 44ch;
+  min-width: 0;
+}
+
+.wallets-table .wallet-address__actions {
+  flex: none;
+  gap: 2px;
+}
+
+/* An icon action: the same size, colour and spacing on every row. */
+.icon-act {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-btn);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.icon-act:hover {
+  color: var(--text);
+  background: var(--hairline);
+}
+
+.icon-act:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.icon-act.is-copied {
+  color: var(--positive);
+}
+
+/* Under the icon, on one line, growing left from its right edge: the
+   bubble's usual cap is its anchor's width, 28px here, and grown rightwards
+   it ran off a phone's card, where the icons sit at the right. */
+.icon-act[data-tip]::after {
+  left: auto;
+  right: 0;
+  max-width: none;
+  white-space: nowrap;
 }
 
 .wallet-address__actions,
