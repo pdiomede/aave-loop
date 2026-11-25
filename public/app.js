@@ -1576,13 +1576,31 @@ function walletChoices(t = {}) {
  * the borrow form by `form=` as the platform is. Nothing at all while no
  * wallet is saved: a picker holding only "No wallet" asks nothing.
  */
-function walletHeadPicker() {
-  const options = walletChoices();
+function walletHeadPicker(options, value = '') {
   if (options.length < 2) return '';
   return `<span class="new-trade__on" aria-hidden="true">from</span>
     <div class="field new-trade__platform new-trade__wallet" data-field="wallet_id" data-field-of="borrow-form">
-    ${coinSelect({ id: 'f-wallet-new', name: 'wallet_id', value: '', options, req: '', kind: 'wallet', form: 'borrow-form', label: 'Wallet' })}
+    ${coinSelect({ id: 'f-wallet-new', name: 'wallet_id', value, options, req: '', kind: 'wallet', form: 'borrow-form', label: 'Wallet' })}
   </div>`;
+}
+
+/**
+ * Draw the new trade's wallet picker over the list as it is now, keeping the
+ * pick while it is still on offer. Run when the card opens and on every
+ * render: drawn only on opening, a card left open while a wallet was added on
+ * the Wallets tab never offered it - nor any picker at all, when it was the
+ * first - and one deleted there stayed on offer, to be refused on Create.
+ * Redrawn only when the list changed, so a price landing leaves it alone.
+ */
+function syncNewTradeWallet({ fresh = false } = {}) {
+  const mount = document.getElementById('new-trade-wallet');
+  if (!mount || (!fresh && !state.creating)) return;
+  const options = walletChoices();
+  const key = options.join(',');
+  if (!fresh && mount.dataset.options === key) return;
+  const picked = fresh ? '' : (mount.querySelector('input[name="wallet_id"]')?.value ?? '');
+  mount.innerHTML = walletHeadPicker(options, options.includes(picked) ? picked : '');
+  mount.dataset.options = key;
 }
 
 // `platform` is for the Borrowed stage's editor, with the wallet after it. A
@@ -3590,8 +3608,15 @@ function renderWalletsView() {
 }
 
 /** Read the list again and draw it: on every visit, and on coming back to the tab. */
+/**
+ * Read the list again and draw it: on every visit, and on coming back to the
+ * tab. The trades too, since the Trades column counts them and Delete is
+ * refused by them: read only at boot and after this page's own saves, a trade
+ * unlinked from the phone still counted, and its wallet could not be deleted
+ * here although the server would have allowed it.
+ */
 async function refreshWalletsView() {
-  await loadWallets();
+  await Promise.all([loadWallets(), loadTrades().catch(() => false)]);
   if (state.view === 'wallets') renderWalletsView();
 }
 
@@ -3707,8 +3732,13 @@ async function removeWallet(id) {
   if (!w) return;
   // In use: said at once, rather than after a confirmation the server would
   // refuse anyway. The server refuses it all the same (its 409 below), for a
-  // link this page has not read yet.
-  const used = state.loaded ? linkedTrades(id) : [];
+  // link this page has not read yet. What the page holds can be older than
+  // that, so a refusal is asked of the trades as they are now.
+  let used = state.loaded ? linkedTrades(id) : [];
+  if (used.length && (await loadTrades().catch(() => false))) {
+    used = linkedTrades(id);
+    renderWalletsView();
+  }
   if (used.length) {
     const shown = used.slice(0, 5).map((t) => `#${t.id}`).join(', ');
     const more = used.length > 5 ? ` and ${used.length - 5} more` : '';
@@ -3730,6 +3760,8 @@ async function removeWallet(id) {
     // A 404 is what was wanted: it is already gone.
     if (err.status !== 404) {
       toast(err.status ? err.message : 'Could not reach the server, so the address is still saved.');
+      // Linked from elsewhere since the trades were read: count it now.
+      if (err.status === 409) loadTrades().then((ok) => ok && renderWalletsView(), () => {});
       return;
     }
   }
@@ -3779,6 +3811,9 @@ const LOAD_FAILED = `<div class="empty">
 </div>`;
 
 function render() {
+  // The New trade card sits above every view's mount and outlives a change of
+  // view, so its wallet picker follows the list from here.
+  syncNewTradeWallet();
   if (state.loadFailed) {
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
@@ -4757,7 +4792,7 @@ function wire() {
     syncNewTradeButton();
     if (state.creating) {
       document.getElementById('new-trade-platform').innerHTML = platformHeadPicker();
-      document.getElementById('new-trade-wallet').innerHTML = walletHeadPicker();
+      syncNewTradeWallet({ fresh: true });
       borrowForm.innerHTML = borrowFields() + actions('Create trade', 'data-close-new');
       refreshHints(borrowForm, {}, 'borrow');
       borrowForm.querySelector('input')?.focus();
