@@ -2441,7 +2441,7 @@ function tradeRow(t, index, total, { readOnly = false } = {}) {
     <td data-label="Annualized" class="num">${isNum(d.pct) ? `<span class="${pctClass(d.pct)}">${pct(d.pct)}</span>` : '<span class="muted">-</span>'}</td>
     <td data-label="Status"><span class="pill pill--${d.status}">${d.status}</span></td>
   </tr>
-  ${simOpen ? `<tr class="detail"><td colspan="8"><div class="stages">${simStageCards(t, d)}</div></td></tr>` : ''}
+  ${simOpen ? `<tr class="detail"><td colspan="8"><div class="stages stages--sim">${simStageCards(t, d)}</div></td></tr>` : ''}
   ${
     isOpen
       ? `<tr class="detail"><td colspan="8">
@@ -3685,11 +3685,13 @@ function txLine(t, stage) {
     const url = `${NETWORK_META.ethereum.txExplorer}${stored.hash}`;
     const others = note?.others ? `<small class="tx-line__note">${note.others + 1} transfers fit equally; check it.</small>` : '';
     return `<div class="tx-line">
-      <a class="tx-line__hash" href="${esc(url)}" target="_blank" rel="noopener noreferrer"
-        aria-label="Open the ${TX_NOUN[stage]} transaction on Etherscan">${esc(shortHash(stored.hash))}<span aria-hidden="true"> &#8599;</span></a>
-      <span class="tx-line__source">${stored.source === 'manual' ? 'pasted' : 'found'}</span>
-      <button class="btn btn--ghost btn--sm tx-line__clear" type="button" data-tx-clear="${key}"
-        aria-label="Forget the ${TX_NOUN[stage]} transaction">&times;</button>
+      <span class="tx-line__row">
+        <a class="tx-line__hash" href="${esc(url)}" target="_blank" rel="noopener noreferrer"
+          aria-label="Open the ${TX_NOUN[stage]} transaction on Etherscan">${esc(shortHash(stored.hash))}<span aria-hidden="true"> &#8599;</span></a>
+        <span class="tx-line__source">${stored.source === 'manual' ? 'pasted' : 'found'}</span>
+        <button class="btn btn--ghost btn--sm tx-line__clear" type="button" data-tx-clear="${key}"
+          data-tip="Forget this hash" aria-label="Forget the ${TX_NOUN[stage]} transaction">&times;</button>
+      </span>
       ${others}
     </div>`;
   }
@@ -3792,9 +3794,28 @@ async function findTx(key) {
   card?.querySelector('.tx-line__hash, [data-tx-paste]')?.focus();
 }
 
-/** Forget a stage's hash, so it can be searched for again or pasted. */
+/**
+ * Forget a stage's hash, so it can be searched for again or pasted. Asked
+ * first: a found one costs a search to get back, and a pasted one was looked
+ * up by hand.
+ */
 async function clearTx(key) {
   const [id, stage] = key.split(':');
+  const stored = state.stageTxs?.[id]?.[stage];
+  if (!stored) return;
+  const ok = await confirmDialog({
+    title: `Forget the ${TX_NOUN[stage]} transaction?`,
+    body:
+      `<code class="wallet-address__hex">${esc(stored.hash)}</code> is no longer linked to trade #${esc(id)}. ` +
+      (stored.source === 'manual'
+        ? 'It was pasted by hand, so paste it again to get it back.'
+        : 'The magnifier can find it again.'),
+    confirmLabel: 'Forget',
+  });
+  if (!ok) {
+    document.querySelector(`[data-tx-clear="${key}"]`)?.focus();
+    return;
+  }
   try {
     await api(`/api/trades/${id}/tx/${stage}`, { method: 'DELETE' });
   } catch (err) {
