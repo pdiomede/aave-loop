@@ -433,9 +433,12 @@ from every message; calls are queued 400 ms apart (the free tier allows 3 a seco
 and retried twice on its rate limit; settled block numbers are cached for the
 process and a window's transfers for two minutes.
 
-A failed search carries a `kind`: `setup` (no key, the key refused) or `busy` (rate
-limit, daily limit, timeout, no answer, not Etherscan's JSON); a stage simply not found
-has none. **Get onchain data** (`scanOnchain` in public/app.js) drives the bulk search
+A failed search carries a `kind`: `setup` (no key, the key refused), `busy` (rate
+limit, daily limit, timeout, no answer, not Etherscan's JSON) or `unsupported` (a chain
+not covered, or a coin with no contract on that chain); a stage simply not found
+has none, and Get onchain data counts `unsupported` as not searched. A refused paste's
+reason is kept in `state.txPasteError`, as a typed hash is in `state.txPaste`, so a
+redraw draws it again. **Get onchain data** (`scanOnchain` in public/app.js) drives the bulk search
 from the page, one stage at a time through the same find endpoint (`searchStage`, which
 moves no focus): a `busy` stage is waited out 10 s then 30 s (`SCAN_WAITS`) before the
 scan stops, a `setup` one stops it at once, and the report says which. The server's

@@ -470,8 +470,14 @@ export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {
   const node = nodeFor(network);
   const { key, reason } = etherscanKey();
   if (!key && !node) return { found: false, reason, kind: 'setup' };
+  // Not searchable, as an uncovered chain is not: tagged so, Get onchain data
+  // counts it as not searched rather than as searched and not found.
   if (!STABLE[network]?.[t.borrow_currency]?.length) {
-    return { found: false, reason: `${t.borrow_currency} has no known contract on ${chain.label} to search for. Paste the hash instead.` };
+    return {
+      found: false,
+      reason: `${t.borrow_currency} has no known contract on ${chain.label} to search for. Paste the hash instead.`,
+      kind: 'unsupported',
+    };
   }
   const refused = UNSUPPORTED.get(network);
   if (refused && refused.until > Date.now()) return { found: false, reason: refused.reason, kind: 'unsupported' };

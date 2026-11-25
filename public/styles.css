@@ -1032,6 +1032,9 @@ html {
   gap: 6px;
   max-width: 100%;
   text-align: left;
+  /* The detail cell is nowrap, from the table: dropped from here, a long
+     name ran past the card and, on a phone, widened the page. */
+  white-space: normal;
 }
 
 .wallet-ref .coin,

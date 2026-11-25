@@ -1446,7 +1446,10 @@ await check('the audit keeps a shared hash on the trade it fits, and cannot chec
   put.run(a.id, 'buy', hashOf(171), new Date().toISOString());
   put.run(b.id, 'repay', hashOf(171), new Date().toISOString());
   db.close();
-  // EURC has no contract on Arbitrum here: pasted, it can only be reported unchecked.
+  // EURC has no contract on Arbitrum here: not searchable - tagged so, the scan
+  // counts it as not searched - and pasted, it can only be reported unchecked.
+  const unsearchable = (await find(c.id, 'borrow')).data;
+  assert.deepEqual([unsearchable.found, unsearchable.kind], [false, 'unsupported']);
   assert.equal((await api('PUT', `/api/trades/${c.id}/tx/borrow`, { hash: hashOf(172) })).status, 200);
   const run = (...args) =>
     new Promise((resolve, reject) => {

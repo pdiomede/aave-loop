@@ -769,6 +769,9 @@ const state = {
   txBusy: new Set(),
   txNote: {},
   txPaste: {},
+  // A paste refused, by key, so its reason outlives the redraws a scan or a
+  // price makes - written into the form alone, it was gone within a second.
+  txPasteError: {},
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -3792,13 +3795,14 @@ function txLine(t, stage) {
   if (state.txPaste[key] === undefined) {
     return `<div class="tx-line">${reason}<button class="link-btn" type="button" data-tx-paste="${key}">Paste a hash</button></div>`;
   }
+  const pasteError = state.txPasteError[key];
   return `<div class="tx-line">${reason}
     <form class="tx-paste" id="tx-paste-${key.replace(':', '-')}" data-tx-form="${key}" novalidate>
-      <div class="field" data-field="hash">
+      <div class="field${pasteError ? ' is-invalid' : ''}" data-field="hash">
         <div class="control"><input name="hash" type="text" value="${esc(state.txPaste[key])}" placeholder="0x…"
           aria-label="Transaction hash of the ${TX_NOUN[stage]}" aria-describedby="tx-${key.replace(':', '-')}-hint"
-          autocomplete="off" spellcheck="false" /></div>
-        <div class="field__hint" id="tx-${key.replace(':', '-')}-hint" data-hint="hash"></div>
+          ${pasteError ? 'aria-invalid="true" ' : ''}autocomplete="off" spellcheck="false" /></div>
+        <div class="field__hint" id="tx-${key.replace(':', '-')}-hint" data-hint="hash">${esc(pasteError ?? '')}</div>
       </div>
       <span class="form__error" data-form-error role="alert"></span>
       <span class="tx-paste__buttons">
@@ -3951,8 +3955,10 @@ function renderScanHead() {
   label.textContent = scan.stopRequested ? 'Stopping…' : 'Stop';
   btn.dataset.tip = 'Stop after the search in progress';
   btn.setAttribute('aria-pressed', 'true');
+  // Whoever is not answering - Etherscan, a chain's node or the ledger - is
+  // named in the report; here it is only waited for.
   count.textContent = scan.waiting
-    ? `Etherscan busy, waiting ${scan.waiting} s… ${scan.done} of ${scan.total}`
+    ? `No answer, waiting ${scan.waiting} s… ${scan.done} of ${scan.total}`
     : `${scan.done} of ${scan.total}`;
   const pct = scan.total ? Math.round((scan.done / scan.total) * 100) : 0;
   bar.hidden = false;
@@ -4074,8 +4080,9 @@ async function scanOnchain() {
       // A chain the key's plan does not cover: counted per chain, and the
       // scan carries on with the other wallets.
       const chain = NETWORK_META[networkOf(walletById(state.trades.find((x) => x.id === id)?.wallet_id))].label;
-      scan.uncovered[chain] = scan.uncovered[chain] ?? { n: 0, reason: r.reason };
+      scan.uncovered[chain] = scan.uncovered[chain] ?? { n: 0, reasons: new Set() };
       scan.uncovered[chain].n += 1;
+      scan.uncovered[chain].reasons.add(r.reason);
     } else {
       scan.notFound.push({ id, stage, reason: r.reason });
     }
@@ -4142,7 +4149,8 @@ function scanReport(scan) {
       : '',
     Object.keys(scan.uncovered).length
       ? `<h4 class="scan-report__head">Not searched</h4><ul class="scan-report__list">${Object.values(scan.uncovered)
-          .map((u) => `<li>${esc(u.reason)}</li>`)
+          .flatMap((u) => [...u.reasons])
+          .map((reason) => `<li>${esc(reason)}</li>`)
           .join('')}</ul>`
       : '',
     scan.notFound.length
@@ -4212,7 +4220,8 @@ async function pasteTx(form) {
   const [id, stage] = key.split(':');
   const hash = form.elements.hash.value.trim();
   if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-    showFormError(form, 'A transaction hash is 0x and 64 characters of 0-9 and a-f.', 'hash');
+    state.txPasteError[key] = 'A transaction hash is 0x and 64 characters of 0-9 and a-f.';
+    showFormError(form, state.txPasteError[key], 'hash');
     return;
   }
   const done = beginSubmit(form);
@@ -4227,11 +4236,16 @@ async function pasteTx(form) {
     // repayment found by way of the old one, and so does the page.
     if (dep && before !== row.hash) dropStageTx(id, dep);
     delete state.txPaste[key];
+    delete state.txPasteError[key];
     delete state.txNote[key];
     renderSimulation();
     document.querySelector(`[data-tx-clear="${key}"]`)?.closest('.sim-card')?.querySelector('.tx-line__hash')?.focus();
   } catch (err) {
-    showFormError(form, err.status ? err.message : 'Could not reach the server.', 'hash');
+    state.txPasteError[key] = err.status ? err.message : 'Could not reach the server.';
+    // Into the form on screen now: a redraw while the paste was on the wire
+    // replaced the one it was sent from, and the error went into that.
+    const live = document.querySelector(`[data-tx-form="${key}"]`) ?? form;
+    showFormError(live, state.txPasteError[key], 'hash');
   } finally {
     done();
   }
@@ -5642,10 +5656,12 @@ function wire() {
       else if (txClear) clearTx(txClear);
       else if (txPaste) {
         state.txPaste[txPaste] = '';
+        delete state.txPasteError[txPaste];
         renderSimulation();
         document.querySelector(`[data-tx-form="${txPaste}"] input`)?.focus();
       } else if (txPasteCancel) {
         delete state.txPaste[txPasteCancel];
+        delete state.txPasteError[txPasteCancel];
         renderSimulation();
         document.querySelector(`[data-tx-paste="${txPasteCancel}"]`)?.focus();
       }
@@ -5986,6 +6002,7 @@ function wire() {
     // A hash being pasted lives in state too (`txLine`).
     if (form.dataset.txForm) {
       if (state.txPaste[form.dataset.txForm] !== undefined) state.txPaste[form.dataset.txForm] = input.value;
+      delete state.txPasteError[form.dataset.txForm];
       return;
     }
 
