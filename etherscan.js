@@ -29,6 +29,7 @@ import { setting } from './env.js';
 import { etherscanKey } from './config.js';
 import { assetOf, parseDate } from './lib/calc.js';
 import { NETWORK_META, networkOf } from './lib/address.js';
+import { NodeError, nodeFor, nodeTransfersBetween } from './chainnode.js';
 import { n2, fmtDate } from './format.js';
 
 export const TX_STAGES = ['borrow', 'buy', 'sell', 'repay'];
@@ -90,14 +91,30 @@ const ASSET_TOKEN = {
   },
 };
 
+// Places per contract, for transfers read from a node (chainnode.js), which
+// carry none: Base's and Optimism's, each read from the contract itself
+// (symbol and decimals) on 25 Nov 2026.
+const DECIMALS = {
+  '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6, // USDC, Base
+  '0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42': 6, // EURC, Base
+  '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 18, // DAI, Base
+  '0x0b2c639c533813f4aa9d7837caf62653d097ff85': 6, // USDC, Optimism
+  '0x7f5c764cbc14f9669b88837ca1490cca17c31607': 6, // USDC.e, Optimism
+  '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58': 6, // USDT, Optimism
+  '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1': 18, // DAI, Optimism
+  '0x4200000000000000000000000000000000000006': 18, // WETH, Base and Optimism
+  '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': 8, // cbBTC
+  '0x68f180fcce6836688e9084f035309e29bf0a2095': 8, // WBTC, Optimism
+};
+
 // Chains Etherscan said the key's plan does not cover ("Free API access is not
 // supported for this chain"), until when: asked again an hour on, so a plan
 // upgraded meanwhile is noticed, and not on every stage of a scan before then.
 const UNSUPPORTED = new Map();
 const UNSUPPORTED_MS = 3_600_000;
-const unsupportedReason = (network) =>
-  `Etherscan's free plan does not cover ${NETWORK_META[network].label}. Paste the hash from ` +
-  `${new URL(NETWORK_META[network].txExplorer).host} instead.`;
+const unsupportedReason = (network, why = null) =>
+  `${why ?? `Etherscan's free plan does not cover ${NETWORK_META[network].label}, and no ${NETWORK_META[network].label} node is set (${network.toUpperCase()}_RPC_URL in config.env).`} ` +
+  `Paste the hash from ${new URL(NETWORK_META[network].txExplorer).host} instead.`;
 
 const RULE = {
   borrow: { dir: 'in', date: 'borrow_date', amount: 'borrow_amount', noun: 'loan' },
@@ -263,6 +280,34 @@ async function transfersBetween(chainid, address, fromMs, toMs, key) {
 }
 
 /**
+ * A wallet's transfers on a chain read from its node, of every contract this
+ * file knows there, so the trade's other stages and the other trades on that
+ * chain are served from the same read. Read a UTC day at a time and kept by
+ * day: a day an hour or more past never changes, so it is read once per
+ * process; today's is kept two minutes, as Etherscan's answers are. A trade's
+ * four stages, searched one after another, share their days.
+ */
+const nodeDays = new Map();
+
+async function nodeRows(network, address, fromMs, toMs) {
+  const contracts = [...new Set([...Object.values(STABLE[network] ?? {}), ...Object.values(ASSET_TOKEN[network] ?? {})].flat())];
+  const rows = [];
+  for (let day = Math.floor(fromMs / DAY) * DAY; day <= toMs; day += DAY) {
+    const k = `${network}:${lower(address)}:${day}`;
+    const kept = nodeDays.get(k);
+    const settled = day + DAY < Date.now() - 3_600_000;
+    let dayRows;
+    if (kept && (settled || Date.now() - kept.at < TRANSFERS_MS)) dayRows = kept.rows;
+    else {
+      dayRows = await nodeTransfersBetween(network, address, day, Math.min(day + DAY - 1000, Date.now() - 60_000), contracts, DECIMALS);
+      nodeDays.set(k, { at: Date.now(), rows: dayRows });
+    }
+    rows.push(...dayRows);
+  }
+  return rows.filter((r) => Number(r.timeStamp) * 1000 >= fromMs && Number(r.timeStamp) * 1000 <= toMs);
+}
+
+/**
  * The days searched for a stage: its own, a day either side - the date typed
  * is the reader's local day and the chain keeps UTC - and, for the loan and
  * the repayment, the purchase or sale they are told apart by when it is
@@ -368,17 +413,20 @@ function pick(rows, t, stage, wallet, claimed, own = {}) {
  * is a result the card shows.
  */
 export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
-  const { key, reason } = etherscanKey();
-  if (!key) return { found: false, reason, kind: 'setup' };
   const network = networkOf(wallet);
   const chain = NETWORK_META[network];
+  // A chain read from its node needs no Etherscan key.
+  const node = nodeFor(network);
+  const { key, reason } = etherscanKey();
+  if (!key && !node) return { found: false, reason, kind: 'setup' };
   if (!STABLE[network]?.[t.borrow_currency]?.length) {
     return { found: false, reason: `${t.borrow_currency} has no known contract on ${chain.label} to search for. Paste the hash instead.` };
   }
-  if ((UNSUPPORTED.get(network) ?? 0) > Date.now()) return { found: false, reason: unsupportedReason(network), kind: 'unsupported' };
+  const refused = UNSUPPORTED.get(network);
+  if (refused && refused.until > Date.now()) return { found: false, reason: refused.reason, kind: 'unsupported' };
   const { from, to } = windowOf(t, stage);
   try {
-    const rows = await transfersBetween(chain.chainId, wallet.address, from, to, key);
+    const rows = node ? await nodeRows(network, wallet.address, from, to) : await transfersBetween(chain.chainId, wallet.address, from, to, key);
     const best = pick(rows, t, stage, wallet, claimed, own);
     if (best) {
       return { found: true, hash: best.hash, at: new Date(best.at).toISOString(), amount: best.amount, others: best.others };
@@ -393,14 +441,16 @@ export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
         `fits this ${r.noun}. Paste its hash instead.`,
     };
   } catch (err) {
-    if (err instanceof EtherscanError && err.kind === 'unsupported') {
-      UNSUPPORTED.set(network, Date.now() + UNSUPPORTED_MS);
-      return { found: false, reason: unsupportedReason(network), kind: 'unsupported' };
+    const known = err instanceof EtherscanError || err instanceof NodeError;
+    if (known && err.kind === 'unsupported') {
+      const reason = unsupportedReason(network, err instanceof NodeError ? `${redact(err.message, key)}.` : null);
+      UNSUPPORTED.set(network, { until: Date.now() + UNSUPPORTED_MS, reason });
+      return { found: false, reason, kind: 'unsupported' };
     }
     return {
       found: false,
-      reason: err instanceof EtherscanError ? redact(err.message, key) : 'The search failed. Try again.',
-      kind: err instanceof EtherscanError ? err.kind : 'busy',
+      reason: known ? redact(err.message, key) : 'The search failed. Try again.',
+      kind: known ? err.kind : 'busy',
     };
   }
 }

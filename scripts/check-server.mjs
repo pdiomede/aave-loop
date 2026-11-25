@@ -55,11 +55,44 @@ const mock = { price: 3000, btc: 90000, wbtc: 89900, asked: 0, tg: [], sent: [],
 // Etherscan's V2 API: a block per twelve seconds, the transfers in `rows`,
 // or `error` as its refusal. `calls` counts every request, `keys` every key.
 mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
+// A chain's node (JSON-RPC), for chainnode.js: block n is two seconds after
+// RPC_T0 plus 2n, `logs` are its Transfer events, and a getLogs over more
+// than `max` blocks is refused the way mainnet.optimism.io refuses one.
+const RPC_T0 = Date.parse('2025-01-01T00:00:00Z') / 1000;
+mock.rpc = { calls: 0, logs: [], max: 10000 };
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     res.setHeader('Content-Type', 'application/json');
+    if (req.url.startsWith('/rpc')) {
+      mock.rpc.calls += 1;
+      const { method, params, id } = JSON.parse(body || '{}');
+      const reply = (result) => res.end(JSON.stringify({ jsonrpc: '2.0', id, result }));
+      const latest = Math.floor((Date.now() / 1000 - RPC_T0) / 2);
+      const h = (n) => `0x${n.toString(16)}`;
+      if (method === 'eth_blockNumber') return reply(h(latest));
+      if (method === 'eth_getBlockByNumber') {
+        const n = Number(BigInt(params[0]));
+        return reply(n > latest ? null : { number: params[0], timestamp: h(RPC_T0 + 2 * n) });
+      }
+      if (method === 'eth_getLogs') {
+        const f = params[0];
+        const [a, b] = [Number(BigInt(f.fromBlock)), Number(BigInt(f.toBlock))];
+        if (b - a + 1 > mock.rpc.max) {
+          return res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32614, message: `eth_getLogs is limited to a ${mock.rpc.max} range` } }));
+        }
+        const want = (f.address ?? []).map((x) => x.toLowerCase());
+        const t = f.topics ?? [];
+        return reply(
+          mock.rpc.logs.filter((l) => {
+            const n = Number(BigInt(l.blockNumber));
+            return n >= a && n <= b && want.includes(l.address) && (!t[1] || t[1] === l.topics[1]) && (!t[2] || t[2] === l.topics[2]);
+          }),
+        );
+      }
+      return res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'no such method' } }));
+    }
     if (req.url.startsWith('/etherscan')) {
       const q = new URL(req.url, 'http://mock').searchParams;
       mock.es.calls += 1;
@@ -165,6 +198,9 @@ const isolated = {
   TELEGRAM_OWNER_ID: '',
   ETHERSCAN_API_KEY: '',
   ETHROUNDTRIP_ETHERSCAN_URL: `${MOCK}/etherscan`,
+  // Never a real node: Optimism defaults to its public one when unset.
+  OPTIMISM_RPC_URL: `${MOCK}/rpc`,
+  BASE_RPC_URL: '',
 };
 const ES_KEY = 'test-etherscan-key-5f2c';
 
@@ -1126,7 +1162,7 @@ await check('a chain the plan does not cover is said once, then skipped without 
   mock.es.error = 'Free API access is not supported for this chain. Please upgrade your api plan for full chain coverage.';
   const r = await find(t.id, 'borrow');
   assert.deepEqual([r.data.found, r.data.kind], [false, 'unsupported']);
-  assert.match(r.data.reason, /does not cover Base\. Paste the hash from basescan\.org/);
+  assert.match(r.data.reason, /does not cover Base, and no Base node is set \(BASE_RPC_URL in config\.env\)\. Paste the hash from basescan\.org/);
   const before = mock.es.calls;
   assert.equal((await find(t.id, 'borrow')).data.kind, 'unsupported');
   assert.equal(mock.es.calls, before, 'remembered, not asked again');
@@ -1135,6 +1171,38 @@ await check('a chain the plan does not cover is said once, then skipped without 
   assert.equal((await api('PUT', `/api/trades/${t.id}/tx/borrow`, { hash: hashOf(80) })).status, 200);
   await api('DELETE', `/api/trades/${t.id}`);
   await api('DELETE', `/api/wallets/${onBase.id}`);
+});
+
+await check('an Optimism wallet is searched on its node, in spans the node allows', async () => {
+  const day = '2026-07-10';
+  const OP_USDC = '0x0b2c639c533813f4aa9d7837caf62653d097ff85';
+  const op = (await api('POST', '/api/wallets', { name: 'Opti', address: '0x52908400098527886E0F7030069857D2E4169EE7', network: 'optimism' })).data;
+  const topic = (a) => `0x${'0'.repeat(24)}${a.slice(2).toLowerCase()}`;
+  const blockOf = (iso) => Math.floor((Date.parse(iso) / 1000 - RPC_T0) / 2);
+  const log = (n, iso, contract, from, to, amount, dec) => ({
+    address: contract,
+    blockNumber: `0x${blockOf(iso).toString(16)}`,
+    transactionHash: hashOf(n),
+    logIndex: '0x0',
+    topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', topic(from), topic(to)],
+    data: `0x${BigInt(Math.round(amount * 10 ** dec)).toString(16)}`,
+  });
+  mock.rpc.logs = [
+    // Mainnet's USDC contract cannot be Optimism's USDC.
+    log(91, `${day}T09:00:00Z`, '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', POOL, op.address, 12000, 6),
+    log(92, `${day}T10:00:00Z`, OP_USDC, POOL, op.address, 12000, 6),
+  ];
+  // Narrower than the 10,000 blocks asked for: the span is halved until it fits.
+  mock.rpc.max = 4000;
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: day, borrow_amount: '12000', wallet_id: op.id }))).data;
+  const [esBefore, rpcBefore] = [mock.es.calls, mock.rpc.calls];
+  const r = await find(t.id, 'borrow');
+  assert.deepEqual([r.data.found, r.data.hash], [true, hashOf(92)], r.data.reason);
+  assert.equal(mock.es.calls, esBefore, 'Etherscan is not asked for Optimism');
+  assert.ok(mock.rpc.calls > rpcBefore);
+  mock.rpc.max = 10000;
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${op.id}`);
 });
 
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {

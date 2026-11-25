@@ -196,3 +196,16 @@ export function etherscanKey() {
   const name = path.basename(FILE);
   return { key: null, reason: fileProblem || `No ETHERSCAN_API_KEY in ${name}, so Etherscan cannot be searched.` };
 }
+
+// The node a chain is searched on when Etherscan's free plan refuses it
+// (chainnode.js). Optimism's own public node answers old blocks with no key;
+// no keyless one does for Base, so Base has none until BASE_RPC_URL names one.
+// A URL can carry a token, so it lives here with the other secrets.
+const NODE_SETTINGS = { optimism: 'OPTIMISM_RPC_URL', base: 'BASE_RPC_URL' };
+const NODE_DEFAULTS = { optimism: 'https://mainnet.optimism.io' };
+
+export function nodeUrl(network) {
+  const name = NODE_SETTINGS[network];
+  if (!name) return null;
+  return get(name) || NODE_DEFAULTS[network] || null;
+}
