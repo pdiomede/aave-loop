@@ -162,7 +162,31 @@ db.exec(`
   );
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_wallets_name ON wallets (name COLLATE NOCASE);
+
+  CREATE TABLE IF NOT EXISTS stage_tx (
+    trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE,
+    stage    TEXT    NOT NULL,
+    hash     TEXT    NOT NULL,
+    source   TEXT    NOT NULL,
+    found_at TEXT    NOT NULL,
+    PRIMARY KEY (trade_id, stage)
+  ) WITHOUT ROWID;
 `);
+
+/**
+ * The transaction behind each stage of a trade, found on Etherscan
+ * (etherscan.js) or pasted, for Wallets > Simulation: `hash` lowercase, one
+ * per stage ('borrow', 'buy', 'sell', 'repay'). Found once and kept, so a card
+ * opened again asks Etherscan nothing.
+ *
+ * `source` is 'search' or 'manual'. A searched hash was matched on the stage's
+ * date and amounts, the trade's wallet, coin and asset (`txBasis` in
+ * etherscan.js), so a PATCH that changes any of those deletes it in the same
+ * transaction as the write; a pasted one is kept, since its reader vouched
+ * for it. Deleting the trade takes its hashes. An older copy of the app
+ * ignores the table - and does not clear a searched hash when it edits a
+ * trade, which is why the card says where a hash came from.
+ */
 
 /**
  * The wallets a trade can be run from, kept on the Wallets tab: a name and an address

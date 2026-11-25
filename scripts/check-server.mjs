@@ -52,11 +52,27 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
 const mock = { price: 3000, btc: 90000, wbtc: 89900, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 } };
+// Etherscan's V2 API: a block per twelve seconds, the transfers in `rows`,
+// or `error` as its refusal. `calls` counts every request, `keys` every key.
+mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
   req.on('end', () => {
     res.setHeader('Content-Type', 'application/json');
+    if (req.url.startsWith('/etherscan')) {
+      const q = new URL(req.url, 'http://mock').searchParams;
+      mock.es.calls += 1;
+      mock.es.keys.add(q.get('apikey'));
+      if (mock.es.error) return res.end(JSON.stringify({ status: '0', message: 'NOTOK', result: mock.es.error }));
+      if (q.get('module') === 'block') {
+        return res.end(JSON.stringify({ status: '1', message: 'OK', result: String(Math.floor(Number(q.get('timestamp')) / 12)) }));
+      }
+      const rows = mock.es.rows;
+      return res.end(
+        JSON.stringify(rows.length ? { status: '1', message: 'OK', result: rows } : { status: '0', message: 'No transactions found', result: [] }),
+      );
+    }
     if (req.url.startsWith('/coins/markets')) {
       mock.asked += 1;
       // Every coin, whatever was asked, as CoinGecko answers a list of ids;
@@ -146,7 +162,10 @@ const isolated = {
   TELEGRAM_BOT_TOKEN: '',
   TELEGRAM_CHAT_ID: '',
   TELEGRAM_OWNER_ID: '',
+  ETHERSCAN_API_KEY: '',
+  ETHROUNDTRIP_ETHERSCAN_URL: `${MOCK}/etherscan`,
 };
+const ES_KEY = 'test-etherscan-key-5f2c';
 
 /* ----------------------------------------------------------------- the API */
 
@@ -163,6 +182,7 @@ const server = spawn(process.execPath, ['server.js'], {
     ETHROUNDTRIP_BTC_PRICE: '90000',
     ETHROUNDTRIP_WBTC_PRICE: '89000',
     ETHROUNDTRIP_ALERT_POLL_MS: '3600000',
+    ETHERSCAN_API_KEY: ES_KEY,
   },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
@@ -828,6 +848,202 @@ await check('a wallet a trade names cannot be deleted until the trade names none
   assert.equal((await api('PATCH', `/api/trades/${t.id}`, { wallet_id: null })).data.wallet_id, null);
   assert.equal((await api('DELETE', `/api/wallets/${w.id}`)).status, 204);
   await api('DELETE', `/api/trades/${t.id}`);
+});
+
+/* ------------------------------------------------------------ etherscan */
+
+const EURC_C = '0x1abaea1f7c830bd89acc67ec4af516284b1bc33c';
+const WETH_C = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+const POOL = '0x00000000000000000000000000000000000000aa';
+const ROUTER = '0x00000000000000000000000000000000000000bb';
+const hashOf = (n) => `0x${n.toString(16).padStart(64, '0')}`;
+const xfer = (n, at, contract, from, to, amount, dec = 6, symbol = 'EURC') => ({
+  hash: hashOf(n),
+  timeStamp: String(Date.parse(at) / 1000),
+  contractAddress: contract,
+  from,
+  to,
+  value: BigInt(Math.round(amount * 10 ** dec)).toString(),
+  tokenDecimal: String(dec),
+  tokenSymbol: symbol,
+});
+
+// Two loops the same evening, as on the wallet this was written against:
+// each borrowed 30,000 EURC and swapped 30,000 EURC for WETH, so only the WETH
+// that came back tells the purchases apart, and only the purchase tells the
+// loans apart. A fake "EURC" and a transfer the wrong way round sit between.
+function twoLoops(w, day, next) {
+  return [
+    xfer(1, `${day}T21:51:35Z`, EURC_C, POOL, w, 30000),
+    xfer(2, `${day}T21:52:59Z`, EURC_C, w, ROUTER, 30000),
+    xfer(2, `${day}T21:52:59Z`, WETH_C, ROUTER, w, 12.659052369569256, 18, 'WETH'),
+    xfer(3, `${day}T21:59:23Z`, EURC_C, POOL, w, 30000),
+    xfer(4, `${day}T22:01:11Z`, EURC_C, w, ROUTER, 30000),
+    xfer(4, `${day}T22:01:11Z`, WETH_C, ROUTER, w, 12.649134118126478, 18, 'WETH'),
+    xfer(5, `${day}T22:02:00Z`, '0x000000000000000000000000000000000000dead', w, ROUTER, 30000, 6, 'EURC'),
+    xfer(6, `${day}T22:03:00Z`, EURC_C, ROUTER, w, 30000),
+    xfer(7, `${next}T13:02:47Z`, EURC_C, ROUTER, w, 31634.3),
+    xfer(8, `${next}T13:04:59Z`, EURC_C, w, POOL, 30003),
+    xfer(9, `${next}T13:07:59Z`, WETH_C, w, ROUTER, 12.649186487695733, 18, 'WETH'),
+    xfer(9, `${next}T13:07:59Z`, EURC_C, ROUTER, w, 30127.919211),
+    xfer(10, `${next}T13:10:59Z`, EURC_C, w, POOL, 30001.094107),
+  ];
+}
+const loop = (wallet_id, day, next, over = {}) =>
+  borrow({
+    borrow_date: day, borrow_amount: '30000', borrow_currency: 'EURC', wallet_id,
+    buy_date: day, buy_amount: '30000', buy_eth: '12.6491', buy_gas_usd: '1',
+    sell_date: next, sell_amount: '30127.92', sell_eth: '12.6491', sell_gas_usd: '1',
+    repay_date: next, repay_amount: '30001.09',
+    ...over,
+  });
+const find = (id, stage) => api('POST', `/api/trades/${id}/tx/${stage}/find`, {});
+const scanWallet = (await api('POST', '/api/wallets', { name: 'Scan', address: '0xde709f2102306220921060314715629080e2fb77' })).data;
+const SCAN = scanWallet.address.toLowerCase();
+
+await check('each stage is found by its coin\'s contract, direction, amount and asset, and kept', async () => {
+  const [day, next] = ['2026-10-02', '2026-10-03'];
+  mock.es.rows = twoLoops(SCAN, day, next);
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  const want = { borrow: hashOf(3), buy: hashOf(4), sell: hashOf(9), repay: hashOf(10) };
+  for (const [stage, hash] of Object.entries(want)) {
+    const r = await find(t.id, stage);
+    assert.equal(r.status, 200, stage);
+    assert.equal(r.data.found, true, `${stage}: ${r.data.reason}`);
+    assert.equal(r.data.hash, hash, stage);
+    assert.equal(r.data.source, 'search');
+  }
+  // Kept: asked again, Etherscan is not.
+  const before = mock.es.calls;
+  assert.equal((await find(t.id, 'buy')).data.hash, want.buy);
+  assert.equal(mock.es.calls, before);
+  assert.deepEqual(
+    Object.fromEntries(Object.entries((await api('GET', '/api/stage-txs')).data[t.id]).map(([k, v]) => [k, v.hash])),
+    want,
+  );
+  assert.ok(mock.es.keys.has(ES_KEY));
+  // The other loop of that evening: the purchase already linked is not offered
+  // again, and its own WETH settles it anyway.
+  const other = (await api('POST', '/api/trades', loop(scanWallet.id, day, next, { buy_eth: '12.6591', sell_eth: '12.6591' }))).data;
+  assert.equal((await find(other.id, 'buy')).data.hash, hashOf(2));
+  assert.equal((await find(other.id, 'borrow')).data.hash, hashOf(1));
+  // Deleting a trade takes its hashes.
+  await api('DELETE', `/api/trades/${other.id}`);
+  assert.equal((await api('GET', '/api/stage-txs')).data[other.id], undefined);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a token named like the coin, or a transfer the wrong way, is not the stage', async () => {
+  const day = '2026-09-10';
+  mock.es.rows = [
+    xfer(21, `${day}T10:00:00Z`, '0x000000000000000000000000000000000000dead', SCAN, ROUTER, 30000, 6, 'EURC'),
+    xfer(22, `${day}T10:01:00Z`, EURC_C, ROUTER, SCAN, 30000),
+    xfer(23, `${day}T10:02:00Z`, EURC_C, SCAN, ROUTER, 31500),
+  ];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, day))).data;
+  const r = await find(t.id, 'buy');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.found, false);
+  assert.match(r.data.reason, /No EURC transfer of about 30,000\.00 out of Scan between 9 Sep 2026 and 11 Sep 2026/);
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id], undefined);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a trade with no wallet, or a stage not recorded, is not searched', async () => {
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: '2026-09-12' }))).data;
+  const r = await find(t.id, 'borrow');
+  assert.equal(r.status, 400);
+  assert.equal(r.data.field, 'wallet_id');
+  await api('PATCH', `/api/trades/${t.id}`, { wallet_id: scanWallet.id });
+  assert.equal((await find(t.id, 'buy')).status, 400);
+  assert.equal((await find(t.id, 'swap')).status, 404);
+  assert.equal((await find(999999, 'buy')).status, 404);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a hash is pasted lowercase, refused when malformed or another trade\'s, and forgotten', async () => {
+  const day = '2026-09-14';
+  mock.es.rows = [];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, day))).data;
+  const u = (await api('POST', '/api/trades', loop(scanWallet.id, day, day))).data;
+  for (const hash of ['0x123', `0x${'g'.repeat(64)}`, 42, '']) {
+    const r = await api('PUT', `/api/trades/${t.id}/tx/repay`, { hash });
+    assert.equal(r.status, 400, JSON.stringify(hash));
+  }
+  const pasted = await api('PUT', `/api/trades/${t.id}/tx/repay`, { hash: ` 0x${'AB'.repeat(32)} ` });
+  assert.equal(pasted.status, 200);
+  assert.deepEqual([pasted.data.hash, pasted.data.source], [`0x${'ab'.repeat(32)}`, 'manual']);
+  // Found or pasted, a stored hash is answered without a search.
+  const before = mock.es.calls;
+  assert.equal((await find(t.id, 'repay')).data.hash, `0x${'ab'.repeat(32)}`);
+  assert.equal(mock.es.calls, before);
+  const taken = await api('PUT', `/api/trades/${u.id}/tx/repay`, { hash: `0x${'ab'.repeat(32)}` });
+  assert.equal(taken.status, 400);
+  assert.match(taken.data.error, new RegExp(`repayment of trade #${t.id}`));
+  assert.equal((await api('DELETE', `/api/trades/${t.id}/tx/repay`)).status, 204);
+  assert.equal((await api('DELETE', `/api/trades/${t.id}/tx/repay`)).status, 404);
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/trades/${u.id}`);
+});
+
+await check('an edit clears the hashes found from what it changed, and keeps pasted ones', async () => {
+  const [day, next] = ['2026-09-20', '2026-09-21'];
+  mock.es.rows = twoLoops(SCAN, day, next);
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  for (const stage of ['borrow', 'buy', 'sell']) assert.equal((await find(t.id, stage)).data.found, true, stage);
+  await api('PUT', `/api/trades/${t.id}/tx/repay`, { hash: hashOf(10) });
+  // The same figure again changes nothing.
+  await api('PATCH', `/api/trades/${t.id}`, { buy_amount: '30000' });
+  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]).sort(), ['borrow', 'buy', 'repay', 'sell']);
+  await api('PATCH', `/api/trades/${t.id}`, { buy_amount: '29990' });
+  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]).sort(), ['borrow', 'repay', 'sell']);
+  // Another wallet: every searched hash goes, the pasted one stays.
+  const other = (await api('POST', '/api/wallets', { name: 'Scan two', address: '0x52908400098527886E0F7030069857D2E4169EE7' })).data;
+  await api('PATCH', `/api/trades/${t.id}`, { wallet_id: other.id });
+  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]), ['repay']);
+  await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${other.id}`);
+});
+
+await check("Etherscan's refusals are said in words, never with the key", async () => {
+  const day = '2026-09-24';
+  mock.es.rows = [];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, day))).data;
+  mock.es.error = 'Invalid API Key (#err2)|Get an API key at etherscan.io';
+  const refused = await find(t.id, 'buy');
+  assert.equal(refused.data.found, false);
+  assert.match(refused.data.reason, /refused the ETHERSCAN_API_KEY/);
+  mock.es.error = `Unexpected trouble for ${ES_KEY} on the node`;
+  const echoed = await find(t.id, 'sell');
+  assert.equal(echoed.data.found, false);
+  assert.ok(!JSON.stringify(echoed.data).includes(ES_KEY), echoed.data.reason);
+  assert.match(echoed.data.reason, /<key>/);
+  mock.es.error = null;
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {
+  const before = mock.es.calls;
+  // In a child of its own: `isolated` blanks the key, as an install without
+  // one in config.env has none.
+  const code = `const e = await import('./etherscan.js');
+    const t = { borrow_currency: 'EURC', asset: 'eth', buy_date: '2026-09-02', buy_amount: 100, buy_eth: 0.04 };
+    console.log(JSON.stringify(await e.findStageTx(t, 'buy', { name: 'X', address: '${SCAN}' })));`;
+  const r = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      cwd: root,
+      env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: path.join(tmp, 'etherscan.db') },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (c) => (out += c));
+    child.stderr.on('data', (c) => (err += c));
+    child.on('close', (status) => (status === 0 ? resolve(JSON.parse(out.trim().split('\n').at(-1))) : reject(new Error(err))));
+  });
+  assert.equal(r.found, false);
+  assert.match(r.reason, /No ETHERSCAN_API_KEY in none\.env/);
+  assert.equal(mock.es.calls, before);
 });
 
 server.kill('SIGTERM');

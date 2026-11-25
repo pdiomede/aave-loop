@@ -61,6 +61,7 @@ import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
 import { setting, oldSettingsNote } from './env.js';
 import { labelOf } from './lib/input.js';
 import { NETWORKS, parseAddress, walletName, walletNameError } from './lib/address.js';
+import { TX_STAGES, findStageTx, stageRecorded, txBasis } from './etherscan.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -732,6 +733,17 @@ app.patch('/api/trades/:id', async (req, res, next) => {
               'WHERE id = @id AND updated_at IS @seen',
           ).run({ ...write, updated_at: new Date().toISOString(), id: current.id, seen: current.updated_at });
           if (info.changes === 1 && assetChanged) closeForAssetChange(current.id);
+          // A hash found on Etherscan from figures this edit changes no longer
+          // stands for them: gone with the write that made it so. Pasted ones
+          // stay (`stage_tx` in db.js).
+          if (info.changes === 1) {
+            const moved = TX_STAGES.filter((st) =>
+              txBasis(st).some((k) => k in patch && (patch[k] ?? null) !== (current[k] ?? null)),
+            );
+            for (const st of moved) {
+              prepare("DELETE FROM stage_tx WHERE trade_id = ? AND stage = ? AND source = 'search'").run(current.id, st);
+            }
+          }
           return info;
         }).immediate();
         if (written.changes !== 1) continue;
@@ -1263,6 +1275,137 @@ app.delete('/api/wallets/:id', (req, res) => {
     })
     .immediate();
   if (!deleted) return gone();
+  res.status(204).end();
+});
+
+/* ----------------------------------------------------------- transactions */
+
+/*
+ * The transaction behind each stage of a trade (`stage_tx` in db.js), for
+ * Wallets > Simulation: found on Etherscan once and kept, or pasted.
+ */
+const selectStageTx = prepare('SELECT * FROM stage_tx WHERE trade_id = ? AND stage = ?');
+const txView = (row) => ({ hash: row.hash, source: row.source, found_at: row.found_at });
+const HASH = /^0x[0-9a-fA-F]{64}$/;
+const STAGE_NAMES = { borrow: 'loan', buy: 'purchase', sell: 'sale', repay: 'repayment' };
+
+app.get('/api/stage-txs', (_req, res) => {
+  const out = {};
+  for (const row of prepare('SELECT * FROM stage_tx').all()) {
+    (out[row.trade_id] ??= {})[row.stage] = txView(row);
+  }
+  res.json(out);
+});
+
+/** The trade and stage a request names, or null after answering 404. */
+function txTarget(req, res) {
+  const id = idParam(req.params.id);
+  const stage = req.params.stage;
+  const trade = id === null || !TX_STAGES.includes(stage) ? null : selectOne.get(id);
+  if (!trade) {
+    res.status(404).json({ error: 'No such trade or stage.' });
+    return null;
+  }
+  return { trade, stage };
+}
+
+/** The hashes other trades already hold, by stage: never offered again. */
+function claimedHashes(tradeId) {
+  const out = {};
+  for (const row of prepare('SELECT stage, hash FROM stage_tx WHERE trade_id != ?').all(tradeId)) {
+    (out[row.stage] ??= new Set()).add(row.hash);
+  }
+  return out;
+}
+
+// One search per trade and stage at a time: a second click, or a second tab,
+// waits for the first rather than asking Etherscan the same thing again.
+const txSearches = new Map();
+
+async function searchAndStore(trade, stage, wallet) {
+  const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id));
+  if (!r.found) return r;
+  // Seconds have passed. Stored only if what the search went by is unchanged,
+  // and only if nothing was stored meanwhile - by a paste, or the other copy -
+  // which then stands, and is what is answered.
+  return db
+    .transaction(() => {
+      const now = selectOne.get(trade.id);
+      if (!now) return { found: false, reason: 'The trade was deleted while it was being searched.' };
+      if (txBasis(stage).some((k) => (now[k] ?? null) !== (trade[k] ?? null))) {
+        return { found: false, reason: 'The trade was edited while it was being searched. Search again.' };
+      }
+      prepare(
+        'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
+          'ON CONFLICT (trade_id, stage) DO NOTHING',
+      ).run(trade.id, stage, r.hash, 'search', new Date().toISOString());
+      const row = selectStageTx.get(trade.id, stage);
+      const mine = row.hash === r.hash;
+      return { found: true, ...txView(row), at: mine ? r.at : null, others: mine ? r.others : 0 };
+    })
+    .immediate();
+}
+
+/**
+ * Find a stage's transaction: the stored one when there is one - found once,
+ * never asked for again - otherwise a search. Found or not, the answer is
+ * 200: not finding one is a result the card shows, as the rate endpoints do.
+ */
+app.post('/api/trades/:id/tx/:stage/find', async (req, res, next) => {
+  try {
+    const target = txTarget(req, res);
+    if (!target) return;
+    const { trade, stage } = target;
+    const stored = selectStageTx.get(trade.id, stage);
+    if (stored) return res.json({ found: true, ...txView(stored) });
+    if (!stageRecorded(trade, stage)) throw new BadRequest(`Record the ${STAGE_NAMES[stage]} before searching for it.`, 'stage');
+    if (trade.wallet_id == null) throw new BadRequest('Link a wallet on the Borrowed card first.', 'wallet_id');
+    const wallet = selectWallet.get(trade.wallet_id);
+    const key = `${trade.id}:${stage}`;
+    let run = txSearches.get(key);
+    if (!run) {
+      run = searchAndStore(trade, stage, wallet).finally(() => txSearches.delete(key));
+      txSearches.set(key, run);
+    }
+    res.json(await run);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** A hash pasted by hand, kept over anything stored: its reader vouched for it. */
+app.put('/api/trades/:id/tx/:stage', (req, res) => {
+  const target = txTarget(req, res);
+  if (!target) return;
+  const { trade, stage } = target;
+  const raw = bodyOf(req).hash;
+  const hash = typeof raw === 'string' ? raw.trim() : '';
+  if (!HASH.test(hash)) throw new BadRequest('A transaction hash is 0x and 64 characters of 0-9 and a-f.', 'hash');
+  const lower = hash.toLowerCase();
+  if (!stageRecorded(trade, stage)) throw new BadRequest(`Record the ${STAGE_NAMES[stage]} first.`, 'stage');
+  const row = db
+    .transaction(() => {
+      const other = prepare('SELECT trade_id FROM stage_tx WHERE stage = ? AND hash = ? AND trade_id != ?').get(
+        stage,
+        lower,
+        trade.id,
+      );
+      if (other) throw new BadRequest(`That transaction is already the ${STAGE_NAMES[stage]} of trade #${other.trade_id}.`, 'hash');
+      prepare(
+        'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
+          "ON CONFLICT (trade_id, stage) DO UPDATE SET hash = excluded.hash, source = 'manual', found_at = excluded.found_at",
+      ).run(trade.id, stage, lower, 'manual', new Date().toISOString());
+      return selectStageTx.get(trade.id, stage);
+    })
+    .immediate();
+  res.json(txView(row));
+});
+
+app.delete('/api/trades/:id/tx/:stage', (req, res) => {
+  const target = txTarget(req, res);
+  if (!target) return;
+  const info = prepare('DELETE FROM stage_tx WHERE trade_id = ? AND stage = ?').run(target.trade.id, target.stage);
+  if (info.changes === 0) return res.status(404).json({ error: 'No transaction is stored for that stage.' });
   res.status(204).end();
 });
 

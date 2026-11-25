@@ -183,3 +183,16 @@ export function reportConfig() {
 }
 
 export const configPath = FILE;
+
+/**
+ * The Etherscan API key, for finding a trade's transactions (etherscan.js),
+ * or why there is none: a sentence for the card that asked. Read like the
+ * Telegram token - the shell first, then the file - and, like it, never sent
+ * to the browser.
+ */
+export function etherscanKey() {
+  const key = get('ETHERSCAN_API_KEY');
+  if (key) return { key, reason: null };
+  const name = path.basename(FILE);
+  return { key: null, reason: fileProblem || `No ETHERSCAN_API_KEY in ${name}, so Etherscan cannot be searched.` };
+}

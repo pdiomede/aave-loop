@@ -59,6 +59,10 @@ starts with no wallet. Then check, behind the password:
 - Deleting a wallet a trade names is refused, naming the trade.
 - In both themes, an idle field has a visible edge.
 - Wallets > Simulation lists every trade under its wallet, then No wallet.
+- **Etherscan:** add `ETHERSCAN_API_KEY=...` (your key from etherscan.io > API Keys)
+  to `/var/www/aave/config.env`, then restart. Without it the magnifier on a
+  closed trade's stages says the key is missing. Then open a closed trade in
+  Simulation and press each magnifier: each hash should open its transaction.
 
 Running 2.2.0 beside 2.2.1 on one database is safe (2.2.0 never names the column),
 but a 2.2.0 page cannot show or set a wallet.
@@ -265,8 +269,9 @@ help - what this bot can do
 
 ## To build next
 
-- **Wallets > Simulation.** Lists each wallet's trades and totals (25 Nov); what it
-  should simulate beyond that is still to be decided.
+- **Wallets > Simulation.** Lists each wallet's trades and totals, and finds a closed
+  trade's transactions on Etherscan (25 Nov); what it should simulate beyond that is
+  still to be decided.
 - **The wallet elsewhere.** A trade's wallet shows on its Borrowed card only: not in
   the CSV, Stats or Telegram yet.
 

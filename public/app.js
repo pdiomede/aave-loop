@@ -752,6 +752,16 @@ const state = {
   // it had when Rename was pressed. Kept here rather than read off the input,
   // because a price landing redraws the view and the input with it.
   walletRename: null,
+  // Wallets > Simulation. The hash behind each stage, `{ [tradeId]: { [stage]:
+  // { hash, source, found_at } } }`, null until read; the rows expanded there;
+  // the searches on the wire and the last answer of one that found nothing (or
+  // found one of several), by `tradeId:stage`; and a hash being pasted, by the
+  // same key - in state, since a price landing redraws the view.
+  stageTxs: null,
+  simOpenIds: new Set(),
+  txBusy: new Set(),
+  txNote: {},
+  txPaste: {},
 };
 
 /* --------------------------------------------------------------- api calls */
@@ -910,6 +920,27 @@ async function loadWallets() {
     // does not make it untrue.
     if (seq !== walletSeq) return;
     state.walletsError = err.status ? err.message : 'Could not reach the server.';
+  }
+}
+
+/**
+ * The stored transaction hashes, for Simulation. Guarded as the wallets are:
+ * a find, a paste or a clear landing while this is on the wire would
+ * otherwise be undone on screen by its reply.
+ */
+let txSeq = 0;
+let txWriteSeq = 0;
+
+async function loadStageTxs() {
+  const seq = ++txSeq;
+  const wroteAt = txWriteSeq;
+  try {
+    const map = await api('/api/stage-txs');
+    if (seq !== txSeq || wroteAt !== txWriteSeq) return;
+    state.stageTxs = map || {};
+  } catch {
+    // A list on screen stays; with none yet, the cards offer the search.
+    if (seq === txSeq && state.stageTxs === null) state.stageTxs = {};
   }
 }
 
@@ -2343,10 +2374,13 @@ function underUsersHands() {
 
 function tradeRow(t, index, total, { readOnly = false } = {}) {
   const d = t.derived || derive(t);
-  // A read-only row (the Wallets tab's Simulation) never opens: its trade is
-  // edited on the Trades tab, and two open copies of one stage form would
-  // fight over `captureDraft`.
+  // A read-only row (the Wallets tab's Simulation) never opens the stage
+  // editors: its trade is edited on the Trades tab, and two open copies of one
+  // stage form would fight over `captureDraft`. A closed one opens there into
+  // its slim cards instead (`simStageCards`), by its own set and attribute.
   const isOpen = !readOnly && state.openIds.has(t.id);
+  const simToggle = readOnly && d.status === 'CLOSED';
+  const simOpen = simToggle && state.simOpenIds.has(t.id);
 
   // A trade has an end date only once the loan is repaid, so that is the only
   // time a range is shown. While it is still running the borrow date stands
@@ -2369,13 +2403,15 @@ function tradeRow(t, index, total, { readOnly = false } = {}) {
   ${
     // Not `.row` and no `data-trade` when read-only: the body's click handler
     // opens any `.row`, and would expand the trade on the Trades tab instead.
-    readOnly
-      ? '<tr class="row-static">'
-      : `<tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0" aria-expanded="${isOpen}">`
+    simToggle
+      ? `<tr class="row-static row-static--toggle ${simOpen ? 'is-open' : ''}" data-sim-trade="${t.id}" tabindex="0" aria-expanded="${simOpen}">`
+      : readOnly
+        ? '<tr class="row-static">'
+        : `<tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0" aria-expanded="${isOpen}">`
   }
     <td data-label="Trade date">
       <div class="row__asset">
-        ${readOnly ? '' : '<span class="caret"></span>'}
+        ${readOnly && !simToggle ? '' : '<span class="caret"></span>'}
         ${coin(t.borrow_currency)}
         <span class="row__stack">
           <span>${isNum(d.borrowUsd) ? usd(d.borrowUsd) : RATE_MISSING}</span>
@@ -2405,6 +2441,7 @@ function tradeRow(t, index, total, { readOnly = false } = {}) {
     <td data-label="Annualized" class="num">${isNum(d.pct) ? `<span class="${pctClass(d.pct)}">${pct(d.pct)}</span>` : '<span class="muted">-</span>'}</td>
     <td data-label="Status"><span class="pill pill--${d.status}">${d.status}</span></td>
   </tr>
+  ${simOpen ? `<tr class="detail"><td colspan="8"><div class="stages">${simStageCards(t, d)}</div></td></tr>` : ''}
   ${
     isOpen
       ? `<tr class="detail"><td colspan="8">
@@ -3627,6 +3664,180 @@ function renderWalletsView() {
  */
 /* ------------------------------------------------------ simulation groups */
 
+const MAGNIFIER_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" /></svg>`;
+
+const txKey = (id, stage) => `${id}:${stage}`;
+const shortHash = (h) => `${h.slice(0, 10)}…${h.slice(-6)}`;
+const TX_NOUN = { borrow: 'loan', buy: 'purchase', sell: 'sale', repay: 'repayment' };
+
+/**
+ * A slim card's last line: the stage's transaction, linked to Etherscan, with
+ * where it came from and a way to forget it; or the search on the wire; or
+ * why the last one found nothing, with a field to paste the hash instead.
+ */
+function txLine(t, stage) {
+  const key = txKey(t.id, stage);
+  const stored = state.stageTxs?.[t.id]?.[stage];
+  const note = state.txNote[key];
+  if (stored) {
+    const url = `${NETWORK_META.ethereum.txExplorer}${stored.hash}`;
+    const others = note?.others ? `<small class="tx-line__note">${note.others + 1} transfers fit equally; check it.</small>` : '';
+    return `<div class="tx-line">
+      <a class="tx-line__hash" href="${esc(url)}" target="_blank" rel="noopener noreferrer"
+        aria-label="Open the ${TX_NOUN[stage]} transaction on Etherscan">${esc(shortHash(stored.hash))}<span aria-hidden="true"> &#8599;</span></a>
+      <span class="tx-line__source">${stored.source === 'manual' ? 'pasted' : 'found'}</span>
+      <button class="btn btn--ghost btn--sm tx-line__clear" type="button" data-tx-clear="${key}"
+        aria-label="Forget the ${TX_NOUN[stage]} transaction">&times;</button>
+      ${others}
+    </div>`;
+  }
+  if (state.txBusy.has(key)) return '<div class="tx-line"><span class="muted">Searching Etherscan…</span></div>';
+  const reason = note?.reason ? `<p class="tx-line__reason">${esc(note.reason)}</p>` : '';
+  if (state.txPaste[key] === undefined) {
+    return `<div class="tx-line">${reason}<button class="link-btn" type="button" data-tx-paste="${key}">Paste a hash</button></div>`;
+  }
+  return `<div class="tx-line">${reason}
+    <form class="tx-paste" id="tx-paste-${key.replace(':', '-')}" data-tx-form="${key}" novalidate>
+      <div class="field" data-field="hash">
+        <div class="control"><input name="hash" type="text" value="${esc(state.txPaste[key])}" placeholder="0x…"
+          aria-label="Transaction hash of the ${TX_NOUN[stage]}" aria-describedby="tx-${key.replace(':', '-')}-hint"
+          autocomplete="off" spellcheck="false" /></div>
+        <div class="field__hint" id="tx-${key.replace(':', '-')}-hint" data-hint="hash"></div>
+      </div>
+      <span class="form__error" data-form-error role="alert"></span>
+      <span class="tx-paste__buttons">
+        <button class="btn btn--ghost btn--sm" type="button" data-tx-paste-cancel="${key}">Cancel</button>
+        <button class="btn btn--primary btn--sm" type="submit">Save</button>
+      </span>
+    </form>
+  </div>`;
+}
+
+/**
+ * A closed trade opened in Simulation: each stage's few figures, and its
+ * transaction. The figures are the stage cards' own, drawn by the same
+ * formatters, so the two views read alike.
+ */
+function simStageCards(t, d) {
+  const c = unitOf(t);
+  const row = (label, value) => `<div class="stage__row"><dt>${label}</dt><dd>${value}</dd></div>`;
+  const row2 = (label, value, sub) =>
+    `<div class="stage__row"><dt>${label}</dt><dd>${value}${
+      d.isUsdPegged || !sub ? '' : `<small class="fx-note">${sub}</small>`
+    }</dd></div>`;
+  const platform = PLATFORM_META[t.platform]
+    ? `<span class="platform-name">${platformMark(t.platform)}${esc(PLATFORM_META[t.platform].label)}</span>`
+    : '<span class="muted">-</span>';
+  const cards = [
+    ['borrow', 'Borrowed', row('Platform', platform) + row('Date', fmtDate(t.borrow_date)) +
+      row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow))],
+    ['buy', 'Bought', row('Date', fmtDate(t.buy_date)) +
+      row2('Spent', money(t.buy_amount, c), fxNote(d.buyUsd, d.fx.buy)) + row('Bought', assetAmount(t.buy_eth, t))],
+    ['sell', 'Sold', row('Date', fmtDate(t.sell_date)) + row('Sold', assetAmount(t.sell_eth, t)) +
+      row2('Received', money(t.sell_amount, c), fxNote(d.sellUsd, d.fx.sell))],
+    ['repay', 'Repaid', row('Date', fmtDate(t.repay_date)) +
+      row2('Repaid', money(t.repay_amount, c), fxNote(d.repayUsd, d.fx.repay))],
+  ];
+  const noWallet = t.wallet_id == null;
+  return cards
+    .map(([stage, name, rows]) => {
+      const key = txKey(t.id, stage);
+      const tip = noWallet ? 'Link a wallet on the Borrowed card first' : 'Find on Etherscan';
+      const find = state.stageTxs?.[t.id]?.[stage]
+        ? ''
+        : `<button class="btn btn--ghost btn--sm sim-find" type="button" data-tx-find="${key}" data-tip="${tip}"
+            aria-label="${noWallet ? tip : `Find the ${TX_NOUN[stage]} on Etherscan`}"${
+              noWallet || state.txBusy.has(key) ? ' disabled' : ''
+            }>${MAGNIFIER_SVG}</button>`;
+      return `<article class="stage is-done sim-card">
+        <header class="stage__head">
+          <span class="stage__marker">&#10003;</span>
+          <span class="stage__name">${name}</span>
+          ${stage === 'buy' || stage === 'sell' ? assetBadge(t) : ''}
+          ${find}
+        </header>
+        <dl class="stage__rows">${rows}</dl>
+        ${txLine(t, stage)}
+      </article>`;
+    })
+    .join('');
+}
+
+/** The magnifier: search Etherscan for one stage, and keep what it finds. */
+async function findTx(key) {
+  if (state.txBusy.has(key)) return;
+  const [id, stage] = key.split(':');
+  state.txBusy.add(key);
+  delete state.txNote[key];
+  renderSimulation();
+  try {
+    const r = await api(`/api/trades/${id}/tx/${stage}/find`, { method: 'POST', body: '{}' });
+    if (r.found) {
+      txWriteSeq += 1;
+      state.stageTxs = { ...(state.stageTxs ?? {}), [id]: { ...(state.stageTxs?.[id] ?? {}), [stage]: { hash: r.hash, source: r.source, found_at: r.found_at } } };
+      if (r.others) state.txNote[key] = { others: r.others };
+    } else {
+      state.txNote[key] = { reason: r.reason };
+    }
+  } catch (err) {
+    state.txNote[key] = { reason: err.status ? err.message : 'Could not reach the server.' };
+  } finally {
+    state.txBusy.delete(key);
+  }
+  renderSimulation();
+  // Focus to what replaced the magnifier: the link, or the reason's paste.
+  const card = document.querySelector(`[data-tx-clear="${key}"], [data-tx-paste="${key}"]`)?.closest('.sim-card');
+  card?.querySelector('.tx-line__hash, [data-tx-paste]')?.focus();
+}
+
+/** Forget a stage's hash, so it can be searched for again or pasted. */
+async function clearTx(key) {
+  const [id, stage] = key.split(':');
+  try {
+    await api(`/api/trades/${id}/tx/${stage}`, { method: 'DELETE' });
+  } catch (err) {
+    if (err.status !== 404) {
+      toast(err.status ? err.message : 'Could not reach the server, so the hash is still kept.');
+      return;
+    }
+  }
+  txWriteSeq += 1;
+  if (state.stageTxs?.[id]) {
+    const { [stage]: _gone, ...rest } = state.stageTxs[id];
+    state.stageTxs = { ...state.stageTxs, [id]: rest };
+  }
+  delete state.txNote[key];
+  renderSimulation();
+  document.querySelector(`[data-tx-find="${key}"]`)?.focus();
+}
+
+async function pasteTx(form) {
+  const key = form.dataset.txForm;
+  const [id, stage] = key.split(':');
+  const hash = form.elements.hash.value.trim();
+  if (!/^0x[0-9a-fA-F]{64}$/.test(hash)) {
+    showFormError(form, 'A transaction hash is 0x and 64 characters of 0-9 and a-f.', 'hash');
+    return;
+  }
+  const done = beginSubmit(form);
+  if (!done) return;
+  try {
+    const row = await api(`/api/trades/${id}/tx/${stage}`, { method: 'PUT', body: JSON.stringify({ hash }) });
+    txWriteSeq += 1;
+    state.stageTxs = { ...(state.stageTxs ?? {}), [id]: { ...(state.stageTxs?.[id] ?? {}), [stage]: row } };
+    delete state.txPaste[key];
+    delete state.txNote[key];
+    renderSimulation();
+    document.querySelector(`[data-tx-clear="${key}"]`)?.closest('.sim-card')?.querySelector('.tx-line__hash')?.focus();
+  } catch (err) {
+    showFormError(form, err.status ? err.message : 'Could not reach the server.', 'hash');
+  } finally {
+    done();
+  }
+}
+
 // The Trades table's columns, as plain headings: these tables do not sort,
 // they follow the Trades tab's order.
 const SIM_HEAD = `<thead><tr>
@@ -3711,7 +3922,7 @@ function renderSimulation() {
 }
 
 async function refreshWalletsView() {
-  await Promise.all([loadWallets(), loadTrades().catch(() => false)]);
+  await Promise.all([loadWallets(), loadTrades().catch(() => false), loadStageTxs()]);
   if (state.view === 'wallets') renderWalletsView();
 }
 
@@ -4965,6 +5176,36 @@ function wire() {
       return;
     }
 
+    const tx = e.target.closest('[data-tx-find], [data-tx-clear], [data-tx-paste], [data-tx-paste-cancel]');
+    if (tx) {
+      const { txFind, txClear, txPaste, txPasteCancel } = tx.dataset;
+      if (txFind) findTx(txFind);
+      else if (txClear) clearTx(txClear);
+      else if (txPaste) {
+        state.txPaste[txPaste] = '';
+        renderSimulation();
+        document.querySelector(`[data-tx-form="${txPaste}"] input`)?.focus();
+      } else if (txPasteCancel) {
+        delete state.txPaste[txPasteCancel];
+        renderSimulation();
+        document.querySelector(`[data-tx-paste="${txPasteCancel}"]`)?.focus();
+      }
+      return;
+    }
+
+    // A closed trade's row in Simulation: its slim cards, by its own set, so
+    // the Trades tab's open rows are not touched. Not from a link or button
+    // inside the cards, which sit in the next row anyway.
+    const simRow = e.target.closest('[data-sim-trade]');
+    if (simRow && !e.target.closest('button, a')) {
+      const id = Number(simRow.dataset.simTrade);
+      if (state.simOpenIds.has(id)) state.simOpenIds.delete(id);
+      else state.simOpenIds.add(id);
+      renderSimulation();
+      document.querySelector(`[data-sim-trade="${id}"]`)?.focus();
+      return;
+    }
+
     const wallet = e.target.closest('[data-wallet-rename], [data-wallet-cancel], [data-wallet-delete], [data-wallet-copy]');
     if (wallet) {
       const { walletRename, walletCancel, walletDelete, walletCopy } = wallet.dataset;
@@ -5198,7 +5439,7 @@ function wire() {
     // The row itself, not a chip inside it: Enter on a "no rate" chip opened
     // the row and dropped focus, the click handler refocusing only a row that
     // had it.
-    const row = e.target.closest('.row');
+    const row = e.target.closest('.row, [data-sim-trade]');
     if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) {
       e.preventDefault();
       row.click();
@@ -5272,6 +5513,12 @@ function wire() {
       form.querySelector('[data-form-error]').textContent = '';
     }
 
+    // A hash being pasted lives in state too (`txLine`).
+    if (form.dataset.txForm) {
+      if (state.txPaste[form.dataset.txForm] !== undefined) state.txPaste[form.dataset.txForm] = input.value;
+      return;
+    }
+
     // A rename's text lives in state, so a redraw puts it back (`walletRow`).
     if (form.dataset.walletForm) {
       if (form.dataset.walletForm === 'rename' && state.walletRename?.id === Number(form.dataset.wallet)) {
@@ -5308,6 +5555,9 @@ function wire() {
       if (!input.matches('input[name]')) return;
       const form = input.closest('form');
       if (!form || input.value.trim() === '') return;
+      // A pasted hash is judged on Save, not here: to `validateField` it is a
+      // figure that is not a number.
+      if (form.dataset.txForm) return;
       // A wallet form judges its own fields: to `validateField` a name is a
       // figure that is not a number.
       if (form.dataset.walletForm) {
@@ -5331,6 +5581,12 @@ function wire() {
   );
 
   document.body.addEventListener('submit', (e) => {
+    const txForm = e.target.closest('[data-tx-form]');
+    if (txForm) {
+      e.preventDefault();
+      pasteTx(txForm);
+      return;
+    }
     const walletForm = e.target.closest('[data-wallet-form]');
     if (walletForm) {
       e.preventDefault();

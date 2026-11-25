@@ -66,7 +66,7 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | `ETHROUNDTRIP_FX_OFFLINE=1` / `ETHROUNDTRIP_ETH_OFFLINE=1` | no network lookups at all |
 | `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` / `ETHROUNDTRIP_WBTC_PRICE=96500` | a fixed ETH / BTC / WBTC price, so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
 | `ETHROUNDTRIP_BOT_OFF=1` | no Telegram long-poll |
-| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` | point at a mock |
+| `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` / `ETHROUNDTRIP_ETHERSCAN_URL` | point at a mock |
 | `ETHROUNDTRIP_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |
 | `ETHROUNDTRIP_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
 
@@ -202,7 +202,7 @@ fullest year, all three assets included, leaves about 8.5pt. It is ASCII through
 escapes, the logo hex-encoded - so the xref offsets are string lengths.
 
 `env.js`, `fx.js`, `prices.js`, `db.js`, `telegram.js`, `config.js`, `alerts.js`, `bot.js`,
-`report.js` and `format.js` sit at the root **because they are server-only** — the
+`report.js`, `etherscan.js` and `format.js` sit at the root **because they are server-only** — the
 browser is served `lib/` wholesale. `format.js` duplicates some of `public/app.js`'s
 formatters on purpose: the browser's escape their output for `innerHTML`, which would
 be wrong in a Telegram message.
@@ -372,7 +372,35 @@ trade under its wallet, then No wallet, in the Trades table's order, with each
 group's figures from `summarize` and `openGainsUsd` over its trades alone. Its rows
 are `tradeRow(..., { readOnly: true })`: `.row-static`, never `.row` or `data-trade`,
 because the body's click handler opens any `.row` and would expand the trade on the
-Trades tab.
+Trades tab. A closed trade's row there opens by its own `data-sim-trade` and
+`state.simOpenIds` into slim cards (`simStageCards`), each with a magnifier that
+finds the stage's transaction on Etherscan.
+
+### Transactions on Etherscan
+
+`etherscan.js` (server-only) finds a stage's transaction as the ERC-20 transfer of the
+trade's stablecoin into the wallet (loan, sale) or out of it (purchase, repayment), in
+the stage's days ±1 (the typed date is local, the chain UTC), within 1% of its amount:
+one `account/tokentx` over the wallet between two blocks looked up by time. **A token
+is matched by its contract, never its symbol** - wallets are sent fake same-named
+tokens (address poisoning). Ranked by amount (within 0.05% or a cent is exact), then
+for a purchase or sale by the asset leg of the same transaction (WETH, cbBTC, WBTC)
+against the typed quantity; still tied, the loan is the last before its purchase, the
+repayment the first after its sale, and a hash another trade holds for that stage is
+never offered. All three rules were needed on the first real wallet: two loops one
+evening each borrowed and swapped exactly 30,000 EURC. The key is `ETHERSCAN_API_KEY`
+in config.env (`etherscanKey` in config.js), never sent to the browser and redacted
+from every message; calls are queued 400 ms apart (the free tier allows 3 a second)
+and retried twice on its rate limit; settled block numbers are cached for the
+process and a window's transfers for two minutes.
+
+Found or pasted hashes live in `stage_tx` (db.js), one per trade and stage, so a
+stage is searched once. `POST /api/trades/:id/tx/:stage/find` answers a stored hash
+without searching, stores a found one only if the trade's `txBasis` fields are as the
+search read them, and answers 200 found or not (the card shows why). A PATCH that
+changes a stage's date, amount or quantity, or the trade's wallet, coin or asset,
+deletes that stage's searched hash in the same transaction; a pasted one (`PUT`) is
+kept. `scripts/check-server.mjs` mocks Etherscan on loopback.
 
 ### Platforms
 
