@@ -995,8 +995,9 @@ await check('an edit clears the hashes found from what it changed, and keeps pas
   // The same figure again changes nothing.
   await api('PATCH', `/api/trades/${t.id}`, { buy_amount: '30000' });
   assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]).sort(), ['borrow', 'buy', 'repay', 'sell']);
+  // The purchase's hash goes, and the loan's, found by way of the purchase.
   await api('PATCH', `/api/trades/${t.id}`, { buy_amount: '29990' });
-  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]).sort(), ['borrow', 'repay', 'sell']);
+  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]).sort(), ['repay', 'sell']);
   // Another wallet: every searched hash goes, the pasted one stays.
   const other = (await api('POST', '/api/wallets', { name: 'Scan two', address: '0x52908400098527886E0F7030069857D2E4169EE7' })).data;
   await api('PATCH', `/api/trades/${t.id}`, { wallet_id: other.id });
@@ -1020,6 +1021,62 @@ await check("Etherscan's refusals are said in words, never with the key", async 
   assert.match(echoed.data.reason, /<key>/);
   mock.es.error = null;
   await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a loan is settled against a pasted purchase, and is no surer than a guessed one', async () => {
+  // Two loops one evening swapped for native ETH: no WETH leg tells the
+  // purchases apart, so the purchase is a guess, and so is the loan it settles.
+  const [day, next] = ['2026-08-11', '2026-08-12'];
+  mock.es.rows = [
+    xfer(41, `${day}T21:51:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(42, `${day}T21:53:00Z`, EURC_C, SCAN, ROUTER, 30000),
+    xfer(43, `${day}T21:59:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(44, `${day}T22:01:00Z`, EURC_C, SCAN, ROUTER, 30000),
+  ];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  const buy = (await find(t.id, 'buy')).data;
+  assert.equal(buy.others, 1);
+  const guessed = (await find(t.id, 'borrow')).data;
+  assert.equal(guessed.others, 1, 'a loan settled by a guessed purchase is a guess too');
+  // Checked on Etherscan, the purchase is #44: pasted, the loan follows it -
+  // and the loan found by way of the old purchase is forgotten with it.
+  await api('PUT', `/api/trades/${t.id}/tx/buy`, { hash: hashOf(44) });
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id].borrow, undefined);
+  const settled = (await find(t.id, 'borrow')).data;
+  assert.deepEqual([settled.hash, settled.others], [hashOf(43), 0]);
+  // Forgetting the purchase forgets the loan found by way of it, and only that.
+  await api('PUT', `/api/trades/${t.id}/tx/repay`, { hash: hashOf(45) });
+  assert.equal((await api('DELETE', `/api/trades/${t.id}/tx/buy`)).status, 204);
+  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id] ?? {}), ['repay']);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('correcting a purchase forgets the loan found by way of it', async () => {
+  const [day, next] = ['2026-08-14', '2026-08-15'];
+  mock.es.rows = twoLoops(SCAN, day, next);
+  // Really the second loop (loan #3, purchase #4), its quantity mistyped as the
+  // first loop's: the loan found is the first loop's.
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next, { buy_eth: '12.6591', sell_eth: '12.6591' }))).data;
+  assert.equal((await find(t.id, 'borrow')).data.hash, hashOf(1));
+  await api('PATCH', `/api/trades/${t.id}`, { buy_eth: '12.6491', sell_eth: '12.6491' });
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id]?.borrow, undefined);
+  assert.equal((await find(t.id, 'borrow')).data.hash, hashOf(3));
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('two searches at once never link one transfer to two trades', async () => {
+  const day = '2026-08-17';
+  mock.es.rows = [
+    xfer(31, `${day}T11:00:00Z`, EURC_C, POOL, SCAN, 20000),
+    xfer(32, `${day}T15:00:00Z`, EURC_C, POOL, SCAN, 20000),
+  ];
+  const make = () => api('POST', '/api/trades', borrow({ borrow_date: day, borrow_amount: '20000', borrow_currency: 'EURC', wallet_id: scanWallet.id }));
+  const [a, b] = [(await make()).data, (await make()).data];
+  const [ra, rb] = await Promise.all([find(a.id, 'borrow'), find(b.id, 'borrow')]);
+  assert.equal(ra.data.found && rb.data.found, true);
+  assert.deepEqual([ra.data.hash, rb.data.hash].sort(), [hashOf(31), hashOf(32)]);
+  await api('DELETE', `/api/trades/${a.id}`);
+  await api('DELETE', `/api/trades/${b.id}`);
 });
 
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {

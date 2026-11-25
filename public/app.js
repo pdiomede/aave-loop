@@ -3675,6 +3675,13 @@ const MAGNIFIER_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="non
 const txKey = (id, stage) => `${id}:${stage}`;
 const shortHash = (h) => `${h.slice(0, 10)}…${h.slice(-6)}`;
 const TX_NOUN = { borrow: 'loan', buy: 'purchase', sell: 'sale', repay: 'repayment' };
+// The loan is found by way of the purchase, the repayment by way of the sale
+// (`ANCHOR` in etherscan.js): a searched one goes when that hash changes.
+const TX_DEPENDENT = { buy: 'borrow', sell: 'repay' };
+const searchedDependent = (id, stage) => {
+  const dep = TX_DEPENDENT[stage];
+  return dep && state.stageTxs?.[id]?.[dep]?.source === 'search' ? dep : null;
+};
 
 /**
  * A slim card's last line: the stage's transaction, linked to Etherscan, with
@@ -3813,7 +3820,8 @@ async function clearTx(key) {
       `<code class="wallet-address__hex">${esc(stored.hash)}</code> is no longer linked to trade #${esc(id)}. ` +
       (stored.source === 'manual'
         ? 'It was pasted by hand, so paste it again to get it back.'
-        : 'The magnifier can find it again.'),
+        : 'The magnifier can find it again.') +
+      (searchedDependent(id, stage) ? ` The ${TX_NOUN[searchedDependent(id, stage)]} found by way of it is forgotten too.` : ''),
     confirmLabel: 'Forget',
   });
   if (!ok) {
@@ -3836,6 +3844,8 @@ async function clearTx(key) {
   delete state.txNote[key];
   renderSimulation();
   document.querySelector(`[data-tx-find="${key}"]`)?.focus();
+  // The server forgets a loan or repayment found by way of this one too.
+  if (TX_DEPENDENT[stage]) loadStageTxs().then(renderSimulation);
 }
 
 async function pasteTx(form) {
@@ -3856,6 +3866,7 @@ async function pasteTx(form) {
     delete state.txNote[key];
     renderSimulation();
     document.querySelector(`[data-tx-clear="${key}"]`)?.closest('.sim-card')?.querySelector('.tx-line__hash')?.focus();
+    if (TX_DEPENDENT[stage]) loadStageTxs().then(renderSimulation);
   } catch (err) {
     showFormError(form, err.status ? err.message : 'Could not reach the server.', 'hash');
   } finally {

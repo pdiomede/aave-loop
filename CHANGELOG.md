@@ -12,6 +12,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Wallets > Simulation lists every trade under its wallet,** in the Trades table's columns and order, read-only, with each wallet's realized net gain, closed and open counts and open estimate; trades with none are under No wallet, so the groups add up to the header. Each group's trades fold under its heading, closed when the page opens.
 - **A closed trade in Simulation opens into its four stages,** each with a magnifier that finds its transaction on Etherscan and links it. Matched by the stablecoin's contract (not its name, so look-alike tokens are ignored), direction, amount and, for a swap, the asset received or sent; found once and kept. A hash can be forgotten (the × asks first) or pasted by hand; editing what a found one was matched on forgets it. The four cards line up, heading, figures and transaction alike. Needs `ETHERSCAN_API_KEY` in config.env.
 
+### Fixed
+
+- **A loan or repayment found on Etherscan follows its purchase or sale.** One found while the purchase's quantity was mistyped stayed linked to the other loop's loan; it is now forgotten when the purchase is corrected, pasted or forgotten, settled against a pasted purchase, flagged when the purchase was itself a guess, and two searches run together no longer link one transfer to two trades.
+
 ### Changed
 
 - **Fields have a stronger edge,** darker in the light theme and brighter in the dark one, so an idle field is easy to find on its card.

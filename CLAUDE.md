@@ -386,8 +386,13 @@ is matched by its contract, never its symbol** - wallets are sent fake same-name
 tokens (address poisoning). Ranked by amount (within 0.05% or a cent is exact), then
 for a purchase or sale by the asset leg of the same transaction (WETH, cbBTC, WBTC)
 against the typed quantity; still tied, the loan is the last before its purchase, the
-repayment the first after its sale, and a hash another trade holds for that stage is
-never offered. All three rules were needed on the first real wallet: two loops one
+repayment the first after its sale (`ANCHOR`), and a hash another trade holds for that
+stage is never offered. The purchase or sale it is settled against is the trade's own
+*pasted* hash when it has one; otherwise it is worked out again, and a guess passes
+its doubt (`others`) on to the loan, since a searched hash's doubt is not stored. So
+`txBasis` of the loan and repayment includes their anchor's fields, and pasting or
+forgetting a purchase or sale forgets the searched loan or repayment found by way of
+it (`dropDependent`). All three rules were needed on the first real wallet: two loops one
 evening each borrowed and swapped exactly 30,000 EURC. The key is `ETHERSCAN_API_KEY`
 in config.env (`etherscanKey` in config.js), never sent to the browser and redacted
 from every message; calls are queued 400 ms apart (the free tier allows 3 a second)
@@ -397,7 +402,10 @@ process and a window's transfers for two minutes.
 Found or pasted hashes live in `stage_tx` (db.js), one per trade and stage, so a
 stage is searched once. `POST /api/trades/:id/tx/:stage/find` answers a stored hash
 without searching, stores a found one only if the trade's `txBasis` fields are as the
-search read them, and answers 200 found or not (the card shows why). A PATCH that
+search read them and no other trade took that hash meanwhile (re-read inside the
+immediate transaction, then searched once more past it: two magnifiers pressed
+together linked one loan to two trades), and answers 200 found or not (the card shows
+why). A PATCH that
 changes a stage's date, amount or quantity, or the trade's wallet, coin or asset,
 deletes that stage's searched hash in the same transaction; a pasted one (`PUT`) is
 kept. `scripts/check-server.mjs` mocks Etherscan on loopback.

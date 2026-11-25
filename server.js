@@ -61,7 +61,7 @@ import { startBotPoller, stopBotPoller, botTickDone } from './bot.js';
 import { setting, oldSettingsNote } from './env.js';
 import { labelOf } from './lib/input.js';
 import { NETWORKS, parseAddress, walletName, walletNameError } from './lib/address.js';
-import { TX_STAGES, findStageTx, stageRecorded, txBasis } from './etherscan.js';
+import { ANCHOR, TX_STAGES, findStageTx, stageRecorded, txBasis } from './etherscan.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -1322,28 +1322,70 @@ function claimedHashes(tradeId) {
 // waits for the first rather than asking Etherscan the same thing again.
 const txSearches = new Map();
 
+/**
+ * The trade's own pasted hashes, by stage: what a loan's or repayment's tie is
+ * settled against. Pasted only. A searched one may itself have been a guess
+ * between equal fits, and that doubt is not stored, so it is worked out again
+ * with its doubt, which the loan then carries; taken as fact, a guessed
+ * purchase made the loan it settled read as certain.
+ */
+function ownHashes(tradeId) {
+  return Object.fromEntries(
+    prepare("SELECT stage, hash FROM stage_tx WHERE trade_id = ? AND source = 'manual'").all(tradeId).map((r) => [r.stage, r.hash]),
+  );
+}
+
+// Which stage's searched hash was found by way of this one's (`ANCHOR`).
+const DEPENDENT = Object.fromEntries(Object.entries(ANCHOR).map(([stage, anchor]) => [anchor, stage]));
+
+/** Forget the searched hash that was settled by this stage's, now changed. */
+function dropDependent(tradeId, stage) {
+  if (!DEPENDENT[stage]) return 0;
+  return prepare("DELETE FROM stage_tx WHERE trade_id = ? AND stage = ? AND source = 'search'").run(tradeId, DEPENDENT[stage]).changes;
+}
+
+const takenBy = (stage, hash, tradeId) =>
+  prepare('SELECT trade_id FROM stage_tx WHERE stage = ? AND hash = ? AND trade_id != ?').get(stage, hash, tradeId);
+
 async function searchAndStore(trade, stage, wallet) {
-  const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id));
-  if (!r.found) return r;
-  // Seconds have passed. Stored only if what the search went by is unchanged,
-  // and only if nothing was stored meanwhile - by a paste, or the other copy -
-  // which then stands, and is what is answered.
-  return db
-    .transaction(() => {
-      const now = selectOne.get(trade.id);
-      if (!now) return { found: false, reason: 'The trade was deleted while it was being searched.' };
-      if (txBasis(stage).some((k) => (now[k] ?? null) !== (trade[k] ?? null))) {
-        return { found: false, reason: 'The trade was edited while it was being searched. Search again.' };
-      }
-      prepare(
-        'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
-          'ON CONFLICT (trade_id, stage) DO NOTHING',
-      ).run(trade.id, stage, r.hash, 'search', new Date().toISOString());
-      const row = selectStageTx.get(trade.id, stage);
-      const mine = row.hash === r.hash;
-      return { found: true, ...txView(row), at: mine ? r.at : null, others: mine ? r.others : 0 };
-    })
-    .immediate();
+  // Twice at most: a hash another trade took while this one searched is
+  // searched past, as it would have been had it been taken first.
+  for (let pass = 0; pass < 2; pass += 1) {
+    const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id), ownHashes(trade.id));
+    if (!r.found) return r;
+    // Seconds have passed. Stored only if what the search went by is
+    // unchanged, if no other trade took that hash meanwhile - the hashes it
+    // excluded were read before the wait, and two magnifiers pressed together
+    // linked one loan to both trades - and if nothing was stored for this
+    // stage meanwhile, by a paste or the other copy, which then stands and is
+    // what is answered.
+    const out = db
+      .transaction(() => {
+        const now = selectOne.get(trade.id);
+        if (!now) return { found: false, reason: 'The trade was deleted while it was being searched.' };
+        if (txBasis(stage).some((k) => (now[k] ?? null) !== (trade[k] ?? null))) {
+          return { found: false, reason: 'The trade was edited while it was being searched. Search again.' };
+        }
+        const taken = takenBy(stage, r.hash, trade.id);
+        if (taken) return { taken: taken.trade_id };
+        prepare(
+          'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
+            'ON CONFLICT (trade_id, stage) DO NOTHING',
+        ).run(trade.id, stage, r.hash, 'search', new Date().toISOString());
+        const row = selectStageTx.get(trade.id, stage);
+        const mine = row.hash === r.hash;
+        return { found: true, ...txView(row), at: mine ? r.at : null, others: mine ? r.others : 0 };
+      })
+      .immediate();
+    if (!out.taken) return out;
+    if (pass === 1) {
+      return {
+        found: false,
+        reason: `That transaction was linked to trade #${out.taken} while this one was searched. Search again.`,
+      };
+    }
+  }
+  return { found: false, reason: 'The search failed. Try again.' };
 }
 
 /**
@@ -1391,6 +1433,9 @@ app.put('/api/trades/:id/tx/:stage', (req, res) => {
         trade.id,
       );
       if (other) throw new BadRequest(`That transaction is already the ${STAGE_NAMES[stage]} of trade #${other.trade_id}.`, 'hash');
+      // A loan or repayment found by way of the purchase or sale this
+      // replaces was settled against the old one.
+      if (selectStageTx.get(trade.id, stage)?.hash !== lower) dropDependent(trade.id, stage);
       prepare(
         'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
           "ON CONFLICT (trade_id, stage) DO UPDATE SET hash = excluded.hash, source = 'manual', found_at = excluded.found_at",
@@ -1404,7 +1449,13 @@ app.put('/api/trades/:id/tx/:stage', (req, res) => {
 app.delete('/api/trades/:id/tx/:stage', (req, res) => {
   const target = txTarget(req, res);
   if (!target) return;
-  const info = prepare('DELETE FROM stage_tx WHERE trade_id = ? AND stage = ?').run(target.trade.id, target.stage);
+  const info = db
+    .transaction(() => {
+      const gone = prepare('DELETE FROM stage_tx WHERE trade_id = ? AND stage = ?').run(target.trade.id, target.stage);
+      if (gone.changes) dropDependent(target.trade.id, target.stage);
+      return gone;
+    })
+    .immediate();
   if (info.changes === 0) return res.status(404).json({ error: 'No transaction is stored for that stage.' });
   res.status(204).end();
 });

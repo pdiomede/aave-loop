@@ -61,10 +61,22 @@ const RULE = {
 /** What a stage needs before it can be searched: its day and its amount. */
 export const stageRecorded = (t, stage) => Boolean(t[RULE[stage].date]) && Number(t[RULE[stage].amount]) > 0;
 
-/** The fields a stored hash was found from: a change to any of them clears it. */
+/**
+ * The stage whose transaction settles a tie for this one: the loan is the
+ * last before its purchase, the repayment the first after its sale.
+ */
+export const ANCHOR = { borrow: 'buy', repay: 'sell' };
+
+/**
+ * The fields a stored hash was found from: a change to any of them clears it.
+ * A loan's or repayment's includes its anchor's, which set its window and
+ * decided its ties: a loan found while the purchase's quantity was mistyped
+ * stayed linked to the other loop's loan once the quantity was put right.
+ */
 export function txBasis(stage) {
-  const r = RULE[stage];
-  return [r.date, r.amount, r.qty, 'wallet_id', 'borrow_currency', 'asset'].filter(Boolean);
+  const own = (r) => [r.date, r.amount, r.qty].filter(Boolean);
+  const anchor = ANCHOR[stage] ? own(RULE[ANCHOR[stage]]) : [];
+  return [...own(RULE[stage]), ...anchor, 'wallet_id', 'borrow_currency', 'asset'];
 }
 
 const DAY = 86_400_000;
@@ -250,22 +262,29 @@ const same = (a, b) => a === b || Math.abs(a - b) <= SAME;
 const SAME = 1e-6;
 
 /** The best fit for a stage, or null, with how many others fitted as well. */
-function pick(rows, t, stage, wallet, claimed) {
+function pick(rows, t, stage, wallet, claimed, own = {}) {
   const list = candidates(rows, t, stage, wallet, claimed[stage] ?? new Set());
   if (!list.length) return null;
   let tied = list.filter((c) => same(c.byAmount, list[0].byAmount) && same(c.byQty, list[0].byQty));
   if (tied.length > 1) {
     // The loan is the last one before its purchase, the repayment the first
-    // after its sale; anything else, the one nearest the day typed.
-    const anchorStage = stage === 'borrow' ? 'buy' : stage === 'repay' ? 'sell' : null;
-    const anchor = anchorStage && stageRecorded(t, anchorStage) ? pick(rows, t, anchorStage, wallet, claimed) : null;
+    // after its sale; anything else, the one nearest the day typed. The
+    // purchase or sale is the trade's own stored one when it has one - a hash
+    // pasted after checking it is the purchase, where a fresh guess may be
+    // the other loop's - and otherwise found here, and a guess it was passes
+    // its doubt on: the loan it settles is no surer than it.
+    const anchorStage = ANCHOR[stage];
+    let anchor = null;
+    if (anchorStage && stageRecorded(t, anchorStage)) {
+      const kept = own[anchorStage] && rows.find((x) => lower(x.hash) === own[anchorStage]);
+      anchor = kept ? { at: Number(kept.timeStamp) * 1000, others: 0 } : pick(rows, t, anchorStage, wallet, claimed, own);
+    }
     if (anchor) {
       const ordered =
         stage === 'borrow'
           ? tied.filter((c) => c.at <= anchor.at).sort((a, b) => b.at - a.at)
           : tied.filter((c) => c.at >= anchor.at).sort((a, b) => a.at - b.at);
-      // Settled by the anchor: the one chosen is the answer, not a guess.
-      if (ordered.length) return { ...ordered[0], others: 0 };
+      if (ordered.length) return { ...ordered[0], others: anchor.others };
     }
     const noon = parseDate(t[RULE[stage].date]) + DAY / 2;
     tied = [...tied].sort((a, b) => Math.abs(a.at - noon) - Math.abs(b.at - noon));
@@ -276,18 +295,18 @@ function pick(rows, t, stage, wallet, claimed) {
 /**
  * Search Etherscan for one stage of a trade. `wallet` is the trade's
  * (`{ name, address }`); `claimed` maps each stage to the hashes other trades
- * already hold for it. Answers `{ found: true, hash, at, amount, others }` or
+ * already hold for it; `own` the trade's own stored hashes, by stage. Answers `{ found: true, hash, at, amount, others }` or
  * `{ found: false, reason }`, never throws: a search that could not be done
  * is a result the card shows.
  */
-export async function findStageTx(t, stage, wallet, claimed = {}) {
+export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
   const { key, reason } = etherscanKey();
   if (!key) return { found: false, reason };
   if (!STABLE[t.borrow_currency]) return { found: false, reason: `${t.borrow_currency} has no known contract to search for.` };
   const { from, to } = windowOf(t, stage);
   try {
     const rows = await transfersBetween(wallet.address, from, to, key);
-    const best = pick(rows, t, stage, wallet.address, claimed);
+    const best = pick(rows, t, stage, wallet.address, claimed, own);
     if (best) {
       return { found: true, hash: best.hash, at: new Date(best.at).toISOString(), amount: best.amount, others: best.others };
     }
