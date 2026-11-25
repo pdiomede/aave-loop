@@ -1,6 +1,6 @@
 /**
  * Finding a trade's transactions on Etherscan: the hash of each stage, for
- * Wallets > Simulation. Server-only, like the price and rate fetchers: it
+ * Wallets > Onchain Data. Server-only, like the price and rate fetchers: it
  * holds an API key, and the browser is served `lib/` wholesale.
  *
  * Every stage of a loop moves the trade's stablecoin into or out of its

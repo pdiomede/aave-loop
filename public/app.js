@@ -501,9 +501,10 @@ function loadSort() {
   return { ...DEFAULT_SORT };
 }
 
-// Every Stats card that folds: one Performance card per platform, and the
-// four breakdown tables. A key no longer here is dropped on load.
-const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-asset', 'by-currency', 'by-month'];
+// Every card that folds: on Stats one Performance card per platform and the
+// four breakdown tables, and on Wallets the Addresses card. A key no longer
+// here is dropped on load.
+const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-asset', 'by-currency', 'by-month', 'addresses'];
 
 function loadStatsOpen() {
   try {
@@ -766,7 +767,7 @@ const state = {
   // it had when Rename was pressed. Kept here rather than read off the input,
   // because a price landing redraws the view and the input with it.
   walletRename: null,
-  // Wallets > Simulation. The hash behind each stage, `{ [tradeId]: { [stage]:
+  // Wallets > Onchain Data. The hash behind each stage, `{ [tradeId]: { [stage]:
   // { hash, source, found_at } } }`, null until read; the rows expanded there;
   // the searches on the wire and the last answer of one that found nothing (or
   // found one of several), by `tradeId:stage`; and a hash being pasted, by the
@@ -948,7 +949,7 @@ async function loadWallets() {
 }
 
 /**
- * The stored transaction hashes, for Simulation. Guarded as the wallets are:
+ * The stored transaction hashes, for Onchain Data. Guarded as the wallets are:
  * a find, a paste or a clear landing while this is on the wire would
  * otherwise be undone on screen by its reply.
  */
@@ -2341,7 +2342,7 @@ function gainCellHtml(t, d) {
     // An estimate on an old price says so in place of the plain `est` - but
     // not in place of the warning one, which says the trade's own rate is
     // missing and today's stands in: hidden by "old price", a euro estimate
-    // on a stand-in rate was marked nowhere (Simulation's totals had the same
+    // on a stand-in rate was marked nowhere (Onchain Data's totals had the same
     // fault).
     const note = priceNote(t, d);
     const standIn = !d.fxComplete && estimateRate(t, d, state.fxNow) !== null;
@@ -2523,10 +2524,10 @@ function focusInView(el) {
 }
 
 function refreshEstimateCells() {
-  // Simulation's rows and each wallet's Est. gain are drawn from the same
+  // Onchain Data's rows and each wallet's Est. gain are drawn from the same
   // price and rate; drawn only on a visit, they kept the price they were
   // first drawn at while the header moved on.
-  if (state.view === 'wallets') renderSimulation();
+  if (state.view === 'wallets') renderOnchainData();
   if (resortByEstimate()) return;
   for (const tr of document.querySelectorAll('#table-mount tr.row[data-trade]')) {
     const t = state.trades.find((x) => String(x.id) === tr.dataset.trade);
@@ -2587,7 +2588,7 @@ function underUsersHands() {
 
 function tradeRow(t, index, total, { readOnly = false } = {}) {
   const d = t.derived || derive(t);
-  // A read-only row (the Wallets tab's Simulation) never opens the stage
+  // A read-only row (the Wallets tab's Onchain Data) never opens the stage
   // editors: its trade is edited on the Trades tab, and two open copies of one
   // stage form would fight over `captureDraft`. It opens there into its slim
   // cards instead (`simStageCards`), by its own set and attribute - any trade,
@@ -3793,6 +3794,21 @@ function walletFieldError(name, value, form) {
  * list's mount, so a price landing - which redraws the view - cannot take a
  * half-pasted address with it.
  */
+/**
+ * The Addresses card is in the page's own markup, drawn closed, so the saved
+ * state is put on it once at boot; `toggleCollapse` does the rest, as it does
+ * for the Stats cards.
+ */
+function syncAddressesFold() {
+  const button = document.getElementById('addresses-toggle');
+  if (!button) return;
+  const open = state.statsOpen.has('addresses');
+  button.setAttribute('aria-expanded', String(open));
+  button.closest('.card')?.classList.toggle('is-open', open);
+  const body = document.getElementById(button.getAttribute('aria-controls'));
+  if (body) body.hidden = !open;
+}
+
 function fillWalletForm() {
   const form = document.getElementById('wallet-form');
   if (!form || form.childElementCount) return;
@@ -3886,7 +3902,10 @@ function renderWalletsView() {
     </table></div>`;
   }
   setKeepingFocus(mount, html);
-  renderSimulation();
+  // How many there are, on the head, so a folded card still says it.
+  const count = document.getElementById('addresses-count');
+  if (count) count.textContent = state.wallets?.length ? `${state.wallets.length} ${state.wallets.length === 1 ? 'address' : 'addresses'}` : '';
+  renderOnchainData();
 }
 
 /** Read the list again and draw it: on every visit, and on coming back to the tab. */
@@ -3897,7 +3916,7 @@ function renderWalletsView() {
  * unlinked from the phone still counted, and its wallet could not be deleted
  * here although the server would have allowed it.
  */
-/* ------------------------------------------------------ simulation groups */
+/* ---------------------------------------------------- onchain data groups */
 
 const MAGNIFIER_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -3993,7 +4012,7 @@ function txLine(t, stage) {
 }
 
 /**
- * A trade opened in Simulation: each recorded stage's few figures, and its
+ * A trade opened in Onchain Data: each recorded stage's few figures, and its
  * transaction. The figures are the stage cards' own, drawn by the same
  * formatters, so the two views read alike.
  */
@@ -4073,7 +4092,7 @@ async function searchStage(key) {
   delete state.txNote[key];
   // The trade as it is asked about: the note stands for these figures only.
   const basis = txBasisOf(state.trades.find((x) => String(x.id) === id), stage);
-  renderSimulation();
+  renderOnchainData();
   let r;
   try {
     r = await api(`/api/trades/${id}/tx/${stage}/find`, { method: 'POST', body: '{}' });
@@ -4096,7 +4115,7 @@ async function searchStage(key) {
   } finally {
     state.txBusy.delete(key);
   }
-  renderSimulation();
+  renderOnchainData();
   return r;
 }
 
@@ -4168,7 +4187,7 @@ function scanPause(ms, scan) {
 
 /**
  * Get onchain data: every recorded stage of every trade that has no hash yet,
- * searched one at a time - wallet by wallet, as Simulation lists them - and
+ * searched one at a time - wallet by wallet, as Onchain Data lists them - and
  * kept as found, then a report. Run again, it picks up only what is still
  * empty. Pressed while running, it stops after the search in flight.
  */
@@ -4439,7 +4458,7 @@ async function clearTx(key) {
   // scan's find landed first, and the card kept showing it.
   if (dep) dropStageTx(id, dep);
   delete state.txNote[key];
-  renderSimulation();
+  renderOnchainData();
   document.querySelector(`[data-tx-find="${key}"]`)?.focus();
 }
 
@@ -4477,7 +4496,7 @@ async function pasteTx(form) {
     delete state.txPaste[key];
     delete state.txPasteError[key];
     delete state.txNote[key];
-    renderSimulation();
+    renderOnchainData();
     document.querySelector(`[data-tx-clear="${key}"]`)?.closest('.sim-card')?.querySelector('.tx-line__hash')?.focus();
   } catch (err) {
     state.txPasteError[key] = err.status ? err.message : 'Could not reach the server.';
@@ -4565,13 +4584,13 @@ function simGroup({ key, title, sub, network, trades }) {
 }
 
 /**
- * Wallets > Simulation: every trade under the wallet it names, read-only, in
+ * Wallets > Onchain Data: every trade under the wallet it names, read-only, in
  * the Trades table's order. Saved wallets by name, then any id the list does
  * not hold yet, then No wallet, so every trade is in exactly one group and the
  * groups add up to the ledger.
  */
-function renderSimulation() {
-  const mount = document.getElementById('simulation-mount');
+function renderOnchainData() {
+  const mount = document.getElementById('onchain-mount');
   if (!mount) return;
   let html;
   if (state.loadFailed) html = LOAD_FAILED;
@@ -4781,7 +4800,7 @@ async function removeWallet(id) {
   walletWriteSeq += 1;
   renderWalletsView();
   const left = document.querySelectorAll('[data-wallet-delete]');
-  (left.length ? left[Math.min(Math.max(at, 0), left.length - 1)] : document.getElementById('addresses-title'))?.focus();
+  (left.length ? left[Math.min(Math.max(at, 0), left.length - 1)] : document.getElementById('addresses-toggle'))?.focus();
   toast(`${w.name} deleted.`);
 }
 
@@ -5865,6 +5884,7 @@ function wire() {
 
   document.getElementById('delete-all-alerts').addEventListener('click', deleteAllAlerts);
   fillWalletForm();
+  syncAddressesFold();
 
   document.getElementById('new-trade').addEventListener('click', () => {
     state.creating = !state.creating;
@@ -5963,29 +5983,29 @@ function wire() {
       else if (txPaste) {
         state.txPaste[txPaste] = '';
         delete state.txPasteError[txPaste];
-        renderSimulation();
+        renderOnchainData();
         document.querySelector(`[data-tx-form="${txPaste}"] input`)?.focus();
       } else if (txPasteCancel) {
         delete state.txPaste[txPasteCancel];
         delete state.txPasteError[txPasteCancel];
-        renderSimulation();
+        renderOnchainData();
         document.querySelector(`[data-tx-paste="${txPasteCancel}"]`)?.focus();
       }
       return;
     }
 
-    // A wallet's group in Simulation, folded or opened.
+    // A wallet's group in Onchain Data, folded or opened.
     const group = e.target.closest('[data-sim-group]');
     if (group) {
       const key = group.dataset.simGroup;
       if (state.simGroupsOpen.has(key)) state.simGroupsOpen.delete(key);
       else state.simGroupsOpen.add(key);
-      renderSimulation();
+      renderOnchainData();
       document.querySelector(`[data-sim-group="${key}"]`)?.focus();
       return;
     }
 
-    // A closed trade's row in Simulation: its slim cards, by its own set, so
+    // A closed trade's row in Onchain Data: its slim cards, by its own set, so
     // the Trades tab's open rows are not touched. Not from a link or button
     // inside the cards, which sit in the next row anyway.
     const simRow = e.target.closest('[data-sim-trade]');
@@ -5993,7 +6013,7 @@ function wire() {
       const id = Number(simRow.dataset.simTrade);
       if (state.simOpenIds.has(id)) state.simOpenIds.delete(id);
       else state.simOpenIds.add(id);
-      renderSimulation();
+      renderOnchainData();
       document.querySelector(`[data-sim-trade="${id}"]`)?.focus();
       return;
     }

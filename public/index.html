@@ -120,13 +120,22 @@
           <div class="toolbar">
             <h2 class="toolbar__title">Wallets</h2>
           </div>
-          <section class="card" aria-labelledby="addresses-title">
-            <div class="card__head">
-              <h3 class="card__title" id="addresses-title" tabindex="-1">Addresses</h3>
-            </div>
+          <!--
+            Folds as the Stats cards do (`toggleCollapse`, key `addresses`),
+            closed until opened and then remembered; `syncAddressesFold` sets
+            it from the saved state at boot.
+          -->
+          <section class="card card--collapsible" id="addresses-card">
+            <h3 class="card__heading"><button class="card__head card__toggle" type="button" id="addresses-toggle"
+              data-collapse="addresses" aria-expanded="false" aria-controls="collapse-addresses" aria-labelledby="addresses-title">
+              <span class="card__title" id="addresses-title">Addresses</span><span class="muted" id="addresses-count"></span>
+              <svg class="card__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+            </button></h3>
+            <div id="collapse-addresses" hidden>
             <div class="card__body">
               <p class="wallets__note muted">
-                The wallets you trade from, each under a name, on Ethereum, Base, Arbitrum or Optimism. A trade names one after its platform, on its Borrowed card.
+                The wallets you trade from, each under a name, on Ethereum, Base, Arbitrum, Optimism or Solana. A trade names one after its platform, on its Borrowed card.
               </p>
               <!--
                 Outside the list's mount on purpose, and filled once by JS: a price
@@ -136,10 +145,11 @@
               <form id="wallet-form" data-wallet-form="add" novalidate></form>
             </div>
             <div id="wallets-mount"></div>
+            </div>
           </section>
-          <section class="card" aria-labelledby="simulation-title">
+          <section class="card" aria-labelledby="onchain-title">
             <div class="card__head sim-head">
-              <h3 class="card__title" id="simulation-title">Simulation</h3>
+              <h3 class="card__title" id="onchain-title">Onchain Data</h3>
               <span class="sim-scan__count muted" id="sim-scan-count" aria-live="polite"></span>
               <button class="btn btn--primary btn--sm sim-scan" type="button" data-sim-scan
                 data-tip="Gather transaction hashes for each activity">
@@ -155,7 +165,7 @@
             </div>
             <div class="card__body">
               <p class="wallets__note muted">Every trade under the wallet it names, as the Trades tab shows it. Edit a trade on the Trades tab.</p>
-              <div id="simulation-mount"></div>
+              <div id="onchain-mount"></div>
             </div>
           </section>
         </section>

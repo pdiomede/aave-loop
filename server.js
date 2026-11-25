@@ -1305,7 +1305,7 @@ app.delete('/api/wallets/:id', (req, res) => {
 
 /*
  * The transaction behind each stage of a trade (`stage_tx` in db.js), for
- * Wallets > Simulation: found on Etherscan once and kept, or pasted.
+ * Wallets > Onchain Data: found on Etherscan once and kept, or pasted.
  */
 const selectStageTx = prepare('SELECT * FROM stage_tx WHERE trade_id = ? AND stage = ?');
 const txView = (row) => ({ hash: row.hash, source: row.source, found_at: row.found_at });

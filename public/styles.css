@@ -1068,7 +1068,7 @@ html {
   overflow-wrap: anywhere;
 }
 
-/* The chain in a Simulation group's heading, centred on the line as the
+/* The chain in an Onchain Data group's heading, centred on the line as the
    name and the count are: an inline box there sat on the text's baseline,
    above them. */
 .wallet-group__chain {
@@ -1084,7 +1084,7 @@ html {
   font-size: 0.86em;
 }
 
-/* Wallets > Simulation: one group per wallet, each a read-only copy of the
+/* Wallets > Onchain Data: one group per wallet, each a read-only copy of the
    Trades table. `.row-static` takes the table's cells without `.row`'s
    pointer and hover, since nothing happens on a click. */
 .wallet-group + .wallet-group {
@@ -1211,7 +1211,7 @@ html {
   font-variant-numeric: tabular-nums;
 }
 
-/* Get onchain data, at the right of the Simulation title, and the scan's
+/* Get onchain data, at the right of the Onchain Data title, and the scan's
    progress along the divider under it. */
 .sim-head {
   position: relative;
@@ -1267,7 +1267,7 @@ html {
   }
 }
 
-/* A closed trade in Simulation opens into its slim cards. */
+/* A closed trade in Onchain Data opens into its slim cards. */
 .row-static--toggle {
   cursor: pointer;
   transition: background-color 0.12s ease;
@@ -2905,6 +2905,26 @@ th[aria-sort="ascending"] .th-sort__caret {
 .wallet-address__hex {
   font-size: 12.5px;
   overflow-wrap: anywhere;
+}
+
+/* Every row asks the same width, so Copy and the explorer link start at the
+   same place on each: the address in a column as wide as the longest one (44
+   characters, a Solana address; 0x ones are 42), and every explorer link as
+   wide as the longest (OP Etherscan). Sized to their text, a Solana address
+   pushed the buttons a few characters right of the rows above, and OP
+   Etherscan's row wrapped its buttons under the address while the others did
+   not. Short of room, every row now wraps them alike. Below 761px the table
+   is a stack of cards. */
+@media (min-width: 761px) {
+  .wallets-table .wallet-address__hex {
+    flex: 0 1 44ch;
+    min-width: 0;
+  }
+
+  .wallets-table .wallet-address__actions a {
+    min-width: 8.25em;
+    justify-content: flex-start;
+  }
 }
 
 .wallet-address__actions,

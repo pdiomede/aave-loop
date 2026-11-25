@@ -22,6 +22,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- **Addresses' Copy and explorer links line up:** a Solana address pushed them right of the rows above, and OP Etherscan's row wrapped them under its address while the others did not.
 - **Wallets tab:** a refused paste's reason vanished at the next redraw (a scan step, a price); a long wallet name ran past its Borrowed card again; Get onchain data counted a coin with no contract on its chain as searched and not found, and its wait read "Etherscan busy" whoever was not answering. Each now holds.
 - **Simulation, smaller ones:** during Get onchain data, focus jumped from a hash link to its ×, or from a magnifier to the top of the page; a scan finishing while Forget or Delete was being asked cancelled the question, and now its report waits for the answer; Ethereum's logo was faint in the chain and wallet pickers on the dark theme; a long wallet name with no spaces ran past its group's heading on a phone.
 - **Alerts audit:** Delete all counted the list before asking but deleted up to whatever it held after, so a goal set elsewhere while the confirmation was open was deleted unseen. Telegram's "have no rights to send a message" and "need administrator rights in the channel chat" were taken as a refusal of the message, using a reached goal up for good; they now wait for the fix like any setup error. A goal replaced while its send was in flight stayed FIRED for a message that never went; it is now FAILED, as when replaced a moment later. The alert window now says when its goal was already reached but not sent, and that saving gives that message up; says the direction comes from the purchase price when there is no recent price, not only an old one; and the save names which way the goal waits. A tab left open now re-reads the alerts on its price poll, so a fired goal stops showing ARMED.
@@ -39,6 +40,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Changed
 
+- **Wallets > Simulation is now Onchain Data,** the name of what it does: each wallet's trades with the transactions found on chain.
+- **Addresses folds,** closed until opened and then remembered, with the count on its head; its note names Solana too.
 - **Fields have a stronger edge,** darker in the light theme and brighter in the dark one, so an idle field is easy to find on its card.
 
 ## [2.2.0] - 2026-11-24

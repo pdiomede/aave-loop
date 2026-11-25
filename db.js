@@ -175,7 +175,7 @@ db.exec(`
 
 /**
  * The transaction behind each stage of a trade, found on Etherscan
- * (etherscan.js) or pasted, for Wallets > Simulation: `hash` lowercase, one
+ * (etherscan.js) or pasted, for Wallets > Onchain Data: `hash` lowercase, one
  * per stage ('borrow', 'buy', 'sell', 'repay'). Found once and kept, so a card
  * opened again asks Etherscan nothing.
  *

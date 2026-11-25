@@ -388,7 +388,9 @@ wallet, not the id. The page reads the wallets at boot (`loadWallets`), since th
 Borrowed cards name them (`walletCell`) and the pickers offer them (`walletChoices`,
 the `wallet` kind of `coinSelect`): after the platform in the new trade's heading
 (`walletHeadPicker`, left out while none is saved) and in the Borrowed editor.
-Wallets > Simulation (`renderSimulation`, drawn by `renderWalletsView`) groups every
+Wallets > Onchain Data (`renderOnchainData`, drawn by `renderWalletsView`; it was
+first called Simulation, and its `sim`-prefixed classes, attributes and state keep
+that name) groups every
 trade under its wallet, then No wallet, in the Trades table's order, with each
 group's figures from `summarize` and `openGainsUsd` over its trades alone. Its rows
 are `tradeRow(..., { readOnly: true })`: `.row-static`, never `.row` or `data-trade`,
@@ -514,6 +516,8 @@ each gain summed in cents as printed so the lines add up to Unrealised, and only
 the held trades span two platforms or more. The Performance cards
 and the four breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
 start closed, and keep their open/closed state in localStorage (`ethroundtrip-stats-open`).
+Wallets' Addresses card folds by the same key list (`addresses`), but its markup is
+in `index.html`, so `syncAddressesFold` puts the saved state on it at boot.
 
 ### Assets and markets
 
