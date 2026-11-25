@@ -1326,7 +1326,7 @@ function chainMark(network, size = 'sm') {
   const meta = NETWORK_META[network];
   if (!meta) return '';
   return meta.art
-    ? `<img class="coin coin--art coin--${size}" src="${meta.art}" alt="" width="20" height="20" />`
+    ? `<img class="coin coin--art coin--${size} chain-art" src="${meta.art}" alt="" width="20" height="20" />`
     : `<span class="chain-mark chain-mark--${network} chain-mark--${size}" aria-hidden="true">${esc(meta.mark)}</span>`;
 }
 
@@ -2337,18 +2337,34 @@ function setKeepingFocus(el, html) {
   } catch {
     /* a control with no caret */
   }
+  const place = inside ? focusPlace(active, el) : null;
   el.innerHTML = html;
   if (!inside) return;
-  // The same control by what it is, then by its place. By place alone, a
-  // card's "Paste a hash" turning into "Searching…" during a scan moved every
-  // control after it by one: focus left the hash being typed for Cancel.
+  // The same control by what it is, then by its kind and place within the
+  // nearest row or card known by what it is, then what stands in for it there
+  // (`data-focus-default`), and only then by its place in the whole container.
+  // By place alone, a card's "Paste a hash" turning into "Searching…" during a
+  // scan moved every control after it by one: focus left the hash being typed
+  // for Cancel, a hash link for its ×, and a chip for the next one along.
+  const takes = (n) => n && !n.disabled;
   let target = null;
   for (const sel of keys) {
     target = el.querySelector(sel);
     if (target) break;
   }
-  target ??= index >= 0 ? el.querySelectorAll(FOCUSABLE)[index] : null;
-  if (!target) return;
+  if (!takes(target) && place) {
+    const scope = place.scope.map((sel) => el.querySelector(sel)).find(Boolean) ?? (place.scope.length ? null : el);
+    target = scope?.querySelectorAll(place.kind)[place.nth] ?? null;
+    // Gone from its card - the magnifier once its hash is found, "Paste a
+    // hash" while the stage is searched - focus stays in the card, on what
+    // replaced it, rather than falling to the page.
+    if (!takes(target) && scope && scope !== el) {
+      target =
+        [...scope.querySelectorAll('[data-focus-default]')].find(takes) ?? (scope.matches(FOCUSABLE) ? scope : null);
+    }
+  }
+  if (!takes(target)) target = index >= 0 ? el.querySelectorAll(FOCUSABLE)[index] : null;
+  if (!takes(target)) return;
   target.focus({ preventScroll: true });
   if (caret) {
     try {
@@ -2381,6 +2397,30 @@ function focusKeys(el) {
     if (formSel) keys.push(`${formSel} [name="${q(el.name)}"]`);
   }
   return keys;
+}
+
+/**
+ * Where a control without keys of its own sits: the nearest ancestor below
+ * `root` that has keys (a trade's row, a stage's card), what kind of control
+ * it is - its tag, classes and tooltip, as the "no rate" chips have nothing
+ * else - and which of that kind within the ancestor. Controls coming and
+ * going elsewhere in a card or the container then no longer move it.
+ */
+function focusPlace(active, root) {
+  let scope = [];
+  let within = root;
+  // Keys that name only this ancestor: a Net gain cell's `data-label` is on
+  // every row's, and found again it was the first row's.
+  for (let n = active.parentElement; n && n !== root && !scope.length; n = n.parentElement) {
+    scope = focusKeys(n).filter((sel) => root.querySelectorAll(sel).length === 1);
+    if (scope.length) within = n;
+  }
+  const tip = active.getAttribute('data-tip');
+  const kind =
+    active.tagName.toLowerCase() +
+    [...active.classList].filter((c) => !c.startsWith('is-')).map((c) => `.${CSS.escape(c)}`).join('') +
+    (tip ? `[data-tip="${CSS.escape(tip)}"]` : '');
+  return { scope, kind, nth: [...within.querySelectorAll(kind)].indexOf(active) };
 }
 
 /**
@@ -3777,7 +3817,7 @@ function txLine(t, stage) {
     const others = note?.others ? `<small class="tx-line__note">${note.others + 1} transfers fit equally; check it.</small>` : '';
     return `<div class="tx-line">
       <span class="tx-line__row">
-        <a class="tx-line__hash" href="${esc(url)}" target="_blank" rel="noopener noreferrer"
+        <a class="tx-line__hash" href="${esc(url)}" target="_blank" rel="noopener noreferrer" data-tx-link="${key}" data-focus-default
           aria-label="Open the ${TX_NOUN[stage]} transaction on ${esc(chain.explorerLabel)}">${esc(shortHash(stored.hash))}<span aria-hidden="true"> &#8599;</span></a>
         <span class="tx-line__source">${stored.source === 'manual' ? 'pasted' : 'found'}</span>
         <button class="btn btn--ghost btn--sm tx-line__clear" type="button" data-tx-clear="${key}"
@@ -3793,7 +3833,7 @@ function txLine(t, stage) {
   }
   const reason = note?.reason ? `<p class="tx-line__reason">${esc(note.reason)}</p>` : '';
   if (state.txPaste[key] === undefined) {
-    return `<div class="tx-line">${reason}<button class="link-btn" type="button" data-tx-paste="${key}">Paste a hash</button></div>`;
+    return `<div class="tx-line">${reason}<button class="link-btn" type="button" data-tx-paste="${key}" data-focus-default>Paste a hash</button></div>`;
   }
   const pasteError = state.txPasteError[key];
   return `<div class="tx-line">${reason}
@@ -3856,13 +3896,17 @@ function simStageCards(t, d) {
       const tip = noWallet
         ? 'Link a wallet on the Borrowed card first'
         : `Find on ${NETWORK_META[networkOf(walletById(t.wallet_id))].explorerLabel}`;
+      // Searching, it stays focusable (aria-disabled, not disabled): a scan
+      // reaching the stage under a keyboard user's focus disabled the button
+      // they were on, and focus fell to the page. A click on it then does
+      // nothing (`findTx`).
       const find = state.stageTxs?.[t.id]?.[stage]
         ? ''
-        : `<button class="btn btn--ghost btn--sm sim-find" type="button" data-tx-find="${key}" data-tip="${tip}"
+        : `<button class="btn btn--ghost btn--sm sim-find" type="button" data-tx-find="${key}" data-focus-default data-tip="${tip}"
             aria-label="${noWallet ? tip : `Find the ${TX_NOUN[stage]} on ${NETWORK_META[networkOf(walletById(t.wallet_id))].explorerLabel}`}"${
-              noWallet || state.txBusy.has(key) ? ' disabled' : ''
+              noWallet ? ' disabled' : state.txBusy.has(key) ? ' aria-disabled="true"' : ''
             }>${MAGNIFIER_SVG}</button>`;
-      return `<article class="stage is-done sim-card">
+      return `<article class="stage is-done sim-card" data-tx-card="${key}">
         <header class="stage__head">
           <span class="stage__marker">&#10003;</span>
           <span class="stage__name">${name}</span>
@@ -4097,7 +4141,7 @@ async function scanOnchain() {
 }
 
 /** What a scan did, in the window it ends with. */
-function scanReport(scan) {
+async function scanReport(scan) {
   const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const item = (x, text) => `<li>Trade #${esc(x.id)} &middot; ${TX_CARD[x.stage]}: ${esc(text)}</li>`;
   const left = scan.total - scan.done;
@@ -4159,10 +4203,15 @@ function scanReport(scan) {
           .join('')}</ul>`
       : '',
   ].join('');
-  return reportDialog({
-    title,
-    body: `<p class="modal__note modal__note--lead">${lead}</p>${totals ? `<ul class="scan-report__totals">${totals}</ul>` : ''}${lists}`,
-  });
+  const body = `<p class="modal__note modal__note--lead">${lead}</p>${totals ? `<ul class="scan-report__totals">${totals}</ul>` : ''}${lists}`;
+  await dialogFree();
+  await reportDialog({ title, body });
+  // Closing hands focus back to what had it before the report: gone by then
+  // if the question it waited for removed it (Forget), so to the button that
+  // ran the scan rather than the top of the page.
+  if (!document.activeElement || document.activeElement === document.body) {
+    document.querySelector('[data-sim-scan]')?.focus({ preventScroll: true });
+  }
 }
 
 /**
@@ -5327,6 +5376,20 @@ function reportDialog({ title, body }) {
   });
 }
 
+// Called once the window is free again: a scan's report waits here rather
+// than taking the window from a question still open (`dialogFree`).
+let confirmWaiters = [];
+
+/**
+ * Resolves when no question is open in the shared window. A report shown
+ * over one settled it as no: a scan finishing while Forget or Delete was
+ * being asked cancelled that, and the window it was answered in vanished.
+ * Asked again in a loop, since the question's own caller may ask another.
+ */
+async function dialogFree() {
+  while (confirmResolve) await new Promise((resolve) => confirmWaiters.push(resolve));
+}
+
 function settleConfirm(answer) {
   const resolve = confirmResolve;
   // Cleared before close(), in case the `close` listener runs and lands back
@@ -5340,6 +5403,8 @@ function settleConfirm(answer) {
   // markup, and with it whatever was typed into the last one.
   if (dlg) dlg.innerHTML = '';
   resolve?.(answer);
+  // After the answer, so the question's caller goes first and may ask again.
+  if (resolve) for (const wake of confirmWaiters.splice(0)) wake();
 }
 
 /* ------------------------------------------------------------------ toast */

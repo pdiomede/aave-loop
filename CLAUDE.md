@@ -306,7 +306,14 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   change view should go through `setView`, not write the hash itself.
 - **Focus survives a redraw.** A container redrawn under the user's hands - the hero
   and the Net gain cells on every price - goes through `setKeepingFocus`, which puts
-  focus back on the same control in the new markup; a control focused on purpose goes
+  focus back on the same control in the new markup: by its keys (`focusKeys`: id,
+  data-*), else by its kind and place within the nearest row or card that has keys
+  (`focusPlace`), else on what stands in for it there (`data-focus-default`: a
+  stage card's magnifier, hash link or paste button), and only then by its index in
+  the whole container. Give a control that can come and go a data-* key of its own.
+  A control that is busy stays focusable (`aria-disabled`, not `disabled`), or focus
+  falls to the page. The scan report waits for an open question (`dialogFree`)
+  rather than taking the shared window from it; a control focused on purpose goes
   through `focusInView`, which keeps it clear of the sticky header
   (`scroll-padding-top` on the page, from the measured `--header-h`).
 - **Sequence guards.** `loadSeq`/`writeSeq` (and `alertLogSeq`/`alertWriteSeq`) drop a

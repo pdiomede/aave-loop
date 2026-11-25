@@ -1049,9 +1049,11 @@ html {
 }
 
 /* Ethereum's logo is dark on transparent and vanished on the dark theme's
-   card: on a white disc with a ring, as the asset marks are. */
-.wallet-ref img.coin,
-.wallet-network img.coin {
+   card: on a white disc with a ring, as the asset marks are - wherever a
+   chain is drawn, the chain and wallet pickers too, which it was missing
+   from. Two classes, to win over `.coin--art`, which comes later and clears
+   the background. */
+.coin.chain-art {
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 0 0 1px var(--hairline-strong);
@@ -1134,11 +1136,15 @@ html {
   transform: rotate(180deg);
 }
 
+/* A name with no space to wrap at breaks anywhere: forty characters of one
+   word held the heading's line open and widened the page on a phone. */
 .wallet-group__title {
+  min-width: 0;
   margin: 0;
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 /* A hardware wallet, drawn: an upright rounded body, a screen across its top
@@ -1312,7 +1318,8 @@ html {
   white-space: nowrap;
 }
 
-.sim-find:disabled {
+.sim-find:disabled,
+.sim-find[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
 }
