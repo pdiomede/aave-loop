@@ -758,6 +758,10 @@ const state = {
   // found one of several), by `tradeId:stage`; and a hash being pasted, by the
   // same key - in state, since a price landing redraws the view.
   stageTxs: null,
+  // The wallet groups opened there, by group key (`w<id>`, or `none`). They
+  // start closed on every load, as asked, and stay as set across the redraw
+  // every price triggers; unlike the Stats cards, nothing is remembered.
+  simGroupsOpen: new Set(),
   simOpenIds: new Set(),
   txBusy: new Set(),
   txNote: {},
@@ -3889,17 +3893,32 @@ function simTotals(trades) {
   return parts.join('');
 }
 
-function simGroup({ title, sub, trades }) {
-  const head = `<div class="wallet-group__head">
-      <h4 class="wallet-group__title">${title}${sub ? ` <span class="wallet-ref__short">${sub}</span>` : ''}</h4>
-      <span class="wallet-group__count">${trades.length} trade${trades.length === 1 ? '' : 's'}</span>
-    </div>`;
+/**
+ * One wallet's group: its heading - a hardware wallet drawn in CSS, the name,
+ * the short address, the count - then its figures, then its trades, which
+ * fold away under the heading. Closed until opened. A wallet with no trades
+ * has nothing to fold, so its heading is no button.
+ */
+function simGroup({ key, title, sub, trades }) {
+  const icon = `<span class="wallet-icon${key === 'none' ? ' wallet-icon--none' : ''}" aria-hidden="true"></span>`;
+  const label = `${icon}<span class="wallet-group__title">${title}${sub ? ` <span class="wallet-ref__short">${sub}</span>` : ''}</span>
+      <span class="wallet-group__count">${trades.length} trade${trades.length === 1 ? '' : 's'}</span>`;
   if (!trades.length) {
-    return `<section class="wallet-group">${head}<p class="muted wallet-group__empty">No trades linked yet.</p></section>`;
+    return `<section class="wallet-group">
+      <h4 class="wallet-group__head">${label}</h4>
+      <p class="muted wallet-group__empty">No trades linked yet.</p>
+    </section>`;
   }
-  return `<section class="wallet-group">${head}
+  const open = state.simGroupsOpen.has(key);
+  const id = `sim-group-${key}`;
+  return `<section class="wallet-group${open ? ' is-open' : ''}">
+    <h4 class="wallet-group__heading"><button class="wallet-group__head wallet-group__toggle" type="button"
+      data-sim-group="${key}" aria-expanded="${open}" aria-controls="${id}">${label}
+      <svg class="card__chevron wallet-group__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+    </button></h4>
     <div class="wallet-group__totals">${simTotals(trades)}</div>
-    <div class="table-scroll"><table class="table wallet-group__table">${SIM_HEAD}
+    <div class="table-scroll" id="${id}"${open ? '' : ' hidden'}><table class="table wallet-group__table">${SIM_HEAD}
       <tbody>${trades.map((t, i) => tradeRow(t, i + 1, trades.length, { readOnly: true })).join('')}</tbody>
     </table></div>
   </section>`;
@@ -3924,6 +3943,7 @@ function renderSimulation() {
     const saved = [...state.wallets].sort(byWalletName);
     const known = new Set(saved.map((w) => w.id));
     const groups = saved.map((w) => ({
+      key: `w${w.id}`,
       title: esc(w.name),
       sub: esc(shortAddress(w.address)),
       trades: rows.filter((t) => t.wallet_id === w.id),
@@ -3933,10 +3953,10 @@ function renderSimulation() {
     const unknown = [...new Set(rows.map((t) => t.wallet_id).filter((id) => id != null && !known.has(id)))];
     for (const id of unknown) {
       walletCell(id);
-      groups.push({ title: `Wallet #${esc(id)}`, sub: '', trades: rows.filter((t) => t.wallet_id === id) });
+      groups.push({ key: `w${id}`, title: `Wallet #${esc(id)}`, sub: '', trades: rows.filter((t) => t.wallet_id === id) });
     }
     const none = rows.filter((t) => t.wallet_id == null);
-    if (none.length) groups.push({ title: 'No wallet', sub: '', trades: none });
+    if (none.length) groups.push({ key: 'none', title: 'No wallet', sub: '', trades: none });
     html = groups.map(simGroup).join('');
   }
   setKeepingFocus(mount, html);
@@ -5211,6 +5231,17 @@ function wire() {
         renderSimulation();
         document.querySelector(`[data-tx-paste="${txPasteCancel}"]`)?.focus();
       }
+      return;
+    }
+
+    // A wallet's group in Simulation, folded or opened.
+    const group = e.target.closest('[data-sim-group]');
+    if (group) {
+      const key = group.dataset.simGroup;
+      if (state.simGroupsOpen.has(key)) state.simGroupsOpen.delete(key);
+      else state.simGroupsOpen.add(key);
+      renderSimulation();
+      document.querySelector(`[data-sim-group="${key}"]`)?.focus();
       return;
     }
 

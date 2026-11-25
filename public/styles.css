@@ -1014,9 +1014,47 @@ html {
 .wallet-group__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  margin-bottom: 6px;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 6px;
+  font: inherit;
+}
+
+.wallet-group__heading {
+  margin: 0;
+  font: inherit;
+}
+
+/* The heading is the button, as the Stats cards' is: the whole line opens
+   the group, and the chevron at its end says which way it is. */
+.wallet-group__toggle {
+  width: 100%;
+  padding: 6px 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: var(--radius-btn);
+  background: none;
+  color: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wallet-group__toggle:hover .wallet-group__title {
+  color: var(--accent);
+}
+
+.wallet-group__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.wallet-group__chevron {
+  margin-left: auto;
+}
+
+.wallet-group.is-open .wallet-group__chevron {
+  transform: rotate(180deg);
 }
 
 .wallet-group__title {
@@ -1024,6 +1062,51 @@ html {
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
+}
+
+/* A hardware wallet, drawn: an upright rounded body, a screen across its top
+   and two buttons under it, in the text colour so it reads in both themes.
+   No wallet gets the same outline dashed and empty. */
+.wallet-icon {
+  position: relative;
+  flex: none;
+  width: 14px;
+  height: 20px;
+  box-sizing: border-box;
+  border: 1.6px solid var(--text-muted);
+  border-radius: 3px 3px 5px 5px;
+}
+
+.wallet-icon::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  right: 2px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--text-muted);
+}
+
+.wallet-icon::after {
+  content: '';
+  position: absolute;
+  bottom: 2.5px;
+  left: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 4.6px 0 0 var(--text-muted);
+}
+
+.wallet-icon--none {
+  border-style: dashed;
+}
+
+.wallet-icon--none::before,
+.wallet-icon--none::after {
+  content: none;
 }
 
 .wallet-group__count {
