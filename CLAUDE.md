@@ -367,6 +367,12 @@ wallet, not the id. The page reads the wallets at boot (`loadWallets`), since th
 Borrowed cards name them (`walletCell`) and the pickers offer them (`walletChoices`,
 the `wallet` kind of `coinSelect`): after the platform in the new trade's heading
 (`walletHeadPicker`, left out while none is saved) and in the Borrowed editor.
+Wallets > Simulation (`renderSimulation`, drawn by `renderWalletsView`) groups every
+trade under its wallet, then No wallet, in the Trades table's order, with each
+group's figures from `summarize` and `openGainsUsd` over its trades alone. Its rows
+are `tradeRow(..., { readOnly: true })`: `.row-static`, never `.row` or `data-trade`,
+because the body's click handler opens any `.row` and would expand the trade on the
+Trades tab.
 
 ### Platforms
 

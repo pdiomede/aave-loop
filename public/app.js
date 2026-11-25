@@ -2341,9 +2341,12 @@ function underUsersHands() {
   return !!document.querySelector('main')?.contains(document.activeElement);
 }
 
-function tradeRow(t, index, total) {
+function tradeRow(t, index, total, { readOnly = false } = {}) {
   const d = t.derived || derive(t);
-  const isOpen = state.openIds.has(t.id);
+  // A read-only row (the Wallets tab's Simulation) never opens: its trade is
+  // edited on the Trades tab, and two open copies of one stage form would
+  // fight over `captureDraft`.
+  const isOpen = !readOnly && state.openIds.has(t.id);
 
   // A trade has an end date only once the loan is repaid, so that is the only
   // time a range is shown. While it is still running the borrow date stands
@@ -2363,10 +2366,16 @@ function tradeRow(t, index, total) {
   const gainCell = gainCellHtml(t, d);
 
   return `
-  <tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0" aria-expanded="${isOpen}">
+  ${
+    // Not `.row` and no `data-trade` when read-only: the body's click handler
+    // opens any `.row`, and would expand the trade on the Trades tab instead.
+    readOnly
+      ? '<tr class="row-static">'
+      : `<tr class="row ${isOpen ? 'is-open' : ''}" data-trade="${t.id}" tabindex="0" aria-expanded="${isOpen}">`
+  }
     <td data-label="Trade date">
       <div class="row__asset">
-        <span class="caret"></span>
+        ${readOnly ? '' : '<span class="caret"></span>'}
         ${coin(t.borrow_currency)}
         <span class="row__stack">
           <span>${isNum(d.borrowUsd) ? usd(d.borrowUsd) : RATE_MISSING}</span>
@@ -3605,6 +3614,7 @@ function renderWalletsView() {
     </table>`;
   }
   setKeepingFocus(mount, html);
+  renderSimulation();
 }
 
 /** Read the list again and draw it: on every visit, and on coming back to the tab. */
@@ -3615,6 +3625,91 @@ function renderWalletsView() {
  * unlinked from the phone still counted, and its wallet could not be deleted
  * here although the server would have allowed it.
  */
+/* ------------------------------------------------------ simulation groups */
+
+// The Trades table's columns, as plain headings: these tables do not sort,
+// they follow the Trades tab's order.
+const SIM_HEAD = `<thead><tr>
+  <th>Trade date</th><th class="num">Amount</th><th class="num">Buy price</th><th class="num">Sell price</th>
+  <th class="num">Days</th><th class="num">Net gain</th><th class="num">Annualized</th><th>Status</th>
+</tr></thead>`;
+
+/**
+ * One wallet's figures, over its trades only: what the header's tiles say of
+ * the whole ledger. `summarize` and `openGainsUsd` add in cents as printed, so
+ * the groups add up to the header. Never `openGainLines`, which is the ledger's.
+ */
+function simTotals(trades) {
+  const s = summarize(trades);
+  const g = s.openCount ? openGainsUsd(trades, priceMap(), state.fxNow) : null;
+  const fig = (v) => (isNum(v) ? `<span class="${gainClass(v)}">${signedUsd(v)}</span>` : '<span class="muted">-</span>');
+  const realized = isNum(s.netGain)
+    ? `${fig(s.netGain)}${s.closedCount > s.valuedCount ? ` ${RATE_MISSING}` : ''}`
+    : s.closedCount > s.valuedCount
+      ? RATE_MISSING
+      : '<span class="muted">-</span>';
+  const parts = [
+    `<span>Realized net gain ${realized}</span>`,
+    `<span>Closed ${s.closedCount}</span>`,
+    `<span>Open ${s.openCount}${isNum(s.deployed) ? ` (${usd(s.deployed)})` : ''}${s.deployedMissingFx ? ` ${RATE_MISSING}` : ''}</span>`,
+  ];
+  if (g?.rows.length) parts.push(`<span>Est. gain ${fig(g.total)}</span>`);
+  return parts.join('');
+}
+
+function simGroup({ title, sub, trades }) {
+  const head = `<div class="wallet-group__head">
+      <h4 class="wallet-group__title">${title}${sub ? ` <span class="wallet-ref__short">${sub}</span>` : ''}</h4>
+      <span class="wallet-group__count">${trades.length} trade${trades.length === 1 ? '' : 's'}</span>
+    </div>`;
+  if (!trades.length) {
+    return `<section class="wallet-group">${head}<p class="muted wallet-group__empty">No trades linked yet.</p></section>`;
+  }
+  return `<section class="wallet-group">${head}
+    <div class="wallet-group__totals">${simTotals(trades)}</div>
+    <div class="table-scroll"><table class="table wallet-group__table">${SIM_HEAD}
+      <tbody>${trades.map((t, i) => tradeRow(t, i + 1, trades.length, { readOnly: true })).join('')}</tbody>
+    </table></div>
+  </section>`;
+}
+
+/**
+ * Wallets > Simulation: every trade under the wallet it names, read-only, in
+ * the Trades table's order. Saved wallets by name, then any id the list does
+ * not hold yet, then No wallet, so every trade is in exactly one group and the
+ * groups add up to the ledger.
+ */
+function renderSimulation() {
+  const mount = document.getElementById('simulation-mount');
+  if (!mount) return;
+  let html;
+  if (state.loadFailed) html = LOAD_FAILED;
+  else if (!state.loaded || state.wallets === null) html = LOADING;
+  else if (!state.trades.length) {
+    html = '<div class="empty"><h3>No trades yet</h3><p>Trades show here under the wallet they name.</p></div>';
+  } else {
+    const rows = sortedTrades();
+    const saved = [...state.wallets].sort(byWalletName);
+    const known = new Set(saved.map((w) => w.id));
+    const groups = saved.map((w) => ({
+      title: esc(w.name),
+      sub: esc(shortAddress(w.address)),
+      trades: rows.filter((t) => t.wallet_id === w.id),
+    }));
+    // Linked from another tab to a wallet this list has not read yet: named by
+    // its id, and the list read again once (`walletCell` asks the same way).
+    const unknown = [...new Set(rows.map((t) => t.wallet_id).filter((id) => id != null && !known.has(id)))];
+    for (const id of unknown) {
+      walletCell(id);
+      groups.push({ title: `Wallet #${esc(id)}`, sub: '', trades: rows.filter((t) => t.wallet_id === id) });
+    }
+    const none = rows.filter((t) => t.wallet_id == null);
+    if (none.length) groups.push({ title: 'No wallet', sub: '', trades: none });
+    html = groups.map(simGroup).join('');
+  }
+  setKeepingFocus(mount, html);
+}
+
 async function refreshWalletsView() {
   await Promise.all([loadWallets(), loadTrades().catch(() => false)]);
   if (state.view === 'wallets') renderWalletsView();

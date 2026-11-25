@@ -17,9 +17,8 @@
   --text-faint: #9aa0aa;
   --hairline: rgba(0, 0, 0, 0.08);
   --hairline-strong: rgba(0, 0, 0, 0.14);
-  /* A field's edge, and on hover. Darker than the hairline in the light theme,
-     where at 0.08 a white field on a white card was hard to find; the dark
-     theme's hairline already reads, so it keeps it. */
+  /* A field's edge, and on hover. Stronger than the hairline in both themes:
+     at 0.08 a white field on a white card was hard to find. */
   --field-border: rgba(0, 0, 0, 0.17);
   --field-border-hover: rgba(0, 0, 0, 0.26);
   --ring: 0 2px 4px rgba(0, 0, 0, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.06);
@@ -66,8 +65,10 @@
   --text-faint: #7f8398;
   --hairline: rgba(255, 255, 255, 0.1);
   --hairline-strong: rgba(255, 255, 255, 0.2);
-  --field-border: var(--hairline);
-  --field-border-hover: var(--hairline-strong);
+  /* Brighter than the hairline here too: at 0.1 an idle field's edge was
+     barely there on the dark card. */
+  --field-border: rgba(255, 255, 255, 0.19);
+  --field-border-hover: rgba(255, 255, 255, 0.3);
   --ring: 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --ring-raised: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
 
@@ -1001,6 +1002,59 @@ html {
   color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.86em;
+}
+
+/* Wallets > Simulation: one group per wallet, each a read-only copy of the
+   Trades table. `.row-static` takes the table's cells without `.row`'s
+   pointer and hover, since nothing happens on a click. */
+.wallet-group + .wallet-group {
+  margin-top: 28px;
+}
+
+.wallet-group__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 6px;
+}
+
+.wallet-group__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wallet-group__count {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.wallet-group__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wallet-group__empty {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* The card's own padding is the gutter here, not the table's. */
+.wallet-group__table thead th:first-child,
+.wallet-group__table tbody td:first-child {
+  padding-left: 0;
+}
+
+.wallet-group__table thead th:last-child,
+.wallet-group__table tbody td:last-child {
+  padding-right: 0;
 }
 
 .coin-select__name {
@@ -2275,11 +2329,13 @@ th[aria-sort="ascending"] .th-sort__caret {
 
 .stat .chip--warn[data-tip],
 .perf .chip--warn[data-tip],
-.row td:first-child .chip--warn[data-tip] {
+.row td:first-child .chip--warn[data-tip],
+.row-static td:first-child .chip--warn[data-tip] {
   position: static;
 }
 
-.row td:first-child .row__asset {
+.row td:first-child .row__asset,
+.row-static td:first-child .row__asset {
   position: relative;
 }
 
@@ -2290,7 +2346,8 @@ th[aria-sort="ascending"] .th-sort__caret {
   max-width: 100%;
 }
 
-.row td:first-child .chip--warn[data-tip]::after {
+.row td:first-child .chip--warn[data-tip]::after,
+.row-static td:first-child .chip--warn[data-tip]::after {
   left: 0;
   right: auto;
 }
@@ -2300,7 +2357,8 @@ th[aria-sort="ascending"] .th-sort__caret {
    gave the page a sideways scroll (427px of a 375px phone). There it grows
    left, from the content's right edge. */
 @media (max-width: 760px) {
-  .row td:first-child .chip--warn[data-tip]::after {
+  .row td:first-child .chip--warn[data-tip]::after,
+  .row-static td:first-child .chip--warn[data-tip]::after {
     left: auto;
     right: 0;
   }
@@ -2771,12 +2829,14 @@ th[aria-sort="ascending"] .th-sort__caret {
     width: 100%;
   }
 
-  .row {
+  .row,
+  .row-static {
     padding: 6px 0;
     box-shadow: inset 0 -1px 0 var(--hairline);
   }
 
-  .row td {
+  .row td,
+  .row-static td {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -2792,22 +2852,26 @@ th[aria-sort="ascending"] .th-sort__caret {
      2026" ran 29px past the card and the whole page scrolled sideways. Only
      the wrapping is raised here; the rest of `.row td` keeps its weight, so
      `.row td:first-child` below still wins on alignment. */
-  .table tbody .row td {
+  .table tbody .row td,
+  .table tbody .row-static td {
     white-space: normal;
   }
 
   /* The label stays on one line; it is the value beside it that gives way. */
-  .table tbody .row td::before {
+  .table tbody .row td::before,
+  .table tbody .row-static td::before {
     white-space: nowrap;
   }
 
   /* The Trade cell is the only one with a multi line stack, and centring left
      its label floating in the middle of it. Everything else stays centred. */
-  .row td:first-child {
+  .row td:first-child,
+  .row-static td:first-child {
     align-items: flex-start;
   }
 
-  .row td::before {
+  .row td::before,
+  .row-static td::before {
     content: attr(data-label);
     color: var(--text-muted);
     font-size: 12px;
@@ -2816,7 +2880,8 @@ th[aria-sort="ascending"] .th-sort__caret {
     text-align: left;
   }
 
-  .row td:empty {
+  .row td:empty,
+  .row-static td:empty {
     display: none;
   }
 
