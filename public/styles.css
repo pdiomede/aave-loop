@@ -1008,7 +1008,10 @@ html {
    Trades table. `.row-static` takes the table's cells without `.row`'s
    pointer and hover, since nothing happens on a click. */
 .wallet-group + .wallet-group {
-  margin-top: 28px;
+  margin-top: 18px;
+  padding-top: 18px;
+  /* A dotted rule between wallets, lighter than the card's own dividers. */
+  border-top: 1.5px dotted var(--hairline-strong);
 }
 
 .wallet-group__head {
