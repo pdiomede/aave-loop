@@ -59,7 +59,15 @@ mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
 // RPC_T0 plus 2n, `logs` are its Transfer events, and a getLogs over more
 // than `max` blocks is refused the way mainnet.optimism.io refuses one.
 const RPC_T0 = Date.parse('2025-01-01T00:00:00Z') / 1000;
-mock.rpc = { calls: 0, logs: [], max: 10000 };
+// `sw`: from that block on, five blocks a second sharing each whole-second
+// timestamp, as Base's 0.2 s blocks do after its 2 s ones.
+mock.rpc = { calls: 0, byMethod: {}, logs: [], max: 10000, sw: Infinity };
+const rpcTs = (n) => (n < mock.rpc.sw ? RPC_T0 + 2 * n : RPC_T0 + 2 * mock.rpc.sw + Math.floor((n - mock.rpc.sw) / 5));
+const rpcLatest = () => {
+  const now = Date.now() / 1000;
+  const swAt = RPC_T0 + 2 * mock.rpc.sw;
+  return now < swAt ? Math.floor((now - RPC_T0) / 2) : mock.rpc.sw + Math.floor((now - swAt) * 5);
+};
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
@@ -68,13 +76,14 @@ const mockServer = http.createServer((req, res) => {
     if (req.url.startsWith('/rpc')) {
       mock.rpc.calls += 1;
       const { method, params, id } = JSON.parse(body || '{}');
+      mock.rpc.byMethod[method] = (mock.rpc.byMethod[method] ?? 0) + 1;
       const reply = (result) => res.end(JSON.stringify({ jsonrpc: '2.0', id, result }));
-      const latest = Math.floor((Date.now() / 1000 - RPC_T0) / 2);
+      const latest = rpcLatest();
       const h = (n) => `0x${n.toString(16)}`;
       if (method === 'eth_blockNumber') return reply(h(latest));
       if (method === 'eth_getBlockByNumber') {
         const n = Number(BigInt(params[0]));
-        return reply(n > latest ? null : { number: params[0], timestamp: h(RPC_T0 + 2 * n) });
+        return reply(n > latest ? null : { number: params[0], timestamp: h(rpcTs(n)) });
       }
       if (method === 'eth_getLogs') {
         const f = params[0];
@@ -1286,6 +1295,47 @@ await check("a pasted hash goes when the trade's wallet moves to another chain, 
   await api('DELETE', `/api/trades/${t.id}`);
   await api('DELETE', `/api/wallets/${arb.id}`);
   await api('DELETE', `/api/wallets/${eth2.id}`);
+});
+
+await check("a Base node's day is read to its last block, in a bounded number of calls", async () => {
+  // 2 s blocks for 5 million (into 2025), then 0.2 s ones sharing their
+  // seconds, as Base's did.
+  mock.rpc.sw = 5_000_000;
+  mock.rpc.max = 50_000;
+  mock.rpc.byMethod = {};
+  const USDC = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const w = '0x525ee071454cf9b6d750720bce8d8697ef82f02f';
+  const pad = (a) => `0x${'0'.repeat(24)}${a.slice(2)}`;
+  // The five blocks of the day's last second: the transfer is in the last.
+  const sec = Date.parse('2026-06-02T23:59:59Z') / 1000;
+  const last = mock.rpc.sw + (sec - (RPC_T0 + 2 * mock.rpc.sw)) * 5 + 4;
+  mock.rpc.logs = [{
+    address: USDC, blockNumber: `0x${last.toString(16)}`, transactionHash: hashOf(130), logIndex: '0x0',
+    topics: ['0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef', pad(POOL), pad(w)],
+    data: `0x${(15000n * 10n ** 6n).toString(16)}`,
+  }];
+  const code = `const n = await import('./chainnode.js');
+    const day = Date.parse('2026-06-02T00:00:00Z');
+    const rows = await n.nodeTransfersBetween('base', '${w}', day, day + 86400000 - 1000, ['${USDC}'], { '${USDC}': 6 });
+    const next = await n.nodeTransfersBetween('base', '${w}', day + 86400000, day + 2 * 86400000 - 1000, ['${USDC}'], { '${USDC}': 6 });
+    console.log(JSON.stringify({ day: rows.map((r) => r.hash), next: next.map((r) => r.hash) }));`;
+  const r = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], {
+      cwd: root,
+      env: { ...process.env, ...isolated, BASE_RPC_URL: `${MOCK}/rpc` },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (c) => (out += c));
+    child.stderr.on('data', (c) => (err += c));
+    child.on('close', (status) => (status === 0 ? resolve(JSON.parse(out.trim().split('\n').at(-1))) : reject(new Error(err))));
+  });
+  assert.deepEqual(r, { day: [hashOf(130)], next: [] });
+  // Two days' four boundaries; interpolation alone took 118 calls for two.
+  assert.ok(mock.rpc.byMethod.eth_getBlockByNumber <= 60, `${mock.rpc.byMethod.eth_getBlockByNumber} block reads`);
+  mock.rpc.sw = Infinity;
+  mock.rpc.max = 10000;
 });
 
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {

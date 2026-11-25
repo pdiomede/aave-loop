@@ -106,14 +106,23 @@ async function blockTime(url, n) {
 }
 
 /**
- * The first block at or after `ms` ('after'), or the last at or before it
- * ('before'). Interpolated between the bracketing blocks' times, then halved
- * once the bracket is narrow: a dozen calls, where halving alone took thirty.
+ * The first block whose time is at or after `ms`, or the latest block plus
+ * one when none is yet. A range of blocks is always [first(from),
+ * first(to) - 1]: Base's 0.2 s blocks share their whole-second timestamps five
+ * at a time, and a day that ended at the *last* block at or before 23:59:59
+ * was found as the first of them, so the four after it fell between that day
+ * and the next and a transfer in them was never read.
+ *
+ * Interpolated between the bracketing blocks' times and halved, by turns. By
+ * interpolation alone a day's two boundaries on Base took 118 calls: its
+ * blocks went from 2 s to 0.2 s, and on history that changes pace the guess
+ * lands on the same side, a little nearer, time after time. Halving every
+ * other step bounds it, and the guesses still cut most of the way.
  */
-async function blockAt(url, ms, closest) {
+async function firstBlockFrom(url, ms) {
   const latest = num(await rpc(url, 'eth_blockNumber', []));
   const latestAt = await blockTime(url, latest);
-  if (ms >= latestAt) return latest;
+  if (ms > latestAt) return latest + 1;
   if (ms <= (await blockTime(url, 0))) return 0;
   // Start between the nearest blocks already known on either side - the day
   // before's boundaries, as a scan reads day after day - not from genesis.
@@ -126,16 +135,18 @@ async function blockAt(url, ms, closest) {
     if (at < ms && n > lo) [lo, loAt] = [n, at];
     if (at >= ms && n < hi) [hi, hiAt] = [n, at];
   }
-  while (hi - lo > 1) {
+  for (let step = 0; hi - lo > 1; step += 1) {
     let mid =
-      hi - lo > 64 ? Math.round(lo + ((ms - loAt) * (hi - lo)) / (hiAt - loAt)) : Math.floor((lo + hi) / 2);
+      step % 2 === 0 && hi - lo > 64 && hiAt > loAt
+        ? Math.round(lo + ((ms - loAt) * (hi - lo)) / (hiAt - loAt))
+        : Math.floor((lo + hi) / 2);
     mid = Math.min(hi - 1, Math.max(lo + 1, mid));
     const at = await blockTime(url, mid);
     if (at < ms) [lo, loAt] = [mid, at];
     else [hi, hiAt] = [mid, at];
   }
-  // lo is before ms, hi at or after it.
-  return closest === 'after' ? hi : hiAt === ms ? hi : lo;
+  // lo is before ms, hi the first at or after it.
+  return hi;
 }
 
 const pad = (address) => `0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`;
@@ -149,8 +160,10 @@ export async function nodeTransfersBetween(network, address, fromMs, toMs, contr
   const url = nodeUrl(network);
   if (!url) throw new NodeError(`No node is set for ${network}.`, 'unsupported');
   try {
-    const start = await blockAt(url, fromMs, 'after');
-    const end = await blockAt(url, toMs, 'before');
+    // Every block whose whole-second time is within [fromMs, toMs]: from the
+    // first at or after fromMs to the one before the first past toMs's second.
+    const start = await firstBlockFrom(url, fromMs);
+    const end = (await firstBlockFrom(url, (Math.floor(toMs / 1000) + 1) * 1000)) - 1;
     const seen = new Map();
     let span = SPAN[network] ?? 10_000;
     for (let a = start; a <= end; ) {

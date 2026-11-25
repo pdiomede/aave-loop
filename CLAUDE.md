@@ -394,7 +394,10 @@ defaulting to mainnet.optimism.io, which serves old blocks with no key, and
 (mainnet.base.org refuses log queries, publicnode wants a token for old blocks, others
 cap a query at 50 blocks or sit behind a bot check). A node is asked plain JSON-RPC:
 the block for a time is searched for by the times around it (Base's blocks went from 2 s
-to 0.2 s, so never worked out from a block time), Transfer logs come in spans the node
+to 0.2 s, so never worked out from a block time; interpolation alternates with halving,
+which interpolation alone needed 118 calls for on that history), a range is always
+[first block at or after its start, first block past its end - 1] because Base's blocks
+share whole-second timestamps five at a time, Transfer logs come in spans the node
 allows, halved when refused, and are returned as Etherscan's rows so the matching is
 shared; each UTC day of a wallet is read once and kept (`nodeDays`). A node needs no
 Etherscan key, and its URL, which may carry a token, is never echoed. Base's and
