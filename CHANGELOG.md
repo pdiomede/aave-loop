@@ -7,7 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **A Settings tab** with an Addresses list: the Ethereum wallets you trade from, each under a name, with Copy and an Etherscan link. An address is checked against its checksum, so a mistyped capital is refused; typed in one case, it is saved checksummed. Rename keeps the address; to change it, delete and add again. Simulation is a placeholder for now.
+- **A Wallets tab** with an Addresses list: the Ethereum wallets you trade from, each under a name, with Copy and an Etherscan link. An address is checked against its checksum, so a mistyped capital is refused; typed in one case, it is saved checksummed. Rename keeps the address; to change it, delete and add again. Simulation is a placeholder for now.
+- **A trade can name its wallet.** A new trade picks it after the platform ("borrow on Morpho from Frullino"), the Borrowed editor has a Wallet picker for older trades, and the Borrowed card shows it. It is optional; a wallet that trades use cannot be deleted until they name another, or none, and the Wallets tab counts each wallet's trades.
+
+### Changed
+
+- **Fields have a darker edge in the light theme,** so a white field on a white card is easy to find.
 
 ## [2.2.0] - 2026-11-24
 

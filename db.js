@@ -86,6 +86,7 @@ db.exec(`
     fx_source       TEXT,
     platform        TEXT,
     asset           TEXT    NOT NULL DEFAULT 'eth',
+    wallet_id       INTEGER REFERENCES wallets(id),
     created_at      TEXT    NOT NULL,
     updated_at      TEXT    NOT NULL
   );
@@ -164,7 +165,7 @@ db.exec(`
 `);
 
 /**
- * The wallets a trade can be run from, kept in Settings: a name and an address
+ * The wallets a trade can be run from, kept on the Wallets tab: a name and an address
  * on a network, Ethereum mainnet only for now (NETWORKS in lib/address.js).
  *
  * `network` is stored although it has one value, because SQLite cannot change
@@ -174,14 +175,15 @@ db.exec(`
  * `address` is stored in its EIP-55 checksummed form and nothing else
  * (`parseAddress`), so one wallet has one spelling and the plain UNIQUE is
  * enough; typed in lowercase or in capitals it is the same row. Names are
- * unique in any case, since they are how a wallet will be picked.
+ * unique in any case, since they are how a wallet is picked.
  *
- * Nothing references this table yet. When trades are linked to a wallet it is
- * `trades.wallet_id INTEGER REFERENCES wallets(id)` with no ON DELETE action,
- * nullable because a trade need not say: with `foreign_keys` ON a wallet in use
- * then cannot be deleted, which is the rule wanted - a trade never loses its
- * wallet unseen. An older copy of the app pointed at this file ignores the
- * table.
+ * A trade names the wallet it was run from in `trades.wallet_id`, with no ON
+ * DELETE action, nullable because a trade need not say: with `foreign_keys` ON
+ * a wallet in use cannot be deleted, which is the rule wanted - a trade never
+ * loses its wallet unseen. DELETE /api/wallets/:id refuses it first in words;
+ * the key is what holds when the other copy links a trade at the same moment.
+ * An older copy of the app pointed at this file never names the column, so its
+ * trades are saved with no wallet and its edits leave one alone.
  */
 
 /**
@@ -410,6 +412,12 @@ const PLATFORM_COLUMNS = [['platform', 'TEXT']];
 // pairing again - the DDL and this list both carry it.
 const ASSET_COLUMNS = [['asset', "TEXT NOT NULL DEFAULT 'eth'"]];
 
+// The wallet a trade was run from (`wallets` above). Nullable: optional on a
+// trade, and unknown on one from before it was asked for. SQLite accepts a
+// REFERENCES column on ADD COLUMN with foreign keys on only because its default
+// is NULL. Same pairing again - the DDL and this list both carry it.
+const WALLET_COLUMNS = [['wallet_id', 'INTEGER REFERENCES wallets(id)']];
+
 // The market an alert's goal is a price of, 'ETH', 'BTC' or 'WBTC', written when it
 // is saved. The trade's asset can change after an alert has fired, and a
 // fired ETH goal read back off what is now a cbBTC trade would be listed as a
@@ -440,6 +448,10 @@ db.transaction(() => {
   addMissingColumns('trades', GAS_COLUMN_TYPES);
   addMissingColumns('trades', PLATFORM_COLUMNS);
   addMissingColumns('trades', ASSET_COLUMNS);
+  addMissingColumns('trades', WALLET_COLUMNS);
+  // After the column, which an existing ledger has only from the line above.
+  // Deleting a wallet looks its trades up by it, and so does the foreign key.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_trades_wallet ON trades (wallet_id)');
   addMissingColumns('alerts', ALERT_MARKET_COLUMNS);
   addMissingColumns('eth_price', ETH_MARKET_COLUMNS);
   addMissingColumns('bot_state', BOT_STATE_COLUMNS);
@@ -477,6 +489,7 @@ export const FIELDS = [
   'sell_unstake_gas_usd',
   'platform',
   'asset',
+  'wallet_id',
   'notes',
 ];
 

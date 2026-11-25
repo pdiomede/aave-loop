@@ -230,15 +230,40 @@ function changedSince(base, patch, current) {
 function conflictMessage(key, current) {
   const v = current[key];
   const now =
-    v == null || v === ''
-      ? 'blank'
-      : typeof v === 'number'
-        ? v.toLocaleString('en-US', { maximumFractionDigits: 8 })
-        : String(v);
+    key === 'wallet_id'
+      ? walletNow(v)
+      : v == null || v === ''
+        ? 'blank'
+        : typeof v === 'number'
+          ? v.toLocaleString('en-US', { maximumFractionDigits: 8 })
+          : String(v);
   return (
     `${labelOf(key, current)} was changed elsewhere after this form was opened: it is now ${now}. ` +
     'Your figures are still here; save again to replace it.'
   );
+}
+
+// A wallet is named in a conflict, never by its id: "it is now 3" says nothing.
+function walletNow(id) {
+  if (id == null) return 'no wallet';
+  const w = prepare('SELECT name FROM wallets WHERE id = ?').get(id);
+  return w ? `"${w.name}"` : `wallet #${id}`;
+}
+
+/**
+ * The wallet a request links a trade to: null to unlink, or the id of a saved
+ * wallet. Only a whole number, sent as one or as its digits - "1.5", "3abc"
+ * and true were not ids, and SQLite would have stored the text and refused it
+ * only as a foreign key, unreadably.
+ */
+function walletIdIn(raw) {
+  if (isBlank(raw)) return null;
+  const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : '';
+  const id = /^[1-9]\d{0,15}$/.test(text) ? Number(text) : null;
+  if (id === null || !Number.isSafeInteger(id) || !prepare('SELECT 1 FROM wallets WHERE id = ?').get(id)) {
+    throw new BadRequest('Pick one of your saved wallets.', 'wallet_id');
+  }
+  return id;
 }
 
 // A value of only whitespace is blank, not zero. Untrimmed, `toNumber(' ')`
@@ -351,6 +376,9 @@ function normalise(body, { requireBorrow, asset = null }) {
       out.platform = p;
     }
   }
+
+  // Optional: blank unlinks the trade from its wallet.
+  if (has('wallet_id')) out.wallet_id = walletIdIn(body.wallet_id);
 
   // ETH or cbBTC, by id in any case. Never blank: the column is NOT NULL and a
   // purchase is always of something. Absent on a new trade, it starts on ETH
@@ -1108,7 +1136,7 @@ app.delete('/api/trades/:id', (req, res) => {
 /* ---------------------------------------------------------------- wallets */
 
 /*
- * The addresses kept in Settings (`wallets` in db.js). Each write runs in an
+ * The addresses kept on the Wallets tab (`wallets` in db.js). Each write runs in an
  * immediate transaction, so its checks for a duplicate and the write itself
  * hold the write lock together: the other copy of the app cannot save the same
  * address, or the same name, between the two, and a duplicate is answered with
@@ -1205,10 +1233,36 @@ app.patch('/api/wallets/:id', (req, res) => {
   res.json(row);
 });
 
+/**
+ * Refused while a trade is linked to the wallet: the trade would lose it
+ * unseen. Said in words, naming the trades, inside the same immediate
+ * transaction as the delete; the foreign key on `trades.wallet_id` still holds
+ * if the other copy links one in between (the error handler answers that).
+ */
 app.delete('/api/wallets/:id', (req, res) => {
   const id = idParam(req.params.id);
-  const info = id === null ? { changes: 0 } : prepare('DELETE FROM wallets WHERE id = ?').run(id);
-  if (info.changes === 0) return res.status(404).json({ error: 'No such address.' });
+  const gone = () => res.status(404).json({ error: 'No such address.' });
+  if (id === null) return gone();
+  const deleted = db
+    .transaction(() => {
+      const w = selectWallet.get(id);
+      if (!w) return false;
+      const used = prepare('SELECT id FROM trades WHERE wallet_id = ? ORDER BY id DESC').all(id).map((t) => t.id);
+      if (used.length) {
+        const shown = used.slice(0, 5).map((t) => `#${t}`).join(', ');
+        const more = used.length > 5 ? ` and ${used.length - 5} more` : '';
+        throw new Conflict(
+          `${w.name} is linked to ${used.length} trade${used.length === 1 ? '' : 's'} (${shown}${more}). ` +
+            'Pick another wallet, or none, on their Borrowed card first.',
+          'wallet_id',
+          { ...w, trades: used.length },
+          (r) => r,
+        );
+      }
+      return prepare('DELETE FROM wallets WHERE id = ?').run(id).changes === 1;
+    })
+    .immediate();
+  if (!deleted) return gone();
   res.status(204).end();
 });
 
@@ -1256,6 +1310,16 @@ app.use((err, _req, res, _next) => {
   // An oversized body is the caller's problem, not a server fault.
   if (err && err.type === 'entity.too.large') {
     return res.status(413).json({ error: 'That request body was too large.' });
+  }
+  // `trades.wallet_id` naming a wallet that is no longer there, or a wallet
+  // deleted from under a trade: each checked first, so only the other copy of
+  // the app, acting between that check and the write - a wallet deleted while
+  // a new trade's rate was looked up - gets here. Not a server fault.
+  if (err && err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+    return res.status(409).json({
+      error: 'That wallet was deleted or linked elsewhere just now. Reload, then try again.',
+      field: 'wallet_id',
+    });
   }
   // A second instance on the same file held the write lock for longer than the
   // busy timeout. Reporting that as a 500 read as data loss.

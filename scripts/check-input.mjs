@@ -204,6 +204,13 @@ check('the platform is required, one of Aave, Ether.fi or Morpho, and kept as a 
   assert.equal(contextFrom({}, { platform: 'etherfi' }).platform, 'etherfi');
 });
 
+check('the wallet is optional, and an id when given', () => {
+  // Blank is "No wallet", not a missing field.
+  assert.equal(validateField('wallet_id', ''), null);
+  assert.equal(validateField('wallet_id', '12'), null);
+  for (const raw of ['abc', '0', '1.5', '-3']) assert.equal(validateField('wallet_id', raw), 'Pick one of your saved wallets.', raw);
+});
+
 check('the asset is required, ETH or cbBTC, and kept as a word', () => {
   assert.equal(validateField('asset', ''), 'Asset is required.');
   assert.equal(validateField('asset', 'doge'), 'Pick an asset.');

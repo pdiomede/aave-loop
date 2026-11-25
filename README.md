@@ -36,7 +36,7 @@ Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require 
 - **Stats** shows performance for all platforms and, in cards that fold open, for Aave, Ether.fi and Morpho alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
 - **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
 - **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.
-- **Settings** keeps your Ethereum wallet addresses, each under a name; a typo in a pasted address is caught by its checksum. Linking them to trades comes next, and a Simulation section later.
+- **Wallets** keeps your Ethereum wallet addresses, each under a name; a typo in a pasted address is caught by its checksum. A trade can name the wallet it was run from, picked after its platform. A Simulation section comes later.
 - **Open positions**, in the header, estimates what the open trades would make if closed today, at the current price of what each trade holds (ETH, or BTC for cbBTC) and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
 
 ## The math

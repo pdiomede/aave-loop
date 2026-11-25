@@ -310,6 +310,7 @@ const TIPS = {
       'Typed all in one case, it is saved in this form.',
     network: 'Ethereum mainnet, the only network for now.',
     added: 'When it was added to this list.',
+    trades: 'Trades linked to this wallet. One in use cannot be deleted until they name another, or none.',
   },
 };
 
@@ -743,7 +744,7 @@ const state = {
   statsYear: null,
   // The day the Stats view was last drawn for, which Export CSV reuses.
   statsAsOf: null,
-  // The addresses kept in Settings. Null until that view has been opened once,
+  // The addresses kept on the Wallets tab. Null until they are first read,
   // as `alertLog` is, so the table can tell "not read yet" from "none".
   wallets: null,
   walletsError: null,
@@ -886,7 +887,8 @@ async function loadAlertLog() {
 }
 
 /**
- * The addresses, for Settings. Read on every visit, as the Alerts log is, and
+ * The addresses, for the Wallets tab, the Borrowed cards and the pickers. Read
+ * at boot and on every visit to the tab, as the Alerts log is, and
  * guarded the same way: a delete or a rename landing while this is on the wire
  * would otherwise be undone on screen by its reply.
  */
@@ -1263,8 +1265,20 @@ const assetFace = (a) => {
   );
 };
 
+// A wallet: its name and its short address, or "No wallet" - it is optional
+// on a trade, and a new trade starts there rather than on a guess. An id the
+// list does not hold (a wallet added from another tab) is named by its id
+// until the list is read again.
+const walletFace = (id) => {
+  if (id === '' || id == null) return '<span class="coin-select__placeholder">No wallet</span>';
+  const w = walletById(id);
+  return w
+    ? `<span class="coin-select__ticker">${esc(w.name)}</span><span class="coin-select__name">${esc(shortAddress(w.address))}</span>`
+    : `<span class="coin-select__ticker">Wallet #${esc(id)}</span>`;
+};
+
 // What each kind of picker draws on its button and in its list.
-const FACES = { coin: coinFace, platform: platformFace, asset: assetFace };
+const FACES = { coin: coinFace, platform: platformFace, asset: assetFace, wallet: walletFace };
 const faceOf = (box) => FACES[box.dataset.kind] ?? coinFace;
 
 const CHECK_SVG = `<svg class="coin-select__check" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -1444,6 +1458,8 @@ function field({
     control = coinSelect({ id, name, value, options, req });
   } else if (options && name === 'platform') {
     control = coinSelect({ id, name, value, options, req, kind: 'platform' });
+  } else if (options && name === 'wallet_id') {
+    control = coinSelect({ id, name, value, options, req, kind: 'wallet' });
   } else if (options) {
     const opts = options
       .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`)
@@ -1516,12 +1532,71 @@ function platformHeadPicker() {
   </div>`;
 }
 
-// `platform` is for the Borrowed stage's editor. A new trade picks it in the
-// heading instead (`platformHeadPicker`).
+/** The saved wallet with this id, or undefined. Ids arrive as text from a form. */
+const walletById = (id) => (state.wallets ?? []).find((w) => String(w.id) === String(id));
+
+// Ids a card named that the list on hand did not hold, each read for once:
+// a wallet added and linked from another tab. Once, so a list that still
+// lacks it - the read failed - does not ask again on every redraw.
+const walletsAskedFor = new Set();
+
+/**
+ * The Borrowed card's Wallet: its name, with the short address beside it and
+ * the whole one as its tip, or a dash when the trade names none.
+ */
+function walletCell(id) {
+  if (id == null) return '<span class="muted">-</span>';
+  const w = walletById(id);
+  if (w) {
+    return `<span class="wallet-ref" tabindex="0" data-tip="${esc(w.address)}">${esc(w.name)}` +
+      ` <span class="wallet-ref__short">${esc(shortAddress(w.address))}</span></span>`;
+  }
+  if (!walletsAskedFor.has(id)) {
+    walletsAskedFor.add(id);
+    loadWallets().then(() => {
+      if (walletById(id)) render();
+    });
+  }
+  return `<span class="muted">Wallet #${esc(id)}</span>`;
+}
+
+/**
+ * What the wallet picker offers: "No wallet", then the saved ones by name, as
+ * the Wallets tab lists them. The trade's own stays on offer even when the
+ * list on hand does not hold it, so opening the editor cannot unlink it.
+ */
+function walletChoices(t = {}) {
+  const ids = [...(state.wallets ?? [])].sort(byWalletName).map((w) => String(w.id));
+  const own = t.wallet_id == null ? '' : String(t.wallet_id);
+  return ['', ...ids, ...(own && !ids.includes(own) ? [own] : [])];
+}
+
+/**
+ * The new trade's wallet, after its platform in the card's heading, tied to
+ * the borrow form by `form=` as the platform is. Nothing at all while no
+ * wallet is saved: a picker holding only "No wallet" asks nothing.
+ */
+function walletHeadPicker() {
+  const options = walletChoices();
+  if (options.length < 2) return '';
+  return `<span class="new-trade__on" aria-hidden="true">from</span>
+    <div class="field new-trade__platform new-trade__wallet" data-field="wallet_id" data-field-of="borrow-form">
+    ${coinSelect({ id: 'f-wallet-new', name: 'wallet_id', value: '', options, req: '', kind: 'wallet', form: 'borrow-form', label: 'Wallet' })}
+  </div>`;
+}
+
+// `platform` is for the Borrowed stage's editor, with the wallet after it. A
+// new trade picks both in the heading instead (`platformHeadPicker`,
+// `walletHeadPicker`).
 function borrowFields(t = {}, { platform = false } = {}) {
+  const wallets = platform ? walletChoices(t) : [];
   return `<div class="grid">${
     platform
       ? field({ name: 'platform', label: 'Platform', tip: 'Where the loop was run: Aave, Ether.fi or Morpho.', value: t.platform ?? '', options: PLATFORMS })
+      : ''
+  }${
+    wallets.length > 1
+      ? field({ name: 'wallet_id', label: 'Wallet', tip: 'The wallet the loop was run from, one of those on the Wallets tab. Optional.', value: t.wallet_id == null ? '' : String(t.wallet_id), options: wallets, required: false })
       : ''
   }
     ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
@@ -1936,6 +2011,7 @@ function stageSummary(stage, t, d) {
         row('Platform', PLATFORM_META[t.platform]
           ? `<span class="platform-name">${platformMark(t.platform)}${esc(PLATFORM_META[t.platform].label)}</span>`
           : '<span class="muted">-</span>') +
+        row('Wallet', walletCell(t.wallet_id)) +
         row('Date', fmtDate(t.borrow_date)) +
         row2('Amount', money(t.borrow_amount, c), fxNote(d.borrowUsd, d.fx.borrow)) +
         row('APR', pct(t.borrow_apr), '', 'stage__row--gap') +
@@ -3384,7 +3460,7 @@ function renderAlerts() {
   ${pager(total, 'alerts')}`;
 }
 
-/* ---------------------------------------------------------- settings view */
+/* ----------------------------------------------------------- wallets view */
 
 // The server's order, `name COLLATE NOCASE, id`: SQLite's NOCASE folds ASCII
 // letters only, so this does too, and a row added or renamed here lands where
@@ -3469,6 +3545,7 @@ function walletRow(w) {
     </span></td>
     <td data-label="Network">${networkFace(w.network)}</td>
     <td data-label="Added" class="num">${fmtDate(localDay(w.created_at))}</td>
+    <td data-label="Trades" class="num">${state.loaded ? linkedTrades(w.id).length : '<span class="muted">-</span>'}</td>
     <td data-label="" class="num wallets-table__act">${
       renaming
         ? ''
@@ -3483,7 +3560,7 @@ function walletRow(w) {
  * the view: focus in the list - a rename half typed above all - stays where it
  * was.
  */
-function renderSettings() {
+function renderWalletsView() {
   const mount = document.getElementById('wallets-mount');
   if (!mount) return;
   let html;
@@ -3503,6 +3580,7 @@ function renderSettings() {
         ${hintHead('Address', TIPS.wallets.address)}
         ${hintHead('Network', TIPS.wallets.network)}
         ${hintHead('Added', TIPS.wallets.added)}
+        ${hintHead('Trades', TIPS.wallets.trades, 'num')}
         <th><span class="sr-only">Rename or delete</span></th>
       </tr></thead>
       <tbody>${state.wallets.map(walletRow).join('')}</tbody>
@@ -3512,9 +3590,9 @@ function renderSettings() {
 }
 
 /** Read the list again and draw it: on every visit, and on coming back to the tab. */
-async function refreshSettingsView() {
+async function refreshWalletsView() {
   await loadWallets();
-  if (state.view === 'settings') renderSettings();
+  if (state.view === 'wallets') renderWalletsView();
 }
 
 async function submitWallet(form) {
@@ -3536,7 +3614,7 @@ async function submitWallet(form) {
     form.reset();
     for (const f of ['wallet_name', 'wallet_address']) clearFieldError(form, f);
     form.querySelector('[data-form-error]').textContent = '';
-    renderSettings();
+    renderWalletsView();
     form.elements.wallet_name.focus();
     toast(`${row.name} saved: ${shortAddress(row.address)}.`);
   } catch (err) {
@@ -3551,7 +3629,7 @@ function startWalletRename(id) {
   const w = state.wallets?.find((x) => x.id === id);
   if (!w) return;
   state.walletRename = { id, value: w.name, base: w.name };
-  renderSettings();
+  renderWalletsView();
   const input = document.querySelector(`#wallet-rename-${id} input[name="wallet_name"]`);
   if (input) {
     focusInView(input);
@@ -3562,7 +3640,7 @@ function startWalletRename(id) {
 function endWalletRename() {
   const id = state.walletRename?.id;
   state.walletRename = null;
-  renderSettings();
+  renderWalletsView();
   if (id != null) document.querySelector(`[data-wallet-rename="${id}"]`)?.focus();
 }
 
@@ -3590,7 +3668,7 @@ async function submitWalletRename(form) {
     walletWriteSeq += 1;
     state.wallets = (state.wallets ?? []).map((w) => (w.id === id ? row : w)).sort(byWalletName);
     state.walletRename = null;
-    renderSettings();
+    renderWalletsView();
     document.querySelector(`[data-wallet-rename="${id}"]`)?.focus();
     toast(`Renamed to ${row.name}.`);
   } catch (err) {
@@ -3598,7 +3676,7 @@ async function submitWalletRename(form) {
       walletWriteSeq += 1;
       state.wallets = (state.wallets ?? []).map((w) => (w.id === id ? err.current : w)).sort(byWalletName);
       state.walletRename = { id, value: typed, base: err.current.name };
-      renderSettings();
+      renderWalletsView();
       const again = document.getElementById(`wallet-rename-${id}`);
       if (again) showFormError(again, err.message, 'wallet_name');
       return;
@@ -3607,7 +3685,7 @@ async function submitWalletRename(form) {
       walletWriteSeq += 1;
       state.wallets = (state.wallets ?? []).filter((w) => w.id !== id);
       state.walletRename = null;
-      renderSettings();
+      renderWalletsView();
       toast('That address was deleted elsewhere.');
       return;
     }
@@ -3621,9 +3699,25 @@ async function submitWalletRename(form) {
   }
 }
 
+/** The trades on hand linked to this wallet, newest id first. */
+const linkedTrades = (walletId) => state.trades.filter((t) => t.wallet_id === walletId).sort((a, b) => b.id - a.id);
+
 async function removeWallet(id) {
   const w = state.wallets?.find((x) => x.id === id);
   if (!w) return;
+  // In use: said at once, rather than after a confirmation the server would
+  // refuse anyway. The server refuses it all the same (its 409 below), for a
+  // link this page has not read yet.
+  const used = state.loaded ? linkedTrades(id) : [];
+  if (used.length) {
+    const shown = used.slice(0, 5).map((t) => `#${t.id}`).join(', ');
+    const more = used.length > 5 ? ` and ${used.length - 5} more` : '';
+    toast(
+      `${w.name} is linked to ${used.length} trade${used.length === 1 ? '' : 's'} (${shown}${more}). ` +
+        'Pick another wallet, or none, on their Borrowed card first.',
+    );
+    return;
+  }
   const ok = await confirmDialog({
     title: `Delete ${w.name}?`,
     body: `<code class="wallet-address__hex">${esc(w.address)}</code> goes from your addresses. You can add it again later.`,
@@ -3648,7 +3742,7 @@ async function removeWallet(id) {
   state.wallets = (state.wallets ?? []).filter((x) => x.id !== id);
   if (state.walletRename?.id === id) state.walletRename = null;
   walletWriteSeq += 1;
-  renderSettings();
+  renderWalletsView();
   const left = document.querySelectorAll('[data-wallet-delete]');
   (left.length ? left[Math.min(Math.max(at, 0), left.length - 1)] : document.getElementById('addresses-title'))?.focus();
   toast(`${w.name} deleted.`);
@@ -3688,14 +3782,14 @@ function render() {
   if (state.loadFailed) {
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
-    else if (state.view === 'settings') renderSettings();
+    else if (state.view === 'wallets') renderWalletsView();
     else document.getElementById(state.view === 'stats' ? 'stats-mount' : 'table-mount').innerHTML = LOAD_FAILED;
     return;
   }
   if (!state.loaded) {
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
-    else if (state.view === 'settings') renderSettings();
+    else if (state.view === 'wallets') renderWalletsView();
     else document.getElementById(state.view === 'stats' ? 'stats-mount' : 'table-mount').innerHTML = LOADING;
     return;
   }
@@ -3703,7 +3797,7 @@ function render() {
   renderHeroStats();
   if (state.view === 'stats') renderStatsView();
   else if (state.view === 'alerts') renderAlerts();
-  else if (state.view === 'settings') renderSettings();
+  else if (state.view === 'wallets') renderWalletsView();
   else renderTable();
 }
 
@@ -4452,13 +4546,14 @@ function toast(message) {
 
 /* ------------------------------------------------------------------ views */
 
-const VIEWS = ['trades', 'stats', 'alerts', 'settings'];
+const VIEWS = ['trades', 'stats', 'alerts', 'wallets'];
 
 /**
- * `#summary` is what the Stats view was called before it had year tabs. A
- * bookmark to it should land on the same page it always did, not on Trades.
+ * `#summary` is what the Stats view was called before it had year tabs, and
+ * `#settings` the Wallets tab for its first day. A bookmark to either should
+ * land on the same page it always did, not on Trades.
  */
-const VIEW_ALIASES = { summary: 'stats' };
+const VIEW_ALIASES = { summary: 'stats', settings: 'wallets' };
 
 /**
  * Own keys only. `in` and a bare lookup both walk the prototype, so `#toString`
@@ -4514,7 +4609,7 @@ function setView(view, { updateHash = true } = {}) {
   // another tab - or its row drew a bare "Trade #23" with no coin or date.
   if (state.view === 'alerts') refreshAlertsView();
   // The addresses likewise: one added or renamed in another tab shows here.
-  if (state.view === 'settings') refreshSettingsView();
+  if (state.view === 'wallets') refreshWalletsView();
 }
 
 /**
@@ -4643,7 +4738,7 @@ function wire() {
     // never read it again: an alert that fired meanwhile still said ARMED,
     // and its bell stayed lit. Coming back to it is a visit too.
     if (state.view === 'alerts') refreshAlertsView({ keepFocus: true });
-    if (state.view === 'settings') refreshSettingsView();
+    if (state.view === 'wallets') refreshWalletsView();
   });
 
   document.getElementById('theme-toggle').addEventListener('click', () => {
@@ -4662,6 +4757,7 @@ function wire() {
     syncNewTradeButton();
     if (state.creating) {
       document.getElementById('new-trade-platform').innerHTML = platformHeadPicker();
+      document.getElementById('new-trade-wallet').innerHTML = walletHeadPicker();
       borrowForm.innerHTML = borrowFields() + actions('Create trade', 'data-close-new');
       refreshHints(borrowForm, {}, 'borrow');
       borrowForm.querySelector('input')?.focus();
@@ -5247,6 +5343,10 @@ async function boot() {
   // worth showing even when the alert subsystem cannot be reached, and asking
   // for both at once means one render rather than two.
   const alerts = loadAlerts().catch(() => {});
+  // The wallets too, for the Borrowed cards' names and the pickers. Not
+  // gating either: `loadWallets` keeps its own failure, and a card then names
+  // a wallet by its id.
+  const wallets = loadWallets();
 
   // The header ticker is not awaited at all. It draws itself when it has
   // something to draw, and a price service that never answers must not hold up
@@ -5263,7 +5363,7 @@ async function boot() {
     return;
   }
 
-  await alerts;
+  await Promise.all([alerts, wallets]);
   setView(viewFromHash(), { updateHash: false });
 }
 

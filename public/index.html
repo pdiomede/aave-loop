@@ -33,7 +33,7 @@
           <a class="nav__link is-active" href="#trades" data-view="trades" aria-current="page">Trades</a>
           <a class="nav__link" href="#stats" data-view="stats">Stats</a>
           <a class="nav__link" href="#alerts" data-view="alerts">Alerts</a>
-          <a class="nav__link" href="#settings" data-view="settings">Settings</a>
+          <a class="nav__link" href="#wallets" data-view="wallets">Wallets</a>
         </nav>
         <!--
           What ETH and BTC cost, a row each, written from JS. In the header rather than in the hero
@@ -80,6 +80,7 @@
             <h3 class="card__title">New trade: <strong>borrow</strong></h3>
             <span class="new-trade__on" aria-hidden="true">on</span>
             <div id="new-trade-platform"></div>
+            <div id="new-trade-wallet" class="new-trade__wallet-mount"></div>
           </div>
           <div class="card__body">
             <form id="borrow-form" novalidate></form>
@@ -115,17 +116,17 @@
           </section>
         </section>
 
-        <section id="view-settings" hidden>
+        <section id="view-wallets" hidden>
           <div class="toolbar">
-            <h2 class="toolbar__title">Settings</h2>
+            <h2 class="toolbar__title">Wallets</h2>
           </div>
           <section class="card" aria-labelledby="addresses-title">
             <div class="card__head">
               <h3 class="card__title" id="addresses-title" tabindex="-1">Addresses</h3>
             </div>
             <div class="card__body">
-              <p class="settings__note muted">
-                The Ethereum wallets you trade from, each under a name. Linking them to trades comes next.
+              <p class="wallets__note muted">
+                The Ethereum wallets you trade from, each under a name. A trade names one after its platform, on its Borrowed card.
               </p>
               <!--
                 Outside the list's mount on purpose, and filled once by JS: a price

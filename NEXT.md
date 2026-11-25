@@ -248,14 +248,9 @@ help - what this bot can do
 
 ## To build next
 
-- **Link wallets to trades.** Settings > Addresses keeps them (25 Nov); nothing points
-  at one yet. Decided: `trades.wallet_id INTEGER REFERENCES wallets(id)`, nullable
-  and optional (blank shows "not recorded", as an old trade's platform does), with no
-  ON DELETE action, so a wallet that trades use cannot be deleted until they are
-  unlinked: the API turns the constraint into a 400 saying how many. A picker on
-  the new trade card and the Borrowed editor, the wallet on the Borrowed card. The
-  column needs both halves of the migration (DDL and `addMissingColumns`).
-- **Settings > Simulation.** Only a placeholder so far.
+- **Wallets > Simulation.** Only a placeholder so far.
+- **The wallet elsewhere.** A trade's wallet shows on its Borrowed card only: not in
+  the CSV, Stats or Telegram yet.
 
 ## Known limits and loose ends
 

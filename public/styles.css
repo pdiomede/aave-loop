@@ -17,6 +17,11 @@
   --text-faint: #9aa0aa;
   --hairline: rgba(0, 0, 0, 0.08);
   --hairline-strong: rgba(0, 0, 0, 0.14);
+  /* A field's edge, and on hover. Darker than the hairline in the light theme,
+     where at 0.08 a white field on a white card was hard to find; the dark
+     theme's hairline already reads, so it keeps it. */
+  --field-border: rgba(0, 0, 0, 0.17);
+  --field-border-hover: rgba(0, 0, 0, 0.26);
   --ring: 0 2px 4px rgba(0, 0, 0, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.06);
   --ring-raised: 0 8px 24px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
 
@@ -61,6 +66,8 @@
   --text-faint: #7f8398;
   --hairline: rgba(255, 255, 255, 0.1);
   --hairline-strong: rgba(255, 255, 255, 0.2);
+  --field-border: var(--hairline);
+  --field-border-hover: var(--hairline-strong);
   --ring: 0 2px 4px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --ring-raised: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
 
@@ -735,7 +742,7 @@ html {
 .control select {
   width: 100%;
   padding: 11px 14px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-field);
   background: var(--surface);
   color: var(--text);
@@ -752,7 +759,7 @@ html {
 
 .control input:hover,
 .control select:hover {
-  border-color: var(--hairline-strong);
+  border-color: var(--field-border-hover);
 }
 
 .control input:focus,
@@ -847,7 +854,7 @@ html {
   align-items: center;
   gap: 9px;
   padding: 11px 36px 11px 12px;
-  border: 1px solid var(--hairline);
+  border: 1px solid var(--field-border);
   border-radius: var(--radius-field);
   background: var(--surface);
   color: var(--text);
@@ -859,7 +866,7 @@ html {
 }
 
 .coin-select__trigger:hover {
-  border-color: var(--hairline-strong);
+  border-color: var(--field-border-hover);
 }
 
 .coin-select__trigger:focus,
@@ -973,6 +980,27 @@ html {
 .new-trade__platform .coin-select__trigger {
   padding-top: 7px;
   padding-bottom: 7px;
+}
+
+/* "from" and the wallet picker sit in the heading's own row of items, so an
+   empty mount - no wallet saved - takes no gap. */
+.new-trade__wallet-mount {
+  display: contents;
+}
+
+.new-trade__wallet {
+  width: 230px;
+}
+
+/* A wallet named on a Borrowed card: the name, and its address shortened. */
+.wallet-ref {
+  white-space: nowrap;
+}
+
+.wallet-ref__short {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.86em;
 }
 
 .coin-select__name {
@@ -2356,9 +2384,9 @@ th[aria-sort="ascending"] .th-sort__caret {
   padding-right: 20px;
 }
 
-/* ------------------------------------------------------------- settings */
+/* -------------------------------------------------------------- wallets */
 
-.settings__note {
+.wallets__note {
   margin-bottom: 16px;
 }
 

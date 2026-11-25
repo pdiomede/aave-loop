@@ -183,7 +183,7 @@ position is marked to today's exchange rate; `derive`'s own figures never are.
 labels - out of `public/app.js` so it can be checked; like `lib/csv.js` it imports
 `calc.js` and nothing else, and keeps no DOM.
 
-`lib/address.js` reads a wallet address for Settings (`parseAddress`, `walletNameError`)
+`lib/address.js` reads a wallet address for the Wallets tab (`parseAddress`, `walletNameError`)
 on both sides, and like `calc.js` it imports nothing. That is why it carries its own
 Keccak-256: EIP-55's checksum needs it, Node's crypto has only SHA3-256 (other
 padding) and the browser neither. Mixed case that misses its checksum is refused, not
@@ -347,15 +347,26 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
 
 ### Wallets
 
-Settings > Addresses keeps the wallets trades are run from in `wallets` (db.js): a
-required name, unique in any case, and an address stored only in its checksummed form,
-unique per `network` (Ethereum only, `NETWORKS` in `lib/address.js`; the column exists
-so another network needs no table rebuild). The API refuses changing an address in
-place: it is what trades will be linked by. Every write is an immediate transaction,
-so its duplicate checks and the write hold the lock together. Nothing links a trade to
-a wallet yet; NEXT.md has the plan. The Add form sits outside `#wallets-mount`, so the
+The Wallets tab (`#wallets`; `#settings`, its first name, is an alias) keeps the
+wallets trades are run from in `wallets` (db.js): a required name, unique in any case,
+and an address stored only in its checksummed form, unique per `network` (Ethereum
+only, `NETWORKS` in `lib/address.js`; the column exists so another network needs no
+table rebuild). The API refuses changing an address in place: it is what trades are
+linked by. Every write is an immediate transaction, so its duplicate checks and the
+write hold the lock together. The Add form sits outside `#wallets-mount`, so the
 redraw a price triggers cannot wipe it, and a rename being typed lives in
 `state.walletRename` for the same reason.
+
+A trade names its wallet in `trades.wallet_id INTEGER REFERENCES wallets(id)`:
+optional (NULL is none, never guessed), with no ON DELETE action, so with
+`foreign_keys` on a wallet in use cannot be deleted. `DELETE /api/wallets/:id` refuses
+it first with a 409 naming the trades; a foreign-key error from the other copy acting
+in between is answered 409 too, never 500. `normalise` takes `wallet_id` as a whole
+number of a saved wallet or blank (`walletIdIn`), and a conflict on it names the
+wallet, not the id. The page reads the wallets at boot (`loadWallets`), since the
+Borrowed cards name them (`walletCell`) and the pickers offer them (`walletChoices`,
+the `wallet` kind of `coinSelect`): after the platform in the new trade's heading
+(`walletHeadPicker`, left out while none is saved) and in the Borrowed editor.
 
 ### Platforms
 

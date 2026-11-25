@@ -787,6 +787,49 @@ await check('a wallet is deleted once, and an id that is not plain digits reache
   assert.equal((await api('GET', '/api/wallets')).data.wallets.length, 1);
 });
 
+await check('a trade names a saved wallet, or none, and nothing else', async () => {
+  const [w] = (await api('GET', '/api/wallets')).data.wallets;
+  const linked = await api('POST', '/api/trades', borrow({ wallet_id: String(w.id) }));
+  assert.equal(linked.status, 201);
+  assert.equal(linked.data.wallet_id, w.id);
+  // Absent and blank are both "no wallet".
+  assert.equal((await api('POST', '/api/trades', borrow())).data.wallet_id, null);
+  assert.equal((await api('POST', '/api/trades', borrow({ wallet_id: '' }))).data.wallet_id, null);
+  for (const wallet_id of [w.id + 1000, 'abc', '1.5', `${w.id}abc`, 1.5, true, 0, -1, [w.id]]) {
+    const r = await api('POST', '/api/trades', borrow({ wallet_id }));
+    assert.equal(r.status, 400, JSON.stringify(wallet_id));
+    assert.equal(r.data.field, 'wallet_id');
+  }
+  // Unlinked by a blank, as the editor's "No wallet" sends it.
+  const off = await api('PATCH', `/api/trades/${linked.data.id}`, { wallet_id: '' });
+  assert.equal(off.data.wallet_id, null);
+  await api('DELETE', `/api/trades/${linked.data.id}`);
+});
+
+await check('a wallet changed elsewhere is named in the conflict, not numbered', async () => {
+  const [w] = (await api('GET', '/api/wallets')).data.wallets;
+  const t = (await api('POST', '/api/trades', borrow({ wallet_id: w.id }))).data;
+  // The editor opened while the trade named no wallet.
+  const r = await api('PATCH', `/api/trades/${t.id}`, { wallet_id: '', base: { wallet_id: null } });
+  assert.equal(r.status, 409);
+  assert.equal(r.data.field, 'wallet_id');
+  assert.match(r.data.error, new RegExp(`^Wallet was changed elsewhere .*it is now "${w.name}"`));
+  assert.equal(r.data.current.wallet_id, w.id);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a wallet a trade names cannot be deleted until the trade names none', async () => {
+  const [w] = (await api('GET', '/api/wallets')).data.wallets;
+  const t = (await api('POST', '/api/trades', borrow({ wallet_id: w.id }))).data;
+  const refused = await api('DELETE', `/api/wallets/${w.id}`);
+  assert.equal(refused.status, 409);
+  assert.match(refused.data.error, new RegExp(`is linked to 1 trade \\(#${t.id}\\)`));
+  assert.ok((await api('GET', '/api/wallets')).data.wallets.some((x) => x.id === w.id));
+  assert.equal((await api('PATCH', `/api/trades/${t.id}`, { wallet_id: null })).data.wallet_id, null);
+  assert.equal((await api('DELETE', `/api/wallets/${w.id}`)).status, 204);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 server.kill('SIGTERM');
 await new Promise((r) => server.once('exit', r));
 if (process.exitCode && serverErr) warn(`server stderr:\n${serverErr}`);
