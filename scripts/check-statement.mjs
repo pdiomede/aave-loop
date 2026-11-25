@@ -147,6 +147,10 @@ check('hand-worked year: totals, extremes, month, version', () => {
   assert.ok(shows(pdf, '$7.00'), 'total fees paid');
   assert.ok(shows(pdf, '10.0 days'), 'average hold');
   assert.ok(shows(pdf, 'Biggest gain in USD') && shows(pdf, '+$995.00'));
+  // The first row in the page's order: borrowed, interest, fees, then hold.
+  const at = (label) => pdf.indexOf(`${pdfString(label)} Tj`);
+  const order = ['Total borrowed', 'Interest paid', 'Total fees paid', 'Average hold'].map(at);
+  assert.ok(order.every((v, i) => v >= 0 && (i === 0 || v > order[i - 1])), `tile order ${order}`);
   assert.ok(shows(pdf, 'Biggest loss in USD') && shows(pdf, '-$202.00'));
   assert.ok(shows(pdf, '2 closed trades'));
   assert.ok(shows(pdf, 'Mar 2026'), 'month row');
