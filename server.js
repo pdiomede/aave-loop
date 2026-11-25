@@ -749,6 +749,13 @@ app.patch('/api/trades/:id', async (req, res, next) => {
             if ('wallet_id' in patch && chainOfWallet(patch.wallet_id) !== chainOfWallet(current.wallet_id)) {
               prepare('DELETE FROM stage_tx WHERE trade_id = ?').run(current.id);
             }
+            // A stage undone takes its hash, pasted or found: kept, it stood
+            // for a stage the trade no longer records, out of sight on its
+            // card and read by the audit as "the purchase is 0.00".
+            const after = { ...current, ...write };
+            for (const st of TX_STAGES) {
+              if (!stageRecorded(after, st)) prepare('DELETE FROM stage_tx WHERE trade_id = ? AND stage = ?').run(current.id, st);
+            }
           }
           return info;
         }).immediate();

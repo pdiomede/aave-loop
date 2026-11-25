@@ -147,6 +147,19 @@ export const stageRecorded = (t, stage) => Boolean(t[RULE[stage].date]) && Numbe
 export const ANCHOR = { borrow: 'buy', repay: 'sell' };
 
 /**
+ * Whether a transaction's time is within a stage's own days: its date, a day
+ * either side (the date typed is local, the chain keeps UTC). The search
+ * reads a loan's window out to its purchase's day, to settle ties against
+ * it, but a loan is only ever one of its own days; held to nothing, a loan
+ * days off its date was linked, and the audit, holding it to this, called it
+ * wrong.
+ */
+export function withinStageDays(t, stage, at) {
+  const day = parseDate(t[RULE[stage].date]);
+  return day !== null && at >= day - DAY && at < day + 2 * DAY;
+}
+
+/**
  * The fields a stored hash was found from: a change to any of them clears it.
  * A loan's or repayment's includes its anchor's, which set its window and
  * decided its ties: a loan found while the purchase's quantity was mistyped
@@ -367,6 +380,7 @@ function candidates(rows, t, stage, wallet, claimed) {
     if (!tokens.includes(lower(row.contractAddress))) continue;
     if (r.dir === 'in' ? lower(row.to) !== w : lower(row.from) !== w) continue;
     if (claimed.has(lower(row.hash))) continue;
+    if (!withinStageDays(t, stage, Number(row.timeStamp) * 1000)) continue;
     const amount = amountOf(row);
     const off = Math.abs(amount - want);
     if (!(off <= Math.max(0.01, want * TOLERANCE))) continue;
@@ -541,11 +555,11 @@ export async function txTransfers(network, hash) {
 
 /**
  * Whether a stored hash is the stage it is stored as, by the rules a search
- * goes by: `{ verdict: 'ok' | 'check' | 'wrong', notes }`. `tx` is
- * `txTransfers`' answer; `alsoHeldBy`, another trade's stage holding the same
- * hash, if one does. Pure.
+ * goes by: `{ verdict: 'ok' | 'check' | 'wrong' | 'unchecked', notes }`, on
+ * this trade alone; a hash other trades hold too is weighed across them by
+ * the script. `tx` is `txTransfers`' answer. Pure.
  */
-export function auditStage(t, stage, wallet, tx, alsoHeldBy = null) {
+export function auditStage(t, stage, wallet, tx) {
   const r = RULE[stage];
   const network = networkOf(wallet);
   const chain = NETWORK_META[network].label;
@@ -557,9 +571,13 @@ export function auditStage(t, stage, wallet, tx, alsoHeldBy = null) {
     notes.push(note);
     if (level === 'wrong' || verdict === 'ok') verdict = level;
   };
-  if (alsoHeldBy) flag('wrong', `also stored as the ${RULE[alsoHeldBy.stage].noun} of trade #${alsoHeldBy.trade_id}`);
-  if (!tx.ok) flag('wrong', 'the transaction failed on chain');
+  // A stage blanked since: the hash stands for nothing the trade records.
+  if (!stageRecorded(t, stage)) return { verdict: 'wrong', notes: [`the ${r.noun} is no longer recorded on the trade`] };
   const tokens = STABLE[network]?.[coin] ?? [];
+  // No contract known for the coin there: nothing to judge it by, which is
+  // not the same as wrong - a pasted EURC hash on Arbitrum read "moves no EURC".
+  if (!tokens.length) return { verdict: 'unchecked', notes: [`${coin} has no known contract on ${chain}, so it cannot be checked`] };
+  if (!tx.ok) flag('wrong', 'the transaction failed on chain');
   const want = Number(t[r.amount]);
   const moving = tx.transfers.filter(
     (x) => tokens.includes(x.contractAddress) && (r.dir === 'in' ? x.to === w : x.from === w),
@@ -589,11 +607,13 @@ export function auditStage(t, stage, wallet, tx, alsoHeldBy = null) {
       .filter((x) => assetTokens.includes(x.contractAddress) && (r.qtyDir === 'in' ? x.to === w : x.from === w))
       .reduce((sum, x) => sum + amountOf(x), 0);
     const wantQty = Number(t[r.qty]);
-    if (!leg) flag('check', 'no asset token moves with it (a native ETH swap?)');
+    // Native ETH, or an intent order settled by a solver (CoW Swap's ETH flow:
+    // the ETH left the wallet in an earlier transaction), moves no asset token
+    // from the wallet here, so its side of the swap cannot be read.
+    if (!leg) flag('check', `no asset token moves ${r.qtyDir === 'in' ? 'into' : 'out of'} the wallet in it: native ETH, or an intent order (CoW Swap) settled for it?`);
     else if (Math.abs(leg - wantQty) / wantQty > 0.005) flag('check', `it moves ${leg} of the asset; the ${r.noun} says ${wantQty}`);
   }
-  const day = parseDate(t[r.date]);
-  if (tx.at < day - DAY || tx.at >= day + 2 * DAY) {
+  if (!withinStageDays(t, stage, tx.at)) {
     flag('wrong', `it is dated ${fmtDate(new Date(tx.at).toISOString().slice(0, 10))}; the ${r.noun} says ${fmtDate(t[r.date])}`);
   }
   return { verdict, notes };

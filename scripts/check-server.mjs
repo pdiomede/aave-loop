@@ -1403,6 +1403,81 @@ await check('the hash audit names what cannot be the stage, and --apply forgets 
   await api('DELETE', `/api/trades/${t.id}`);
 });
 
+await check('a loan is found on its own days, not its purchase\'s', async () => {
+  // The window reaches out to the purchase five days on, to settle ties; a
+  // loan-sized transfer there is not the loan typed on the 4th.
+  mock.es.rows = [xfer(151, '2026-09-08T10:00:00Z', EURC_C, POOL, SCAN, 30000)];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, '2026-09-04', '2026-09-09', {
+    buy_date: '2026-09-09', sell_date: '2026-09-10', repay_date: '2026-09-10',
+  }))).data;
+  const r = (await find(t.id, 'borrow')).data;
+  assert.equal(r.found, false, r.hash);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a stage undone takes its hash, pasted or found', async () => {
+  const t = (await api('POST', '/api/trades', borrow({ borrow_date: '2026-09-12', wallet_id: scanWallet.id, ...buy, buy_date: '2026-09-12' }))).data;
+  assert.equal((await api('PUT', `/api/trades/${t.id}/tx/buy`, { hash: hashOf(160) })).status, 200);
+  const undone = await api('PATCH', `/api/trades/${t.id}`, { buy_date: '', buy_amount: '', buy_eth: '', buy_gas_usd: '' });
+  assert.equal(undone.status, 200, JSON.stringify(undone.data));
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id], undefined);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('the audit keeps a shared hash on the trade it fits, and cannot check a coin a chain lacks', async () => {
+  const [day, next] = ['2026-09-15', '2026-09-16'];
+  const T = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const pad = (a) => `0x${'0'.repeat(24)}${a.slice(2).toLowerCase()}`;
+  const leg = (contract, from, to, amount, dec = 6) => ({
+    address: contract, topics: [T, pad(from), pad(to)], data: `0x${BigInt(Math.round(amount * 10 ** dec)).toString(16)}`,
+  });
+  const receipt = (iso, logs) => ({ status: '0x1', blockNumber: `0x${Math.floor(Date.parse(iso) / 12000).toString(16)}`, logs });
+  // A's purchase, stored by an old search as B's repayment too.
+  mock.es.receipts = {
+    [hashOf(171)]: receipt(`${day}T10:05:00Z`, [leg(EURC_C, SCAN, ROUTER, 30000), leg(WETH_C, ROUTER, SCAN, 12.6491, 18)]),
+    [hashOf(172)]: receipt(`${day}T11:00:00Z`, [leg(EURC_C, POOL, SCAN, 1000)]),
+  };
+  const a = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  const b = (await api('POST', '/api/trades', loop(scanWallet.id, day, day, { sell_date: day, repay_date: day }))).data;
+  const arb = (await api('POST', '/api/wallets', { name: 'Arb audit', address: '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', network: 'arbitrum' })).data;
+  const c = (await api('POST', '/api/trades', borrow({ borrow_date: day, borrow_amount: '1000', borrow_currency: 'EURC', wallet_id: arb.id }))).data;
+  const db = new Database(path.join(tmp, 'api.db'));
+  const put = db.prepare("INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, 'search', ?)");
+  put.run(a.id, 'buy', hashOf(171), new Date().toISOString());
+  put.run(b.id, 'repay', hashOf(171), new Date().toISOString());
+  db.close();
+  // EURC has no contract on Arbitrum here: pasted, it can only be reported unchecked.
+  assert.equal((await api('PUT', `/api/trades/${c.id}/tx/borrow`, { hash: hashOf(172) })).status, 200);
+  const run = (...args) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['scripts/audit-hashes.mjs', ...args], {
+        cwd: root,
+        env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: path.join(tmp, 'api.db'), ETHERSCAN_API_KEY: ES_KEY },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '';
+      child.stdout.on('data', (d) => (out += d));
+      child.on('close', (status) => (status === 0 ? resolve(out) : reject(new Error(out))));
+    });
+  const out = await run();
+  const lines = out.split('\n');
+  const block = (id, stage) => {
+    const i = lines.findIndex((l) => l.includes(`#${id} ${stage}`));
+    return lines.slice(i, i + 3).join('\n');
+  };
+  assert.match(block(a.id, 'Bought'), /^OK .*\n.*also stored as the repaid stage of trade #\d+, which it does not fit as well/);
+  assert.match(block(b.id, 'Repaid'), /^WRONG .*(\n.*)*also stored as the bought stage of trade #\d+, which it fits better/);
+  assert.match(block(c.id, 'Borrowed'), /^\? .*\n.*EURC has no known contract on Arbitrum, so it cannot be checked/);
+  const applied = await run('--apply');
+  assert.match(applied, /Forgot 1 wrong searched hash\./);
+  const kept = (await api('GET', '/api/stage-txs')).data;
+  assert.equal(kept[a.id]?.buy?.hash, hashOf(171));
+  assert.equal(kept[b.id], undefined);
+  mock.es.receipts = {};
+  for (const t of [a, b, c]) await api('DELETE', `/api/trades/${t.id}`);
+  await api('DELETE', `/api/wallets/${arb.id}`);
+});
+
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {
   const before = mock.es.calls;
   // In a child of its own: `isolated` blanks the key, as an install without

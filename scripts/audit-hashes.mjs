@@ -86,11 +86,9 @@ for (const r of rows) {
   holders.get(r.hash).push({ trade_id: r.trade_id, stage: r.stage });
 }
 
-const tally = { ok: 0, check: 0, wrong: 0, unchecked: 0 };
-const toForget = [];
-console.log(`${rows.length} stored hash${rows.length === 1 ? '' : 'es'}, ${dbFile}\n`);
+// First each hash on its own trade, then across the trades that share one.
+const judged = [];
 for (const r of rows) {
-  const head = `#${r.trade_id} ${CARD[r.stage].padEnd(8)} ${(r.source === 'manual' ? 'pasted' : 'found').padEnd(6)} ${short(r.hash)}`;
   let verdict;
   let notes;
   if (r.wallet_id == null || !r.wallet_address) {
@@ -106,10 +104,46 @@ for (const r of rows) {
       verdict = 'unchecked';
       notes = [tx.reason];
     } else {
-      const other = holders.get(r.hash).find((h) => h.trade_id !== r.trade_id) ?? null;
-      ({ verdict, notes } = auditStage(r, r.stage, wallet, tx, other));
+      ({ verdict, notes } = auditStage(r, r.stage, wallet, tx));
     }
   }
+  judged.push({ r, verdict, notes });
+}
+
+// A transaction is one stage of one trade. Where trades share a hash, the one
+// it fits keeps it - a clean fit (OK) over a doubtful one (CHECK), as a
+// purchase moving the asset fits a purchase better than a repayment - and the
+// rest are wrong; where it fits more than one equally, all are to check.
+// Marked wrong on every holder, --apply forgot the hash from the trade it fits
+// as well as from the one it does not.
+for (const [hash, list] of holders) {
+  if (new Set(list.map((h) => h.trade_id)).size < 2) continue;
+  const sharers = judged.filter((j) => j.r.hash === hash);
+  const best = ['ok', 'check'].map((v) => sharers.filter((j) => j.verdict === v)).find((g) => g.length) ?? [];
+  const where = (j) =>
+    sharers
+      .filter((o) => o.r.trade_id !== j.r.trade_id)
+      .map((o) => `the ${CARD[o.r.stage].toLowerCase()} stage of trade #${o.r.trade_id}`)
+      .join(', ');
+  for (const j of sharers) {
+    if (j.verdict === 'unchecked') continue;
+    if (best.length === 1 && j === best[0]) {
+      j.notes.push(`also stored as ${where(j)}, which it does not fit as well`);
+    } else if (best.includes(j)) {
+      j.verdict = 'check';
+      j.notes.push(`also stored as ${where(j)}, which it fits as well: check which it is`);
+    } else {
+      j.verdict = 'wrong';
+      j.notes.push(`also stored as ${where(j)}, which it fits better`);
+    }
+  }
+}
+
+const tally = { ok: 0, check: 0, wrong: 0, unchecked: 0 };
+const toForget = [];
+console.log(`${rows.length} stored hash${rows.length === 1 ? '' : 'es'}, ${dbFile}\n`);
+for (const { r, verdict, notes } of judged) {
+  const head = `#${r.trade_id} ${CARD[r.stage].padEnd(8)} ${(r.source === 'manual' ? 'pasted' : 'found').padEnd(6)} ${short(r.hash)}`;
   tally[verdict] += 1;
   const mark = { ok: 'OK   ', check: 'CHECK', wrong: 'WRONG', unchecked: '?    ' }[verdict];
   console.log(`${mark} ${head}${notes.length ? `\n        ${notes.join('\n        ')}` : ''}`);

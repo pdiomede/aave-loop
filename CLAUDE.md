@@ -457,9 +457,13 @@ all: a hash is a transaction on one chain. A paste needs the trade to have a wal
 transaction's receipt (Etherscan's proxy calls, or the node; `txTransfers`) and judges it
 by the search's own rules (`auditStage`): succeeded, moves the coin the right way for
 about the amount, a loan or repayment is no swap within the coin nor a purchase or sale,
-a purchase or sale moves about the typed quantity, dated within a day, held by no other
-trade. It opens the ledger read-only; `--apply` forgets the WRONG *searched* hashes in a
-conditional delete, and reports pasted ones only. It exists because hashes stored before
+a purchase or sale moves about the typed quantity, dated within a day
+(`withinStageDays`, which the search's candidates are held to as well - its window reaches
+a loan out to its purchase's day only to settle ties). A hash several trades hold stays
+with the one it fits best (OK over CHECK), the rest WRONG, equal fits all CHECK; a stage
+no longer recorded is WRONG, a coin with no contract on the chain unchecked. It opens the
+ledger read-only; `--apply` forgets the WRONG *searched* hashes in a conditional delete,
+and reports pasted ones only. A PATCH that undoes a stage deletes its hash, pasted too. It exists because hashes stored before
 a matching rule was tightened are never looked at again. `scripts/check-server.mjs` mocks Etherscan on loopback.
 
 ### Platforms
