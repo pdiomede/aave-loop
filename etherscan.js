@@ -101,7 +101,19 @@ const redact = (text, key) => {
   return key ? s.split(key).join('<key>') : s;
 };
 
-class EtherscanError extends Error {}
+/**
+ * A search that could not be done, and what kind of failure it was, for the
+ * page's Get onchain data to act on: `setup` (no key, or the key refused) ends
+ * a scan at once, `busy` (the rate limit, a timeout, no answer, an answer that
+ * is not Etherscan's) is waited out and tried again. A stage simply not found
+ * is no error and has no kind.
+ */
+class EtherscanError extends Error {
+  constructor(message, kind = 'busy') {
+    super(message);
+    this.kind = kind;
+  }
+}
 
 // One request at a time, spaced: two cards searched at once would otherwise
 // fire six calls in a burst and the free tier refuses the sixth.
@@ -147,9 +159,10 @@ function callOnce(params, key) {
     if (Array.isArray(body?.result) && /no transactions found/i.test(body?.message ?? '')) return [];
     const said = String(body?.result ?? body?.message ?? `status ${res.status}`);
     if (/invalid api key|missing\/invalid api key/i.test(said)) {
-      throw new EtherscanError('Etherscan refused the ETHERSCAN_API_KEY in config.env.');
+      throw new EtherscanError('Etherscan refused the ETHERSCAN_API_KEY in config.env.', 'setup');
     }
-    if (/rate limit/i.test(said)) throw new RateLimited("Etherscan's rate limit was reached. Try again in a moment.");
+    // Per second or per day: "Max calls per sec rate limit reached", "Max daily limit reached".
+    if (/rate limit|limit reached/i.test(said)) throw new RateLimited("Etherscan's rate limit was reached. Try again in a moment.");
     throw new EtherscanError(`Etherscan answered: ${redact(said, key).slice(0, 160)}`);
   });
   queue = run.catch(() => {});
@@ -296,12 +309,13 @@ function pick(rows, t, stage, wallet, claimed, own = {}) {
  * Search Etherscan for one stage of a trade. `wallet` is the trade's
  * (`{ name, address }`); `claimed` maps each stage to the hashes other trades
  * already hold for it; `own` the trade's own stored hashes, by stage. Answers `{ found: true, hash, at, amount, others }` or
- * `{ found: false, reason }`, never throws: a search that could not be done
+ * `{ found: false, reason, kind }` (`kind` as `EtherscanError`'s, none for a
+ * stage not found), never throws: a search that could not be done
  * is a result the card shows.
  */
 export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
   const { key, reason } = etherscanKey();
-  if (!key) return { found: false, reason };
+  if (!key) return { found: false, reason, kind: 'setup' };
   if (!STABLE[t.borrow_currency]) return { found: false, reason: `${t.borrow_currency} has no known contract to search for.` };
   const { from, to } = windowOf(t, stage);
   try {
@@ -322,6 +336,7 @@ export async function findStageTx(t, stage, wallet, claimed = {}, own = {}) {
     return {
       found: false,
       reason: err instanceof EtherscanError ? redact(err.message, key) : 'The search failed. Try again.',
+      kind: err instanceof EtherscanError ? err.kind : 'busy',
     };
   }
 }

@@ -944,6 +944,7 @@ await check('a token named like the coin, or a transfer the wrong way, is not th
   const r = await find(t.id, 'buy');
   assert.equal(r.status, 200);
   assert.equal(r.data.found, false);
+  assert.equal(r.data.kind, undefined, 'not found is no failure');
   assert.match(r.data.reason, /No EURC transfer of about 30,000\.00 out of Scan between 9 Sep 2026 and 11 Sep 2026/);
   assert.equal((await api('GET', '/api/stage-txs')).data[t.id], undefined);
   await api('DELETE', `/api/trades/${t.id}`);
@@ -1014,6 +1015,16 @@ await check("Etherscan's refusals are said in words, never with the key", async 
   const refused = await find(t.id, 'buy');
   assert.equal(refused.data.found, false);
   assert.match(refused.data.reason, /refused the ETHERSCAN_API_KEY/);
+  // Tagged, so Get onchain data stops at once rather than waiting it out.
+  assert.equal(refused.data.kind, 'setup');
+  // The free tier's limit, past the two retries: busy, to be waited out.
+  mock.es.error = 'Max calls per sec rate limit reached (3/sec)';
+  const started = Date.now();
+  const busy = await find(t.id, 'repay');
+  assert.deepEqual([busy.data.found, busy.data.kind], [false, 'busy']);
+  assert.ok(Date.now() - started >= 2000, 'retried twice before answering');
+  mock.es.error = 'Max daily limit reached. 100000 calls per day';
+  assert.equal((await find(t.id, 'borrow')).data.kind, 'busy');
   mock.es.error = `Unexpected trouble for ${ES_KEY} on the node`;
   const echoed = await find(t.id, 'sell');
   assert.equal(echoed.data.found, false);
@@ -1100,6 +1111,7 @@ await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async
   });
   assert.equal(r.found, false);
   assert.match(r.reason, /No ETHERSCAN_API_KEY in none\.env/);
+  assert.equal(r.kind, 'setup');
   assert.equal(mock.es.calls, before);
 });
 

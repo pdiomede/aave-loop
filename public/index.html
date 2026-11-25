@@ -138,8 +138,20 @@
             <div id="wallets-mount"></div>
           </section>
           <section class="card" aria-labelledby="simulation-title">
-            <div class="card__head">
+            <div class="card__head sim-head">
               <h3 class="card__title" id="simulation-title">Simulation</h3>
+              <span class="sim-scan__count muted" id="sim-scan-count" aria-live="polite"></span>
+              <button class="btn btn--ghost btn--sm sim-scan" type="button" data-sim-scan
+                data-tip="Gather transaction hashes for each activity">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="6.5" /><path d="M20 20l-4.2-4.2" />
+                </svg>
+                <span class="sim-scan__label">Get onchain data</span>
+              </button>
+              <!-- The scan's progress, drawn over the divider under the title. -->
+              <div class="sim-progress" id="sim-progress" role="progressbar" aria-label="Getting onchain data"
+                aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><span class="sim-progress__bar"></span></div>
             </div>
             <div class="card__body">
               <p class="wallets__note muted">Every trade under the wallet it names, as the Trades tab shows it. Edit a trade on the Trades tab.</p>

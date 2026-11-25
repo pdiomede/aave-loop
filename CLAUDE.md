@@ -399,6 +399,14 @@ from every message; calls are queued 400 ms apart (the free tier allows 3 a seco
 and retried twice on its rate limit; settled block numbers are cached for the
 process and a window's transfers for two minutes.
 
+A failed search carries a `kind`: `setup` (no key, the key refused) or `busy` (rate
+limit, daily limit, timeout, no answer, not Etherscan's JSON); a stage simply not found
+has none. **Get onchain data** (`scanOnchain` in public/app.js) drives the bulk search
+from the page, one stage at a time through the same find endpoint (`searchStage`, which
+moves no focus): a `busy` stage is waited out 10 s then 30 s (`SCAN_WAITS`) before the
+scan stops, a `setup` one stops it at once, and the report says which. The server's
+queue keeps it on the free tier; the page only adds patience.
+
 Found or pasted hashes live in `stage_tx` (db.js), one per trade and stage, so a
 stage is searched once. `POST /api/trades/:id/tx/:stage/find` answers a stored hash
 without searching, stores a found one only if the trade's `txBasis` fields are as the

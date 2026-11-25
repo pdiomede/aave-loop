@@ -758,6 +758,9 @@ const state = {
   // found one of several), by `tradeId:stage`; and a hash being pasted, by the
   // same key - in state, since a price landing redraws the view.
   stageTxs: null,
+  // Get onchain data while it runs: counts, what was not found, and whether
+  // Stop was pressed. Null when no scan is running.
+  simScan: null,
   // The wallet groups opened there, by group key (`w<id>`, or `none`). They
   // start closed on every load, as asked, and stay as set across the redraw
   // every price triggers; unlike the Stats cards, nothing is remembered.
@@ -3779,14 +3782,21 @@ function simStageCards(t, d) {
 }
 
 /** The magnifier: search Etherscan for one stage, and keep what it finds. */
-async function findTx(key) {
-  if (state.txBusy.has(key)) return;
+/**
+ * Search one stage and keep what comes back, in state and on its card. The
+ * answer, whatever happened: `{ found, others }`, or `{ found: false, reason,
+ * kind }` - `kind` 'setup' or 'busy' as etherscan.js tags them, none for a
+ * stage simply not found. Moves no focus, so Get onchain data can run it
+ * under someone typing elsewhere; the magnifier's `findTx` adds that.
+ */
+async function searchStage(key) {
   const [id, stage] = key.split(':');
   state.txBusy.add(key);
   delete state.txNote[key];
   renderSimulation();
+  let r;
   try {
-    const r = await api(`/api/trades/${id}/tx/${stage}/find`, { method: 'POST', body: '{}' });
+    r = await api(`/api/trades/${id}/tx/${stage}/find`, { method: 'POST', body: '{}' });
     if (r.found) {
       txWriteSeq += 1;
       state.stageTxs = { ...(state.stageTxs ?? {}), [id]: { ...(state.stageTxs?.[id] ?? {}), [stage]: { hash: r.hash, source: r.source, found_at: r.found_at } } };
@@ -3795,14 +3805,211 @@ async function findTx(key) {
       state.txNote[key] = { reason: r.reason };
     }
   } catch (err) {
-    state.txNote[key] = { reason: err.status ? err.message : 'Could not reach the server.' };
+    // Refused (no wallet, a stage not recorded, a trade gone) is final for
+    // this stage; no answer at all is the server or the network, and passes.
+    r = err.status
+      ? { found: false, reason: err.message }
+      : { found: false, reason: 'Could not reach the server.', kind: 'busy' };
+    state.txNote[key] = { reason: r.reason };
   } finally {
     state.txBusy.delete(key);
   }
   renderSimulation();
+  return r;
+}
+
+/** The magnifier: search Etherscan for one stage, and keep what it finds. */
+async function findTx(key) {
+  if (state.txBusy.has(key)) return;
+  await searchStage(key);
   // Focus to what replaced the magnifier: the link, or the reason's paste.
   const card = document.querySelector(`[data-tx-clear="${key}"], [data-tx-paste="${key}"]`)?.closest('.sim-card');
   card?.querySelector('.tx-line__hash, [data-tx-paste]')?.focus();
+}
+
+/* -------------------------------------------------------- get onchain data */
+
+const TX_CARD = { borrow: 'Borrowed', buy: 'Bought', sell: 'Sold', repay: 'Repaid' };
+const SCAN_TIP = 'Gather transaction hashes for each activity';
+// How long to wait before trying a stage again when Etherscan is busy, in
+// seconds. Its free tier allows three calls a second and 100,000 a day; the
+// server already spaces calls and retries a refusal twice, so reaching the
+// page means a longer pause is wanted, and after these the scan stops.
+const SCAN_WAITS = [10, 30];
+
+/** The button, the count beside it and the bar along the divider. */
+function renderScanHead() {
+  const scan = state.simScan;
+  const btn = document.querySelector('[data-sim-scan]');
+  const count = document.getElementById('sim-scan-count');
+  const bar = document.getElementById('sim-progress');
+  if (!btn || !count || !bar) return;
+  const label = btn.querySelector('.sim-scan__label');
+  if (!scan?.running) {
+    label.textContent = 'Get onchain data';
+    btn.dataset.tip = SCAN_TIP;
+    btn.removeAttribute('aria-pressed');
+    count.textContent = '';
+    bar.hidden = true;
+    return;
+  }
+  label.textContent = scan.stopRequested ? 'Stopping…' : 'Stop';
+  btn.dataset.tip = 'Stop after the search in progress';
+  btn.setAttribute('aria-pressed', 'true');
+  count.textContent = scan.waiting
+    ? `Etherscan busy, waiting ${scan.waiting} s… ${scan.done} of ${scan.total}`
+    : `${scan.done} of ${scan.total}`;
+  const pct = scan.total ? Math.round((scan.done / scan.total) * 100) : 0;
+  bar.hidden = false;
+  bar.setAttribute('aria-valuenow', String(pct));
+  bar.querySelector('.sim-progress__bar').style.width = `${pct}%`;
+}
+
+// A wait the Stop button can cut short.
+function scanPause(ms, scan) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => (scan.stopRequested || Date.now() - started >= ms ? resolve() : setTimeout(tick, 250));
+    tick();
+  });
+}
+
+/**
+ * Get onchain data: every closed trade's stages that have no hash yet,
+ * searched one at a time - wallet by wallet, as Simulation lists them - and
+ * kept as found, then a report. Run again, it picks up only what is still
+ * empty. Pressed while running, it stops after the search in flight.
+ */
+async function scanOnchain() {
+  if (state.simScan?.running) {
+    state.simScan.stopRequested = true;
+    renderScanHead();
+    return;
+  }
+  if (!state.loaded || state.wallets === null) {
+    toast('The ledger is still loading. Try again in a moment.');
+    return;
+  }
+  await loadStageTxs();
+  const rank = new Map([...state.wallets].sort(byWalletName).map((w, i) => [w.id, i]));
+  const closed = sortedTrades()
+    .filter((t) => derive(t).status === 'CLOSED')
+    .sort((a, b) => (rank.get(a.wallet_id) ?? Infinity) - (rank.get(b.wallet_id) ?? Infinity));
+  const scan = {
+    running: true,
+    total: 0,
+    done: 0,
+    found: 0,
+    flagged: [],
+    notFound: [],
+    had: 0,
+    skipped: closed.filter((t) => t.wallet_id == null).length,
+    closed: closed.length,
+    stopped: null,
+  };
+  const queue = [];
+  for (const t of closed.filter((x) => x.wallet_id != null)) {
+    for (const stage of Object.keys(TX_CARD)) {
+      if (state.stageTxs?.[t.id]?.[stage]) scan.had += 1;
+      else queue.push({ id: t.id, stage });
+    }
+  }
+  scan.total = queue.length;
+  if (!queue.length) {
+    await scanReport({ ...scan, running: false });
+    return;
+  }
+  state.simScan = scan;
+  renderScanHead();
+
+  for (const { id, stage } of queue) {
+    if (scan.stopRequested) break;
+    // Found or pasted meanwhile, by a magnifier or the other tab.
+    if (state.stageTxs?.[id]?.[stage]) {
+      scan.had += 1;
+      scan.done += 1;
+      renderScanHead();
+      continue;
+    }
+    const key = txKey(id, stage);
+    let r = await searchStage(key);
+    for (const wait of SCAN_WAITS) {
+      if (r.kind !== 'busy' || scan.stopRequested) break;
+      scan.waiting = wait;
+      renderScanHead();
+      await scanPause(wait * 1000, scan);
+      scan.waiting = null;
+      if (scan.stopRequested) break;
+      r = await searchStage(key);
+    }
+    if (r.kind === 'busy' && scan.stopRequested) break;
+    if (r.kind === 'setup' || r.kind === 'busy') {
+      scan.stopped = { kind: r.kind, reason: r.reason };
+      break;
+    }
+    if (r.found) {
+      scan.found += 1;
+      if (r.others) scan.flagged.push({ id, stage, others: r.others });
+    } else {
+      scan.notFound.push({ id, stage, reason: r.reason });
+    }
+    scan.done += 1;
+    renderScanHead();
+  }
+  if (scan.stopRequested && !scan.stopped) scan.stopped = { kind: 'stop' };
+  scan.running = false;
+  state.simScan = null;
+  renderScanHead();
+  await scanReport(scan);
+}
+
+/** What a scan did, in the window it ends with. */
+function scanReport(scan) {
+  const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const item = (x, text) => `<li>Trade #${esc(x.id)} &middot; ${TX_CARD[x.stage]}: ${esc(text)}</li>`;
+  const left = scan.total - scan.done;
+  let title;
+  let lead;
+  if (!scan.total) {
+    title = 'Nothing to gather';
+    lead = scan.closed
+      ? 'Every stage of every closed trade with a wallet already has its transaction hash.'
+      : 'There is no closed trade yet.';
+  } else if (scan.stopped?.kind === 'setup') {
+    title = 'Etherscan could not be searched';
+    lead = esc(scan.stopped.reason);
+  } else if (scan.stopped?.kind === 'busy') {
+    title = 'Stopped: Etherscan is busy';
+    lead = `${esc(scan.stopped.reason)} The free tier's limit was reached and waiting did not clear it, so the scan stopped with ${plural(left, 'stage')} left. Run it again later; it carries on from there.`;
+  } else if (scan.stopped?.kind === 'stop') {
+    title = 'Stopped';
+    lead = `Stopped with ${plural(left, 'stage')} left. Run it again to carry on.`;
+  } else {
+    title = 'Onchain data gathered';
+    lead = `Searched ${plural(scan.total, 'stage')} of ${plural(scan.closed, 'closed trade')}.`;
+  }
+  const totals = [
+    scan.total ? `<li><strong>${scan.found}</strong> found${scan.flagged.length ? `, ${scan.flagged.length} to check` : ''}</li>` : '',
+    scan.total ? `<li><strong>${scan.notFound.length}</strong> not found</li>` : '',
+    scan.had ? `<li><strong>${scan.had}</strong> already had a hash</li>` : '',
+    scan.skipped ? `<li><strong>${scan.skipped}</strong> closed ${scan.skipped === 1 ? 'trade' : 'trades'} skipped: no wallet</li>` : '',
+  ].join('');
+  const lists = [
+    scan.flagged.length
+      ? `<h4 class="scan-report__head">To check</h4><ul class="scan-report__list">${scan.flagged
+          .map((x) => item(x, `${x.others + 1} transfers fit equally; check the one linked.`))
+          .join('')}</ul>`
+      : '',
+    scan.notFound.length
+      ? `<h4 class="scan-report__head">Not found</h4><ul class="scan-report__list">${scan.notFound
+          .map((x) => item(x, x.reason))
+          .join('')}</ul>`
+      : '',
+  ].join('');
+  return reportDialog({
+    title,
+    body: `<p class="modal__note modal__note--lead">${lead}</p>${totals ? `<ul class="scan-report__totals">${totals}</ul>` : ''}${lists}`,
+  });
 }
 
 /**
@@ -4911,6 +5118,31 @@ function confirmDialog({ title, body, confirmLabel = 'Delete', danger = true }) 
   });
 }
 
+/**
+ * Say something that needs reading, with only a Close button: the same
+ * window as `confirmDialog`, settled the same way. `body` is HTML the caller
+ * builds and escapes.
+ */
+function reportDialog({ title, body }) {
+  const dlg = confirmEl();
+  settleConfirm(false);
+  dlg.innerHTML = `<div class="modal__head">
+      <h3 class="modal__title" id="confirm-dialog-title">${esc(title)}</h3>
+    </div>
+    <div class="modal__body scan-report">
+      ${body}
+      <div class="form__actions">
+        <span class="form__error"></span>
+        <button class="btn btn--primary btn--sm" type="button" data-confirm="no">Close</button>
+      </div>
+    </div>`;
+  dlg.showModal();
+  dlg.querySelector('[data-confirm="no"]')?.focus();
+  return new Promise((resolve) => {
+    confirmResolve = resolve;
+  });
+}
+
 function settleConfirm(answer) {
   const resolve = confirmResolve;
   // Cleared before close(), in case the `close` listener runs and lands back
@@ -5225,6 +5457,11 @@ function wire() {
     const bell = e.target.closest('[data-alert-trade]');
     if (bell) {
       openAlertDialog(Number(bell.dataset.alertTrade));
+      return;
+    }
+
+    if (e.target.closest('[data-sim-scan]')) {
+      scanOnchain();
       return;
     }
 

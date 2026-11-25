@@ -1124,6 +1124,62 @@ html {
   font-variant-numeric: tabular-nums;
 }
 
+/* Get onchain data, at the right of the Simulation title, and the scan's
+   progress along the divider under it. */
+.sim-head {
+  position: relative;
+  flex-wrap: wrap;
+}
+
+.sim-scan {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sim-scan[data-tip] {
+  position: static;
+}
+
+/* From the head's right edge, growing left, under the button. */
+.sim-scan[data-tip]::after {
+  left: auto;
+  right: 20px;
+  white-space: nowrap;
+}
+
+.sim-scan__count {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--accent-soft);
+}
+
+.sim-progress[hidden] {
+  display: none;
+}
+
+.sim-progress__bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sim-progress__bar {
+    transition: none;
+  }
+}
+
 /* A closed trade in Simulation opens into its slim cards. */
 .row-static--toggle {
   cursor: pointer;
@@ -2843,6 +2899,44 @@ th[aria-sort="ascending"] .th-sort__caret {
 
 .modal__body {
   padding: 20px;
+}
+
+/* Get onchain data's report: the counts, then what was not found or wants
+   checking, scrolling within the window when there are many. */
+.scan-report__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+
+.scan-report__totals strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-report__head {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.scan-report__list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.scan-report__list li + li {
+  margin-top: 4px;
 }
 
 .modal__rows {
