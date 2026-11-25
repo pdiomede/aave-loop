@@ -1699,6 +1699,15 @@ await check("Solana's node refusing the key, or a rate limit, is said in words, 
   assert.equal(said.kind, 'busy');
   assert.ok(!JSON.stringify(said).includes(SOL_KEY), said.reason);
   mock.sol_rpc.error = null;
+  // A wallet with more history since that day than is read: final, not busy,
+  // which held Get onchain data 40 s and then stopped it.
+  const now = Math.floor(Date.now() / 1000);
+  mock.sol_rpc.txs = Array.from({ length: 20001 }, (_, i) => ({ sig: `s${i}`, wallet: SOL_WALLET, blockTime: now - i, tx: null }));
+  const far = (await find(t.id, 'borrow')).data;
+  assert.equal(far.found, false);
+  assert.equal(far.kind, undefined, far.reason);
+  assert.match(far.reason, /too far back to read/);
+  mock.sol_rpc.txs = [];
   // DAI has no Solana mint here: not searched, rather than not found.
   await api('PATCH', `/api/trades/${t.id}`, { borrow_currency: 'DAI' });
   assert.equal((await find(t.id, 'borrow')).data.kind, 'unsupported');

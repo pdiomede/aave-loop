@@ -834,6 +834,17 @@ check('WBTC is valued at its own price, not at BTC\'s as cbBTC is', () => {
   near(g.total, -1006.63 - 1156.63, 'total');
 });
 
+check('a held quantity is worth what it prints as, so the worth and the gain agree', () => {
+  // 3.33334999 ETH prints 3.3333: worth 3.3333 x 3,500 = 11,666.55, less the
+  // 10,000 and 2 of fees, +1,664.55. From the raw quantity the worth was
+  // 11,666.72 and the gain +1,664.72, under a printed worth of 11,666.55.
+  const t = { id: 1, borrow_date: '2026-09-01', borrow_amount: 10000, borrow_currency: 'USDC', borrow_apr: 0,
+    buy_date: '2026-09-01', buy_amount: 10000, buy_eth: 3.33334999, buy_gas_usd: 2, platform: 'aave' };
+  const d = derive(t, AS_OF);
+  assert.equal(d.ethHeld, 3.3333);
+  near(unrealisedUsd(d, 3500), 1664.55, 'gain from the worth as printed');
+});
+
 check('SOL and PSOL are each valued at their own price', () => {
   const sol = held({ id: 3, asset: 'sol', buy_eth: 200 });
   const psol = held({ id: 4, asset: 'psol', buy_eth: 180 });

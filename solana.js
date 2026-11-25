@@ -190,7 +190,11 @@ export async function solanaRows(address, fromMs, toMs) {
   const sigs = [];
   let before;
   for (let page = 0; ; page += 1) {
-    if (page >= MAX_PAGES) throw new SolanaError(`More than ${MAX_PAGES * PAGE} transactions since that day: too far back to read.`);
+    // Final, not busy: waiting does not shorten the wallet's history, and
+    // taken for busy it held Get onchain data 40 s and then stopped it.
+    if (page >= MAX_PAGES) {
+      throw new SolanaError(`More than ${MAX_PAGES * PAGE} transactions since that day: too far back to read. Paste the hash instead.`, null);
+    }
     const list = await rpc('getSignaturesForAddress', [address, { limit: PAGE, ...(before ? { before } : {}) }]);
     if (!Array.isArray(list)) throw new SolanaError('The Solana node answered without a list of transactions.');
     let older = false;

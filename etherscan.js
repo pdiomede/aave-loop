@@ -542,7 +542,10 @@ export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {
         `fits this ${r.noun}. Paste its hash instead.`,
     };
   } catch (err) {
-    if (err instanceof SolanaError) return { found: false, reason: hideSolana(err.message), kind: err.kind };
+    if (err instanceof SolanaError) {
+      // No kind is a stage that cannot be found, as a search that found none.
+      return { found: false, reason: hideSolana(err.message), ...(err.kind ? { kind: err.kind } : {}) };
+    }
     const known = err instanceof EtherscanError || err instanceof NodeError;
     if (known && err.kind === 'unsupported') {
       const reason = unsupportedReason(network, err instanceof NodeError ? `${redact(err.message, key)}.` : null);

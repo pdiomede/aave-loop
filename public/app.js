@@ -4137,6 +4137,9 @@ async function scanOnchain() {
     skipped: 0,
     closed: 0,
     uncovered: {},
+    // Chains whose key or node is missing or refused, by label: skipped for
+    // the rest of the scan rather than ending it (`kind: 'setup'`).
+    closedChains: new Map(),
     stopped: null,
   };
   state.simScan = scan;
@@ -4187,6 +4190,20 @@ async function scanOnchain() {
       renderScanHead();
       continue;
     }
+    const chainOf = () => NETWORK_META[networkOf(walletById(state.trades.find((x) => x.id === id)?.wallet_id))].label;
+    const uncover = (reason) => {
+      const chain = chainOf();
+      scan.uncovered[chain] = scan.uncovered[chain] ?? { n: 0, reasons: new Set() };
+      scan.uncovered[chain].n += 1;
+      scan.uncovered[chain].reasons.add(reason);
+      scan.done += 1;
+      renderScanHead();
+    };
+    // A chain already found to have no key or node: not asked again.
+    if (scan.closedChains.has(chainOf())) {
+      uncover(scan.closedChains.get(chainOf()));
+      continue;
+    }
     let r = await searchStage(key);
     let leftTo = null;
     for (const wait of SCAN_WAITS) {
@@ -4211,9 +4228,19 @@ async function scanOnchain() {
       continue;
     }
     if (r.kind === 'busy' && scan.stopRequested) break;
-    if (r.kind === 'setup' || r.kind === 'busy') {
+    if (r.kind === 'busy') {
       scan.stopped = { kind: r.kind, reason: r.reason };
       break;
+    }
+    // No key or node for this stage's chain (Solana with no HELIUS_API_KEY,
+    // Ethereum with no ETHERSCAN_API_KEY), or one refused: that chain is
+    // skipped from here on and the others carry on. It ended the whole scan,
+    // and a Solana wallet named first left every Ethereum stage unsearched
+    // though their key worked.
+    if (r.kind === 'setup') {
+      scan.closedChains.set(chainOf(), r.reason);
+      uncover(r.reason);
+      continue;
     }
     if (r.found) {
       scan.found += 1;
@@ -4221,10 +4248,8 @@ async function scanOnchain() {
     } else if (r.kind === 'unsupported') {
       // A chain the key's plan does not cover: counted per chain, and the
       // scan carries on with the other wallets.
-      const chain = NETWORK_META[networkOf(walletById(state.trades.find((x) => x.id === id)?.wallet_id))].label;
-      scan.uncovered[chain] = scan.uncovered[chain] ?? { n: 0, reasons: new Set() };
-      scan.uncovered[chain].n += 1;
-      scan.uncovered[chain].reasons.add(r.reason);
+      uncover(r.reason);
+      continue;
     } else {
       scan.notFound.push({ id, stage, reason: r.reason });
     }
@@ -4257,9 +4282,6 @@ async function scanReport(scan) {
       : scan.skipped
         ? 'No trade names a wallet yet: link one on its Borrowed card.'
         : 'There is no trade yet.';
-  } else if (scan.stopped?.kind === 'setup') {
-    title = 'Could not search';
-    lead = esc(scan.stopped.reason);
   } else if (scan.stopped?.kind === 'busy') {
     title = 'Stopped: no answer';
     lead = `${esc(scan.stopped.reason)} Waiting 10 s and then 30 s did not clear it, so the scan stopped with ${plural(left, 'stage')} left. Run it again later; it carries on from there.`;
@@ -4268,7 +4290,7 @@ async function scanReport(scan) {
     lead = `Stopped with ${plural(left, 'stage')} left. Run it again to carry on.`;
   } else if (!searched && uncovered) {
     title = 'Nothing could be searched';
-    lead = `All ${plural(uncovered, 'stage')} still missing a hash are on chains that cannot be searched here; paste their hashes.`;
+    lead = `All ${plural(uncovered, 'stage')} still missing a hash are on chains that cannot be searched here, for the reasons below; paste their hashes, or set what is missing.`;
   } else {
     title = 'Onchain data gathered';
     lead = `Searched ${plural(searched, 'stage')} of ${plural(scan.closed, 'trade')} with a wallet.`;
@@ -4548,7 +4570,13 @@ async function submitWallet(form) {
     walletWriteSeq += 1;
     state.wallets = [...(state.wallets ?? []).filter((w) => w.id !== row.id), row].sort(byWalletName);
     form.reset();
-    for (const f of ['wallet_name', 'wallet_address']) clearFieldError(form, f);
+    // The chain is a hidden input, which reset() leaves as it was: the next
+    // address was judged for the last one picked, against the rule that no
+    // chain is guessed.
+    form.elements.wallet_network.value = '';
+    const picker = form.querySelector('[data-field="wallet_network"] [data-coin-select]');
+    if (picker) syncCoinSelect(picker);
+    for (const f of ['wallet_name', 'wallet_address', 'wallet_network']) clearFieldError(form, f);
     form.querySelector('[data-form-error]').textContent = '';
     renderWalletsView();
     form.elements.wallet_name.focus();
@@ -6192,6 +6220,16 @@ function wire() {
     if (form.dataset.walletForm) {
       if (form.dataset.walletForm === 'rename' && state.walletRename?.id === Number(form.dataset.wallet)) {
         state.walletRename.value = input.value;
+      }
+      // A chain picked reads the address again, for that chain: "That is an
+      // Ethereum address" stayed on a 0x address after Ethereum was picked.
+      if (input.name === 'wallet_network') {
+        const address = form.elements.wallet_address;
+        if (address?.value.trim()) {
+          const error = walletFieldError('wallet_address', address.value, form);
+          if (error) showFormError(form, error, 'wallet_address', { focus: false });
+          else clearFieldError(form, 'wallet_address');
+        }
       }
       return;
     }
