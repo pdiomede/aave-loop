@@ -375,9 +375,11 @@ trade under its wallet, then No wallet, in the Trades table's order, with each
 group's figures from `summarize` and `openGainsUsd` over its trades alone. Its rows
 are `tradeRow(..., { readOnly: true })`: `.row-static`, never `.row` or `data-trade`,
 because the body's click handler opens any `.row` and would expand the trade on the
-Trades tab. A closed trade's row there opens by its own `data-sim-trade` and
-`state.simOpenIds` into slim cards (`simStageCards`), each with a magnifier that
-finds the stage's transaction on Etherscan.
+Trades tab. Every trade's row there - open, holding or closed - opens by its own
+`data-sim-trade` and `state.simOpenIds` into slim cards (`simStageCards`): a recorded
+stage (`STAGE_DONE`, read off `derive(t).stages`) with a magnifier that finds its
+transaction, one still to come as "Not yet." Get onchain data searches the same
+recorded stages of every trade with a wallet.
 
 ### Transactions on Etherscan
 

@@ -2460,10 +2460,11 @@ function tradeRow(t, index, total, { readOnly = false } = {}) {
   const d = t.derived || derive(t);
   // A read-only row (the Wallets tab's Simulation) never opens the stage
   // editors: its trade is edited on the Trades tab, and two open copies of one
-  // stage form would fight over `captureDraft`. A closed one opens there into
-  // its slim cards instead (`simStageCards`), by its own set and attribute.
+  // stage form would fight over `captureDraft`. It opens there into its slim
+  // cards instead (`simStageCards`), by its own set and attribute - any trade,
+  // a holding one's loan and purchase as much as a closed one's four stages.
   const isOpen = !readOnly && state.openIds.has(t.id);
-  const simToggle = readOnly && d.status === 'CLOSED';
+  const simToggle = readOnly;
   const simOpen = simToggle && state.simOpenIds.has(t.id);
 
   // A trade has an end date only once the loan is repaid, so that is the only
@@ -3809,7 +3810,7 @@ function txLine(t, stage) {
 }
 
 /**
- * A closed trade opened in Simulation: each stage's few figures, and its
+ * A trade opened in Simulation: each recorded stage's few figures, and its
  * transaction. The figures are the stage cards' own, drawn by the same
  * formatters, so the two views read alike.
  */
@@ -3836,6 +3837,17 @@ function simStageCards(t, d) {
   const noWallet = t.wallet_id == null;
   return cards
     .map(([stage, name, rows]) => {
+      // A stage not yet recorded has nothing to show nor any transaction to
+      // find: its card says so, as the Trades tab's does.
+      if (!d.stages[STAGE_DONE[stage]]) {
+        return `<article class="stage sim-card">
+          <header class="stage__head">
+            <span class="stage__marker">&#10003;</span>
+            <span class="stage__name">${name}</span>
+          </header>
+          <p class="stage__empty">Not yet.</p>
+        </article>`;
+      }
       const key = txKey(t.id, stage);
       const tip = noWallet
         ? 'Link a wallet on the Borrowed card first'
@@ -3911,6 +3923,8 @@ async function findTx(key) {
 /* -------------------------------------------------------- get onchain data */
 
 const TX_CARD = { borrow: 'Borrowed', buy: 'Bought', sell: 'Sold', repay: 'Repaid' };
+// The `derive(t).stages` flag that says a stage is recorded.
+const STAGE_DONE = { borrow: 'borrowed', buy: 'bought', sell: 'sold', repay: 'repaid' };
 const SCAN_TIP = 'Gather transaction hashes for each activity';
 // How long to wait before trying a stage again when Etherscan is busy, in
 // seconds. Its free tier allows three calls a second and 100,000 a day; the
@@ -3956,7 +3970,7 @@ function scanPause(ms, scan) {
 }
 
 /**
- * Get onchain data: every closed trade's stages that have no hash yet,
+ * Get onchain data: every recorded stage of every trade that has no hash yet,
  * searched one at a time - wallet by wallet, as Simulation lists them - and
  * kept as found, then a report. Run again, it picks up only what is still
  * empty. Pressed while running, it stops after the search in flight.
@@ -3994,14 +4008,17 @@ async function scanOnchain() {
   renderScanHead();
   await loadStageTxs();
   const rank = new Map([...state.wallets].sort(byWalletName).map((w, i) => [w.id, i]));
-  const closed = sortedTrades()
-    .filter((t) => derive(t).status === 'CLOSED')
-    .sort((a, b) => (rank.get(a.wallet_id) ?? Infinity) - (rank.get(b.wallet_id) ?? Infinity));
-  scan.skipped = closed.filter((t) => t.wallet_id == null).length;
-  scan.closed = closed.length - scan.skipped;
+  // Every trade, open, holding or closed: each stage it has recorded.
+  const trades = sortedTrades().sort(
+    (a, b) => (rank.get(a.wallet_id) ?? Infinity) - (rank.get(b.wallet_id) ?? Infinity),
+  );
+  scan.skipped = trades.filter((t) => t.wallet_id == null).length;
+  scan.closed = trades.length - scan.skipped;
   const queue = [];
-  for (const t of closed.filter((x) => x.wallet_id != null)) {
+  for (const t of trades.filter((x) => x.wallet_id != null)) {
+    const recorded = derive(t).stages;
     for (const stage of Object.keys(TX_CARD)) {
+      if (!recorded[STAGE_DONE[stage]]) continue;
       if (state.stageTxs?.[t.id]?.[stage]) scan.had += 1;
       else queue.push({ id: t.id, stage });
     }
@@ -4087,10 +4104,10 @@ function scanReport(scan) {
   if (!scan.total) {
     title = 'Nothing to gather';
     lead = scan.closed
-      ? 'Every stage of every closed trade with a wallet already has its transaction hash.'
+      ? 'Every recorded stage of every trade with a wallet already has its transaction hash.'
       : scan.skipped
-        ? 'No closed trade names a wallet yet: link one on its Borrowed card.'
-        : 'There is no closed trade yet.';
+        ? 'No trade names a wallet yet: link one on its Borrowed card.'
+        : 'There is no trade yet.';
   } else if (scan.stopped?.kind === 'setup') {
     title = 'Could not search';
     lead = esc(scan.stopped.reason);
@@ -4105,14 +4122,14 @@ function scanReport(scan) {
     lead = `All ${plural(uncovered, 'stage')} still missing a hash are on chains that cannot be searched here; paste their hashes.`;
   } else {
     title = 'Onchain data gathered';
-    lead = `Searched ${plural(searched, 'stage')} of ${plural(scan.closed, 'closed trade')} with a wallet.`;
+    lead = `Searched ${plural(searched, 'stage')} of ${plural(scan.closed, 'trade')} with a wallet.`;
   }
   const totals = [
     scan.total ? `<li><strong>${scan.found}</strong> found${scan.flagged.length ? `, ${scan.flagged.length} to check` : ''}</li>` : '',
     scan.total ? `<li><strong>${scan.notFound.length}</strong> not found</li>` : '',
     scan.had ? `<li><strong>${scan.had}</strong> already had a hash</li>` : '',
     scan.pasting ? `<li><strong>${scan.pasting}</strong> left to the hash being pasted</li>` : '',
-    scan.skipped ? `<li><strong>${scan.skipped}</strong> closed ${scan.skipped === 1 ? 'trade' : 'trades'} skipped: no wallet</li>` : '',
+    scan.skipped ? `<li><strong>${scan.skipped}</strong> ${scan.skipped === 1 ? 'trade' : 'trades'} skipped: no wallet</li>` : '',
     ...Object.entries(scan.uncovered).map(
       ([chain, { n }]) => `<li><strong>${n}</strong> on ${esc(chain)} not searched</li>`,
     ),

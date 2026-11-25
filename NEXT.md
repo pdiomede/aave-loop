@@ -65,8 +65,8 @@ starts with no wallet. Then check, behind the password:
   config.env (a node with a token, e.g. from publicnode/allnodes) or its hashes pasted.
 - **Etherscan:** add `ETHERSCAN_API_KEY=...` (your key from etherscan.io > API Keys)
   to `/var/www/aave/config.env`, then restart. Without it the magnifier on a
-  closed trade's stages says the key is missing. Then open a closed trade in
-  Simulation and press each magnifier: each hash should open its transaction.
+  trade's stages says the key is missing. Then open a trade in Simulation, holding
+  or closed, and press each magnifier: each hash should open its transaction.
 
 Running 2.2.0 beside 2.2.1 on one database is safe (2.2.0 never names the column),
 but a 2.2.0 page cannot show or set a wallet.
