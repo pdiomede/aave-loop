@@ -4142,7 +4142,7 @@ async function searchStage(key) {
     r =
       err.status && err.status < 500
         ? { found: false, reason: err.message }
-        : { found: false, reason: err.status ? err.message : 'Could not reach the server.', kind: 'busy' };
+        : { found: false, reason: err.status ? err.message : 'Could not reach the server.', kind: 'busy', ledger: true };
     state.txNote[key] = { reason: r.reason, basis };
   } finally {
     state.txBusy.delete(key);
@@ -4223,6 +4223,20 @@ function scanPause(ms, scan) {
  * kept as found, then a report. Run again, it picks up only what is still
  * empty. Pressed while running, it stops after the search in flight.
  */
+/**
+ * Whether a stage's hash is being pasted by hand, so Get onchain data leaves
+ * it be: its field is on screen, or holds text kept for when its trade is
+ * opened again. An empty field folded away with its trade is no paste - it
+ * kept that stage out of every scan, with "1 left to the hash being pasted"
+ * and no field anywhere - and is dropped, so the search can draw its result.
+ */
+function pastingInto(key) {
+  if (state.txPaste[key] === undefined) return false;
+  if (state.txPaste[key] || document.querySelector(`[data-tx-form="${key}"]`)) return true;
+  delete state.txPaste[key];
+  return false;
+}
+
 async function scanOnchain() {
   if (state.simScan?.running) {
     // The second click of a double click is not Stop.
@@ -4254,8 +4268,9 @@ async function scanOnchain() {
     skipped: 0,
     closed: 0,
     uncovered: {},
-    // Chains whose key or node is missing or refused, by label: skipped for
-    // the rest of the scan rather than ending it (`kind: 'setup'`).
+    // Chains whose key or node is missing or refused (`kind: 'setup'`), or
+    // still busy after the waits, by label: skipped for the rest of the scan
+    // rather than ending it.
     closedChains: new Map(),
     stopped: null,
   };
@@ -4301,7 +4316,7 @@ async function scanOnchain() {
     const key = txKey(id, stage);
     // Its hash is being typed into its paste field: left to the hand pasting
     // it. Searched, the field gave way to "Searching…" under the typing.
-    if (state.txPaste[key] !== undefined) {
+    if (pastingInto(key)) {
       scan.pasting += 1;
       scan.done += 1;
       renderScanHead();
@@ -4334,7 +4349,7 @@ async function scanOnchain() {
       // hash", and searched again regardless, the field being typed into gave
       // way to "Searching…", and a hash saved by hand was counted as found.
       if (state.stageTxs?.[id]?.[stage]) leftTo = 'had';
-      else if (state.txPaste[key] !== undefined) leftTo = 'pasting';
+      else if (pastingInto(key)) leftTo = 'pasting';
       if (leftTo) break;
       r = await searchStage(key);
     }
@@ -4345,9 +4360,21 @@ async function scanOnchain() {
       continue;
     }
     if (r.kind === 'busy' && scan.stopRequested) break;
-    if (r.kind === 'busy') {
+    // The ledger's own server not answering ends the scan: every stage would
+    // wait the same 40 s for it.
+    if (r.kind === 'busy' && r.ledger) {
       scan.stopped = { kind: r.kind, reason: r.reason };
       break;
+    }
+    // Still busy after the waits - a node that is down, Etherscan's daily
+    // limit, a Solana node rate-limiting - is that chain's trouble: skipped
+    // from here on, as a missing key is, and the other chains carry on. It
+    // ended the whole scan, and an Optimism wallet whose node was down, named
+    // first, left every Ethereum stage unsearched on every run.
+    if (r.kind === 'busy') {
+      scan.closedChains.set(chainOf(), r.reason);
+      uncover(r.reason);
+      continue;
     }
     // No key or node for this stage's chain (Solana with no HELIUS_API_KEY,
     // Ethereum with no ETHERSCAN_API_KEY), or one refused: that chain is
@@ -4407,7 +4434,7 @@ async function scanReport(scan) {
     lead = `Stopped with ${plural(left, 'stage')} left. Run it again to carry on.`;
   } else if (!searched && uncovered) {
     title = 'Nothing could be searched';
-    lead = `All ${plural(uncovered, 'stage')} still missing a hash are on chains that cannot be searched here, for the reasons below; paste their hashes, or set what is missing.`;
+    lead = `All ${plural(uncovered, 'stage')} still missing a hash are on chains that could not be searched, for the reasons below; paste their hashes, set what is missing, or try again later.`;
   } else {
     title = 'Onchain data gathered';
     lead = `Searched ${plural(searched, 'stage')} of ${plural(scan.closed, 'trade')} with a wallet.`;
@@ -4475,8 +4502,19 @@ async function clearTx(key) {
     return;
   }
   try {
-    await api(`/api/trades/${id}/tx/${stage}`, { method: 'DELETE' });
+    // The hash asked about: replaced from another tab meanwhile, the server
+    // keeps the new one rather than forget it unseen.
+    await api(`/api/trades/${id}/tx/${stage}?hash=${encodeURIComponent(stored.hash)}`, { method: 'DELETE' });
   } catch (err) {
+    if (err.status === 409) {
+      txWriteSeq += 1;
+      if (err.current) state.stageTxs = { ...state.stageTxs, [id]: { ...state.stageTxs?.[id], [stage]: err.current } };
+      delete state.txNote[key];
+      renderOnchainData();
+      document.querySelector(`[data-tx-clear="${key}"]`)?.focus();
+      toast(err.message);
+      return;
+    }
     if (err.status !== 404) {
       toast(err.status ? err.message : 'Could not reach the server, so the hash is still kept.');
       return;

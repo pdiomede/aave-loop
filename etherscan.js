@@ -330,8 +330,9 @@ async function transfersBetween(chainid, address, fromMs, toMs, key) {
  * A wallet's transfers on a chain read from its node, of every contract this
  * file knows there, so the trade's other stages and the other trades on that
  * chain are served from the same read. Read a UTC day at a time and kept by
- * day: a day an hour or more past never changes, so it is read once per
- * process; today's is kept two minutes, as Etherscan's answers are. A trade's
+ * day: a day read an hour or more after it ended never changes, so it is read
+ * once per process; any other read is kept two minutes, as Etherscan's
+ * answers are. A trade's
  * four stages, searched one after another, share their days.
  */
 const nodeDays = new Map();
@@ -342,12 +343,16 @@ async function nodeRows(network, address, fromMs, toMs) {
   for (let day = Math.floor(fromMs / DAY) * DAY; day <= toMs; day += DAY) {
     const k = `${network}:${lower(address)}:${day}`;
     const kept = nodeDays.get(k);
-    const settled = day + DAY < Date.now() - 3_600_000;
     let dayRows;
-    if (kept && (settled || Date.now() - kept.at < TRANSFERS_MS)) dayRows = kept.rows;
+    // Kept for good only if it was read once the day had settled. Judged by
+    // the clock now, a day read at 10:00 - up to 09:59 - was kept from 01:00
+    // the next morning on, and a sale made that afternoon was never seen: the
+    // search said it found none, or took another transfer for it.
+    if (kept && (kept.settled || Date.now() - kept.at < TRANSFERS_MS)) dayRows = kept.rows;
     else {
-      dayRows = await nodeTransfersBetween(network, address, day, Math.min(day + DAY - 1000, Date.now() - 60_000), contracts, DECIMALS);
-      nodeDays.set(k, { at: Date.now(), rows: dayRows });
+      const at = Date.now();
+      dayRows = await nodeTransfersBetween(network, address, day, Math.min(day + DAY - 1000, at - 60_000), contracts, DECIMALS);
+      nodeDays.set(k, { at, settled: day + DAY < at - 3_600_000, rows: dayRows });
     }
     rows.push(...dayRows);
   }
@@ -461,9 +466,12 @@ const same = (a, b) => a === b || Math.abs(a - b) <= SAME;
 const SAME = 1e-6;
 
 /** The best fit for a stage, or null, with how many others fitted as well. */
-function pick(rows, t, stage, wallet, claimed, own = {}) {
+function pick(rows, t, stage, wallet, claimed, own = {}, elsewhere = new Set()) {
   const lower = foldFor(networkOf(wallet));
-  const list = candidates(rows, t, stage, wallet, claimed);
+  // Not the trade's own other stages (`elsewhere`) - its purchase was stored
+  // as its repayment - but only here: the purchase or sale worked out below
+  // to settle a tie is looked for among them, as it should be.
+  const list = candidates(rows, t, stage, wallet, claimed).filter((c) => !elsewhere.has(c.hash));
   if (!list.length) return null;
   let tied = list.filter((c) => same(c.byAmount, list[0].byAmount) && same(c.byQty, list[0].byQty));
   if (tied.length > 1) {
@@ -497,12 +505,14 @@ function pick(rows, t, stage, wallet, claimed, own = {}) {
  * (`{ name, address, network }`); `claimed` is the set of hashes other
  * trades hold, at any stage - a hash is one stage of one trade, and another
  * trade's purchase was offered as this one's repayment when only the same
- * stage was excluded; `own` the trade's own stored hashes, by stage. Answers `{ found: true, hash, at, amount, others }` or
+ * stage was excluded; `own` the trade's own pasted hashes, by stage;
+ * `elsewhere` every hash the trade holds at its other stages, never this
+ * stage's answer. Answers `{ found: true, hash, at, amount, others }` or
  * `{ found: false, reason, kind }` (`kind` as `EtherscanError`'s, none for a
  * stage not found), never throws: a search that could not be done
  * is a result the card shows.
  */
-export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {}) {
+export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {}, elsewhere = new Set()) {
   const network = networkOf(wallet);
   const chain = NETWORK_META[network];
   const solana = isSolana(network);
@@ -528,7 +538,7 @@ export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {
       : node
         ? await nodeRows(network, wallet.address, from, to)
         : await transfersBetween(chain.chainId, wallet.address, from, to, key);
-    const best = pick(rows, t, stage, wallet, claimed, own);
+    const best = pick(rows, t, stage, wallet, claimed, own, elsewhere);
     if (best) {
       return { found: true, hash: best.hash, at: new Date(best.at).toISOString(), amount: best.amount, others: best.others };
     }

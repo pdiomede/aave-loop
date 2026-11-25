@@ -1096,6 +1096,29 @@ await check('each stage is found by its coin\'s contract, direction, amount and 
   await api('DELETE', `/api/trades/${t.id}`);
 });
 
+await check("a trade's own purchase is never found as its repayment", async () => {
+  // Repaid with collateral: no transfer out for the repayment at all, while
+  // the purchase moved 30,000 EURC out the day before, within 0.05% of the
+  // 30,000.50 repaid. Only other trades' hashes were left out, and the
+  // repayment was stored as the purchase's hash.
+  const [day, next] = ['2026-08-20', '2026-08-21'];
+  mock.es.rows = [
+    xfer(31, `${day}T09:00:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(32, `${day}T09:05:00Z`, EURC_C, SCAN, ROUTER, 30000),
+    xfer(32, `${day}T09:05:00Z`, WETH_C, ROUTER, SCAN, 12.6491, 18, 'WETH'),
+    xfer(33, `${next}T10:00:00Z`, WETH_C, SCAN, ROUTER, 12.6491, 18, 'WETH'),
+    xfer(33, `${next}T10:00:00Z`, EURC_C, ROUTER, SCAN, 30127.92),
+  ];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next, { repay_amount: '30000.5' }))).data;
+  assert.equal((await find(t.id, 'buy')).data.hash, hashOf(32));
+  const r = await find(t.id, 'repay');
+  assert.equal(r.data.found, false, `repayment stored as ${r.data.hash}`);
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id].repay, undefined);
+  // Pasted, one transaction may still be two stages: its reader vouched for it.
+  assert.equal((await api('PUT', `/api/trades/${t.id}/tx/repay`, { hash: hashOf(32) })).status, 200);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 await check('a token named like the coin, or a transfer the wrong way, is not the stage', async () => {
   const day = '2026-09-10';
   mock.es.rows = [
@@ -1109,6 +1132,24 @@ await check('a token named like the coin, or a transfer the wrong way, is not th
   assert.equal(r.data.found, false);
   assert.equal(r.data.kind, undefined, 'not found is no failure');
   assert.match(r.data.reason, /No EURC transfer of about 30,000\.00 out of Scan between 9 Sep 2026 and 11 Sep 2026/);
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id], undefined);
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('Forget forgets only the hash it was shown, not one pasted since', async () => {
+  // Tab A shows hash 41; tab B forgets it and pastes 42; tab A's Forget, for
+  // 41, took 42 with it, unseen.
+  const day = '2026-09-16';
+  mock.es.rows = [];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, day))).data;
+  await api('PUT', `/api/trades/${t.id}/tx/buy`, { hash: hashOf(41) });
+  await api('DELETE', `/api/trades/${t.id}/tx/buy?hash=${hashOf(41)}`);
+  await api('PUT', `/api/trades/${t.id}/tx/buy`, { hash: hashOf(42) });
+  const stale = await api('DELETE', `/api/trades/${t.id}/tx/buy?hash=${hashOf(41)}`);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.data.current.hash, hashOf(42));
+  assert.equal((await api('GET', '/api/stage-txs')).data[t.id].buy.hash, hashOf(42));
+  assert.equal((await api('DELETE', `/api/trades/${t.id}/tx/buy?hash=${hashOf(42)}`)).status, 204);
   assert.equal((await api('GET', '/api/stage-txs')).data[t.id], undefined);
   await api('DELETE', `/api/trades/${t.id}`);
 });
@@ -2343,6 +2384,94 @@ function fxChild(body) {
     child.on('close', (status) => (status === 0 ? resolve(JSON.parse(out.trim().split('\n').at(-1))) : reject(new Error(err || `exit ${status}`))));
   });
 }
+/**
+ * `etherscan.js` itself, in a child of its own with the clock faked (`fake`)
+ * and an Optimism node mocked inside it on loopback: what a process that has
+ * run for days does with a day it read while that day was still going on.
+ */
+function searchChild(body) {
+  const code = `import http from 'node:http';
+const realNow = Date.now.bind(Date);
+let fake = null;
+Date.now = () => fake ?? realNow();
+const T0 = Date.parse('2026-11-01T00:00:00Z') / 1000;
+const blockAt = (iso) => Math.floor((Date.parse(iso) / 1000 - T0) / 2);
+const logs = [];
+const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+const pad = (a) => '0x' + '0'.repeat(24) + a.slice(2).toLowerCase();
+const hex = (n) => '0x' + n.toString(16);
+const W = '0x1111111111111111111111111111111111111111';
+const OTHER = '0x2222222222222222222222222222222222222222';
+const USDC = '0x0b2c639c533813f4aa9d7837caf62653d097ff85';
+const WETH = '0x4200000000000000000000000000000000000006';
+const log = (iso, n, contract, from, to, amount, dec) => logs.push({ address: contract, topics: [TRANSFER, pad(from), pad(to)],
+  data: hex(BigInt(Math.round(amount * 1e6)) * 10n ** BigInt(dec - 6)), blockNumber: hex(blockAt(iso)),
+  transactionHash: '0x' + n.toString(16).padStart(64, '0'), logIndex: '0x0' });
+const node = http.createServer((req, res) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
+  const { method, params, id } = JSON.parse(b);
+  const reply = (result) => res.end(JSON.stringify({ jsonrpc: '2.0', id, result }));
+  const latest = Math.floor((Date.now() / 1000 - T0) / 2);
+  if (method === 'eth_blockNumber') return reply(hex(latest));
+  if (method === 'eth_getBlockByNumber') { const n = Number(BigInt(params[0])); return reply(n > latest ? null : { timestamp: hex(T0 + 2 * n) }); }
+  if (method === 'eth_getLogs') { const f = params[0]; const [a, z] = [Number(BigInt(f.fromBlock)), Number(BigInt(f.toBlock))]; const t = f.topics;
+    return reply(logs.filter((l) => { const n = Number(BigInt(l.blockNumber)); return n >= a && n <= z && (!t[1] || t[1] === l.topics[1]) && (!t[2] || t[2] === l.topics[2]); })); }
+  reply(null);
+}); });
+await new Promise((r) => node.listen(0, '127.0.0.1', r));
+process.env.OPTIMISM_RPC_URL = 'http://127.0.0.1:' + node.address().port + '/';
+const { findStageTx } = await import('./etherscan.js');
+const wallet = { name: 'W', address: W, network: 'optimism' };
+${body}
+node.close();
+process.exit(0);`;
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env, ...isolated, ETHROUNDTRIP_DB: path.join(tmp, `search-${(fxDbs += 1)}.db`) };
+    const child = spawn(process.execPath, ['--input-type=module', '-e', code], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (c) => (out += c));
+    child.stderr.on('data', (c) => (err += c));
+    child.on('close', (status) => (status === 0 ? resolve(JSON.parse(out.trim().split('\n').at(-1))) : reject(new Error(err || `exit ${status}`))));
+  });
+}
+
+await check("a node's day read while it was going on is read again once it has passed", async () => {
+  // The loan searched at 10:00 read the day up to 09:59; the sale came at
+  // 15:00. Searched the next night, the day counted as settled by the clock
+  // then and the half-read day was used for good: no sale found.
+  const r = await searchChild(`
+    const t = { id: 1, borrow_currency: 'USDC', asset: 'eth', borrow_date: '2026-11-10', borrow_amount: 10000,
+      buy_date: '2026-11-10', buy_amount: 10000, buy_eth: 3, sell_date: '2026-11-10', sell_amount: 10500, sell_eth: 3 };
+    log('2026-11-10T09:00:00Z', 1, USDC, OTHER, W, 10000, 6);
+    fake = Date.parse('2026-11-10T10:00:00Z');
+    const loan = await findStageTx(t, 'borrow', wallet);
+    log('2026-11-10T15:00:00Z', 2, WETH, W, OTHER, 3, 18);
+    log('2026-11-10T15:00:00Z', 2, USDC, OTHER, W, 10500, 6);
+    fake = Date.parse('2026-11-11T02:00:00Z');
+    const sale = await findStageTx(t, 'sell', wallet);
+    console.log(JSON.stringify({ loan, sale }));
+  `);
+  assert.equal(r.loan.hash, `0x${'1'.padStart(64, '0')}`, JSON.stringify(r.loan));
+  assert.equal(r.sale.found, true, r.sale.reason);
+  assert.equal(r.sale.hash, `0x${'2'.padStart(64, '0')}`);
+});
+
+await check("a node that refuses its key is a setup problem, not a busy one", async () => {
+  // Infura answers 401 in plain text: read as "not JSON-RPC", it was busy,
+  // and Get onchain data waited 40 s and stopped for every wallet after it.
+  const r = await searchChild(`
+    const refusing = http.createServer((req, res) => { req.resume(); req.on('end', () => { res.statusCode = 401; res.end('invalid project id\\n'); }); });
+    await new Promise((ok) => refusing.listen(0, '127.0.0.1', ok));
+    process.env.OPTIMISM_RPC_URL = 'http://127.0.0.1:' + refusing.address().port + '/v3/badkey';
+    const t = { id: 1, borrow_currency: 'USDC', asset: 'eth', borrow_date: '2026-10-02', borrow_amount: 10000 };
+    const r = await findStageTx(t, 'borrow', wallet);
+    refusing.close();
+    console.log(JSON.stringify(r));
+  `);
+  assert.equal(r.kind, 'setup', JSON.stringify(r));
+  assert.doesNotMatch(r.reason, /badkey|127\.0\.0\.1/, 'the URL and its key are never said');
+});
+
 const isoShift = (iso, days) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
 // A Wednesday two to three weeks back: well past the four days a stand-in is
 // marked provisional, and with business days on both sides.

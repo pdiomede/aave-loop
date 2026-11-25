@@ -17,6 +17,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Stats shows a platform's Performance card only when it has trades** in the year shown; five cards saying "no trades" buried the ones that had some.
 - **Onchain Data's note is reworded:** "Every trade is listed under its corresponding wallet, as displayed in the Trades tab."
 
+### Fixed
+
+- **Onchain Data never finds a trade's own purchase as its repayment** (or its sale as its loan): with no plain repayment transfer to find (repaid with collateral, or from another wallet), the purchase's hash was stored as the repayment.
+- **Optimism and Base searches see a day's later transactions:** a day first read while it was still going on was kept for good once it ended, so a sale made that afternoon was never found.
+- **Forget (×) forgets only the hash it showed:** one pasted from another tab meanwhile was forgotten unseen, with the loan or repayment found by way of it; now it stays and the card shows it.
+- **Get onchain data carries on past a chain that stays busy:** a node that was down, or a refused node key, stopped the whole scan, leaving every wallet after it unsearched; that chain is now skipped and listed under Not searched.
+- **A paste field opened and folded away no longer keeps its stage out of every scan** ("1 left to the hash being pasted" with no field on screen).
+
 ## [2.2.1] - 2026-11-25
 
 ### Added

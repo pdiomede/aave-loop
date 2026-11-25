@@ -67,6 +67,13 @@ function rpc(url, method, params) {
     } catch (err) {
       throw new NodeError(err?.name === 'TimeoutError' ? 'The node did not answer in time.' : 'The node could not be reached.');
     }
+    // Refused before its body is read: a node that wants a key (Infura's,
+    // Alchemy's) answers 401 or 403 in plain text, which was read as "not
+    // JSON-RPC" and so as busy - waited out, then the end of Get onchain data
+    // for every wallet after it. A setup problem skips that chain only.
+    if (res.status === 401 || res.status === 403) {
+      throw new NodeError(`The node refused the request (${res.status}): check its URL and key in config.env.`, 'setup');
+    }
     let body;
     try {
       body = await res.json();
@@ -78,7 +85,7 @@ function rpc(url, method, params) {
       if (/range|too large|too many (results|logs)|limited to|response size|exceed/i.test(said)) {
         throw new NodeError(said, 'range');
       }
-      if (/archive|token|unauthori[sz]ed|forbidden|api key/i.test(said)) {
+      if (/archive|token|unauthori[sz]ed|authenticat|forbidden|api key/i.test(said)) {
         throw new NodeError(`The node refuses old blocks: ${said.slice(0, 120)}`, 'unsupported');
       }
       throw new NodeError(`The node answered: ${said.slice(0, 160)}`);

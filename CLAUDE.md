@@ -448,7 +448,9 @@ against the typed quantity; still tied, the loan is the last before its purchase
 repayment the first after its sale (`ANCHOR`), and a hash another trade holds for that
 stage is never offered - at any stage: a transaction is one stage of one trade, and
 another trade's purchase was offered as a repayment when only the same stage was
-excluded. A loan or repayment never counts a transaction that moves the same coin back
+excluded. Nor is the trade's own hash at another stage (`ownElsewhere`): its purchase was
+stored as its repayment when no plain repayment transfer existed. A paste may still name
+one transaction for two stages. A loan or repayment never counts a transaction that moves the same coin back
 the other way (a USDC to USDC.e swap on a rollup), and one that also moves the asset
 ranks after a plain transfer. The purchase or sale it is settled against is the trade's own
 *pasted* hash when it has one; otherwise it is worked out again, and a guess passes
@@ -469,8 +471,10 @@ has none, and Get onchain data counts `unsupported` as not searched. A refused p
 reason is kept in `state.txPasteError`, as a typed hash is in `state.txPaste`, so a
 redraw draws it again. **Get onchain data** (`scanOnchain` in public/app.js) drives the bulk search
 from the page, one stage at a time through the same find endpoint (`searchStage`, which
-moves no focus): a `busy` stage is waited out 10 s then 30 s (`SCAN_WAITS`) before the
-scan stops, a `setup` one stops it at once, and the report says which. The server's
+moves no focus): a `busy` stage is waited out 10 s then 30 s (`SCAN_WAITS`), and a
+chain still busy after that, or `setup`, is skipped for the rest of the scan
+(`closedChains`) while the others carry on; only the ledger's own server not answering
+(`ledger`) stops it. The report says which. The server's
 queue keeps it on the free tier; the page only adds patience.
 
 Found or pasted hashes live in `stage_tx` (db.js), one per trade and stage, so a

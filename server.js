@@ -1374,6 +1374,22 @@ function dropDependent(tradeId, stage) {
 const takenBy = (hash, tradeId) =>
   prepare('SELECT trade_id, stage FROM stage_tx WHERE hash = ? AND trade_id != ?').get(hash, tradeId);
 
+/**
+ * The trade's own hashes at its other stages: never found again for this one.
+ * Only other trades' were left out, and a repayment with no plain transfer to
+ * find (repaid with collateral, or from another wallet) was stored as the
+ * trade's own purchase, which moves the coin out within 0.05% of it. A paste
+ * may still name one transaction for two stages - a loop contract can borrow
+ * and swap in one - since its reader vouched for it.
+ */
+function ownElsewhere(tradeId, stage) {
+  return new Set(prepare('SELECT hash FROM stage_tx WHERE trade_id = ? AND stage != ?').all(tradeId, stage).map((r) => r.hash));
+}
+
+/** Who holds `hash`, other than this trade's own `stage`: what a search may not store over. */
+const heldBesides = (hash, tradeId, stage) =>
+  prepare('SELECT trade_id, stage FROM stage_tx WHERE hash = ? AND NOT (trade_id = ? AND stage = ?)').get(hash, tradeId, stage);
+
 async function searchAndStore(trade, stage, wallet) {
   // Twice at most: a hash another trade took while this one searched is
   // searched past, as it would have been had it been taken first; and a
@@ -1382,7 +1398,7 @@ async function searchAndStore(trade, stage, wallet) {
   const anchor = ANCHOR[stage];
   for (let pass = 0; pass < 2; pass += 1) {
     const own = ownHashes(trade.id);
-    const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id), own);
+    const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id), own, ownElsewhere(trade.id, stage));
     if (!r.found) return r;
     // Seconds have passed. Stored only if what the search went by is
     // unchanged, if no other trade took that hash meanwhile - the hashes it
@@ -1405,9 +1421,10 @@ async function searchAndStore(trade, stage, wallet) {
         if (anchor && (ownHashes(trade.id)[anchor] ?? null) !== (own[anchor] ?? null)) {
           return { again: `The ${STAGE_NAMES[anchor]}'s hash changed while this was searched. Search again.` };
         }
-        const taken = takenBy(r.hash, trade.id);
+        const taken = heldBesides(r.hash, trade.id, stage);
         if (taken) {
-          return { again: `That transaction was linked to trade #${taken.trade_id} while this one was searched. Search again.` };
+          const whose = taken.trade_id === trade.id ? `this trade's ${STAGE_NAMES[taken.stage]}` : `trade #${taken.trade_id}`;
+          return { again: `That transaction was linked to ${whose} while this one was searched. Search again.` };
         }
         prepare(
           'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
@@ -1487,14 +1504,27 @@ app.put('/api/trades/:id/tx/:stage', (req, res) => {
 app.delete('/api/trades/:id/tx/:stage', (req, res) => {
   const target = txTarget(req, res);
   if (!target) return;
+  // `?hash=` is the one the page showed and asked about. Forgetting whatever
+  // was stored now lost a hash pasted from another tab meanwhile, unseen, and
+  // the loan or repayment found by way of it. Without it, as before.
+  const shown = typeof req.query.hash === 'string' && req.query.hash ? req.query.hash : null;
   const info = db
     .transaction(() => {
-      const gone = prepare('DELETE FROM stage_tx WHERE trade_id = ? AND stage = ?').run(target.trade.id, target.stage);
-      if (gone.changes) dropDependent(target.trade.id, target.stage);
-      return gone;
+      const row = selectStageTx.get(target.trade.id, target.stage);
+      if (!row) return { gone: 0 };
+      if (shown !== null && row.hash !== shown) return { moved: row };
+      const gone = prepare('DELETE FROM stage_tx WHERE trade_id = ? AND stage = ?').run(target.trade.id, target.stage).changes;
+      if (gone) dropDependent(target.trade.id, target.stage);
+      return { gone };
     })
     .immediate();
-  if (info.changes === 0) return res.status(404).json({ error: 'No transaction is stored for that stage.' });
+  if (info.moved) {
+    return res.status(409).json({
+      error: `The ${STAGE_NAMES[target.stage]}'s hash was changed elsewhere since this page showed it, so nothing was forgotten.`,
+      current: txView(info.moved),
+    });
+  }
+  if (info.gone === 0) return res.status(404).json({ error: 'No transaction is stored for that stage.' });
   res.status(204).end();
 });
 
