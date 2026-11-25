@@ -204,3 +204,21 @@ export async function nodeTransfersBetween(network, address, fromMs, toMs, contr
     throw new NodeError('The node search failed.');
   }
 }
+
+/**
+ * A transaction's receipt from the chain's node, for scripts/audit-hashes.mjs:
+ * `{ ok, at, logs }`, or null when the node knows no such transaction. `at` is
+ * its block's time.
+ */
+export async function nodeReceipt(network, hash) {
+  const url = nodeUrl(network);
+  if (!url) throw new NodeError(`No node is set for ${network}.`, 'unsupported');
+  try {
+    const r = await rpc(url, 'eth_getTransactionReceipt', [hash]);
+    if (!r) return null;
+    return { ok: r.status === '0x1', at: await blockTime(url, num(r.blockNumber)), logs: r.logs ?? [] };
+  } catch (err) {
+    if (err instanceof NodeError) throw new NodeError(hide(err.message, url), err.kind === 'range' ? 'busy' : err.kind);
+    throw new NodeError('The node could not be asked.');
+  }
+}

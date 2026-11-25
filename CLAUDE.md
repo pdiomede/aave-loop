@@ -14,6 +14,7 @@ npm start                    # node server.js, no port hunting
 npm run check                # scripts/check-calc.mjs, check-input.mjs, check-statement.mjs, then check-server.mjs
 node scripts/check-server.mjs  # one suite on its own; there is no per-check filter
 node scripts/set-platform.mjs --etherfi <id> [--apply]  # fill in old trades' platform; dry run without --apply
+node scripts/audit-hashes.mjs [--apply]  # check every stored hash against its trade; --apply forgets wrong searched ones
 ```
 
 **There is no test framework, no linter and no build step.** Nothing is transpiled;
@@ -34,7 +35,7 @@ when you change what the statement prints.
 database in a temp directory with Telegram, the price service and the rate service
 mocked on loopback, and checks the API's write rules, the alert message (its lines
 must add up to its Gain), every way the alert sweep handles a failed send, the bot's
-reports and where `/watch` sends them, `scripts/set-platform.mjs`, and `fx.js`'s
+reports and where `/watch` sends them, `scripts/set-platform.mjs`, `scripts/audit-hashes.mjs`, and `fx.js`'s
 stand-ins and refusals (`fxChild` runs it in a child against a database of its own);
 add a case there when you change any of those. It never touches the network or `data/myaave.db`, and takes about ten
 seconds. A check is only worth adding if it fails on the old code: revert the fix
@@ -450,7 +451,16 @@ why). A PATCH that
 changes a stage's date, amount or quantity, or the trade's wallet, coin or asset,
 deletes that stage's searched hash in the same transaction; a pasted one (`PUT`) is
 kept - unless the trade's wallet moves to another chain, or to none, which deletes them
-all: a hash is a transaction on one chain. A paste needs the trade to have a wallet. `scripts/check-server.mjs` mocks Etherscan on loopback.
+all: a hash is a transaction on one chain. A paste needs the trade to have a wallet.
+
+`scripts/audit-hashes.mjs` checks every stored hash after the fact: it fetches the
+transaction's receipt (Etherscan's proxy calls, or the node; `txTransfers`) and judges it
+by the search's own rules (`auditStage`): succeeded, moves the coin the right way for
+about the amount, a loan or repayment is no swap within the coin nor a purchase or sale,
+a purchase or sale moves about the typed quantity, dated within a day, held by no other
+trade. It opens the ledger read-only; `--apply` forgets the WRONG *searched* hashes in a
+conditional delete, and reports pasted ones only. It exists because hashes stored before
+a matching rule was tightened are never looked at again. `scripts/check-server.mjs` mocks Etherscan on loopback.
 
 ### Platforms
 

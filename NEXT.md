@@ -63,6 +63,10 @@ starts with no wallet. Then check, behind the password:
   Base, Arbitrum or Optimism is added again with its chain. Arbitrum is searched on
   Etherscan's free plan and Optimism on its public node; Base needs `BASE_RPC_URL` in
   config.env (a node with a token, e.g. from publicnode/allnodes) or its hashes pasted.
+- **Audit the stored hashes** after the pull: those found before today's matching fixes
+  were never rechecked. `cd /var/www/aave && sudo -u myaave node scripts/audit-hashes.mjs`
+  reports each one (OK, CHECK, WRONG); look up any CHECK on the explorer, and run it
+  again with `--apply` to forget the WRONG searched ones, then Get onchain data.
 - **Etherscan:** add `ETHERSCAN_API_KEY=...` (your key from etherscan.io > API Keys)
   to `/var/www/aave/config.env`, then restart. Without it the magnifier on a
   trade's stages says the key is missing. Then open a trade in Simulation, holding

@@ -29,7 +29,7 @@ import { setting } from './env.js';
 import { etherscanKey } from './config.js';
 import { assetOf, parseDate } from './lib/calc.js';
 import { NETWORK_META, networkOf } from './lib/address.js';
-import { NodeError, nodeFor, nodeTransfersBetween } from './chainnode.js';
+import { NodeError, nodeFor, nodeReceipt, nodeTransfersBetween } from './chainnode.js';
 import { n2, fmtDate } from './format.js';
 
 export const TX_STAGES = ['borrow', 'buy', 'sell', 'repay'];
@@ -91,10 +91,24 @@ const ASSET_TOKEN = {
   },
 };
 
-// Places per contract, for transfers read from a node (chainnode.js), which
-// carry none: Base's and Optimism's, each read from the contract itself
-// (symbol and decimals) on 25 Nov 2026.
+// Places per contract, for transfers read from a node or a receipt, which
+// carry none. Ethereum's and Arbitrum's as Etherscan's token records give
+// them, Base's and Optimism's read from the contracts themselves (symbol and
+// decimals), on 25 Nov 2026.
 const DECIMALS = {
+  '0x6b175474e89094c44da98b954eedeac495271d0f': 18, // DAI, Ethereum
+  '0x1abaea1f7c830bd89acc67ec4af516284b1bc33c': 6, // EURC, Ethereum
+  '0x40d16fc0246ad3160ccc09b8d0d3a2cd28ae6c2f': 18, // GHO, Ethereum
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': 6, // USDC, Ethereum
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': 6, // USDT, Ethereum
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': 18, // WETH, Ethereum
+  '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': 8, // WBTC, Ethereum
+  '0x7dff72693f6a4149b17e7c6314655f6a9f7c8b33': 18, // GHO, Arbitrum
+  '0xaf88d065e77c8cc2239327c5edb3a432268e5831': 6, // USDC, Arbitrum
+  '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8': 6, // USDC.e, Arbitrum
+  '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9': 6, // USDT, Arbitrum
+  '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': 18, // WETH, Arbitrum
+  '0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f': 8, // WBTC, Arbitrum
   '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913': 6, // USDC, Base
   '0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42': 6, // EURC, Base
   '0x50c5725949a6f0c72e6c4a641f24049a917db0cb': 18, // DAI, Base
@@ -221,6 +235,11 @@ function callOnce(params, key) {
       throw new EtherscanError(`Etherscan answered ${res.status} with something that is not its JSON. Try again.`);
     }
     if (body?.status === '1') return body.result;
+    // The proxy module (a receipt, a block) answers as JSON-RPC does.
+    if (body && 'jsonrpc' in body) {
+      if (body.error) throw new EtherscanError(`Etherscan answered: ${redact(body.error.message ?? 'an error', key).slice(0, 160)}`);
+      return body.result;
+    }
     // "No transactions found" is an empty answer, not a failure.
     if (Array.isArray(body?.result) && /no transactions found/i.test(body?.message ?? '')) return [];
     const said = String(body?.result ?? body?.message ?? `status ${res.status}`);
@@ -471,4 +490,111 @@ export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {
       kind: known ? err.kind : 'busy',
     };
   }
+}
+
+/* ------------------------------------------------------------------ audit */
+
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+/**
+ * A stored hash's transaction, for scripts/audit-hashes.mjs: `{ ok, at,
+ * transfers }` with its ERC-20 transfers as Etherscan's rows, null when the
+ * chain has no such transaction, or `{ reason }` when it could not be asked.
+ * From Etherscan's proxy calls, or the chain's node where one is set.
+ */
+export async function txTransfers(network, hash) {
+  const chain = NETWORK_META[network];
+  let receipt;
+  try {
+    if (nodeFor(network)) {
+      receipt = await nodeReceipt(network, hash);
+    } else {
+      const { key, reason } = etherscanKey();
+      if (!key) return { reason };
+      const r = await call({ chainid: chain.chainId, module: 'proxy', action: 'eth_getTransactionReceipt', txhash: hash }, key);
+      if (!r) return null;
+      const block = await call(
+        { chainid: chain.chainId, module: 'proxy', action: 'eth_getBlockByNumber', tag: r.blockNumber, boolean: 'false' },
+        key,
+      );
+      receipt = { ok: r.status === '0x1', at: Number(BigInt(block.timestamp)) * 1000, logs: r.logs ?? [] };
+    }
+  } catch (err) {
+    if (err?.kind === 'unsupported') return { reason: unsupportedReason(network, err instanceof NodeError ? `${err.message}.` : null) };
+    return { reason: err instanceof EtherscanError || err instanceof NodeError ? err.message : 'It could not be fetched.' };
+  }
+  if (!receipt) return null;
+  const transfers = receipt.logs
+    .filter((l) => l.topics?.[0] === TRANSFER_TOPIC && l.topics.length === 3)
+    .map((l) => ({
+      hash: lower(hash),
+      timeStamp: String(Math.floor(receipt.at / 1000)),
+      contractAddress: lower(l.address),
+      from: `0x${String(l.topics[1]).slice(26).toLowerCase()}`,
+      to: `0x${String(l.topics[2]).slice(26).toLowerCase()}`,
+      value: BigInt(l.data === '0x' ? 0 : l.data).toString(),
+      tokenDecimal: String(DECIMALS[lower(l.address)] ?? 18),
+    }))
+    .filter((r) => DECIMALS[r.contractAddress] !== undefined);
+  return { ok: receipt.ok, at: receipt.at, transfers };
+}
+
+/**
+ * Whether a stored hash is the stage it is stored as, by the rules a search
+ * goes by: `{ verdict: 'ok' | 'check' | 'wrong', notes }`. `tx` is
+ * `txTransfers`' answer; `alsoHeldBy`, another trade's stage holding the same
+ * hash, if one does. Pure.
+ */
+export function auditStage(t, stage, wallet, tx, alsoHeldBy = null) {
+  const r = RULE[stage];
+  const network = networkOf(wallet);
+  const chain = NETWORK_META[network].label;
+  const coin = t.borrow_currency;
+  const w = lower(wallet.address);
+  const notes = [];
+  let verdict = 'ok';
+  const flag = (level, note) => {
+    notes.push(note);
+    if (level === 'wrong' || verdict === 'ok') verdict = level;
+  };
+  if (alsoHeldBy) flag('wrong', `also stored as the ${RULE[alsoHeldBy.stage].noun} of trade #${alsoHeldBy.trade_id}`);
+  if (!tx.ok) flag('wrong', 'the transaction failed on chain');
+  const tokens = STABLE[network]?.[coin] ?? [];
+  const want = Number(t[r.amount]);
+  const moving = tx.transfers.filter(
+    (x) => tokens.includes(x.contractAddress) && (r.dir === 'in' ? x.to === w : x.from === w),
+  );
+  const best = moving.map((x) => ({ x, amount: amountOf(x) })).sort((a, b) => Math.abs(a.amount - want) - Math.abs(b.amount - want))[0];
+  if (!best) {
+    flag('wrong', `it moves no ${coin} ${r.dir === 'in' ? 'into' : 'out of'} ${wallet.name} on ${chain}`);
+  } else {
+    const off = Math.abs(best.amount - want);
+    if (off > Math.max(0.01, want * TOLERANCE)) {
+      flag('wrong', `it moves ${n2(best.amount)} ${coin}; the ${r.noun} is ${n2(want)}`);
+    } else if (off > Math.max(0.01, want * NEAR)) {
+      flag('check', `it moves ${n2(best.amount)} ${coin}; the ${r.noun} is ${n2(want)}`);
+    }
+  }
+  const assetTokens = ASSET_TOKEN[network]?.[assetOf(t)] ?? [];
+  if (!r.qty) {
+    const back = tx.transfers
+      .filter((x) => tokens.includes(x.contractAddress) && (r.dir === 'in' ? x.from === w : x.to === w))
+      .reduce((sum, x) => sum + amountOf(x), 0);
+    if (best && back >= best.amount / 2) flag('wrong', `a swap within ${coin}, not a ${r.noun}`);
+    else if (tx.transfers.some((x) => assetTokens.includes(x.contractAddress))) {
+      flag('check', `it also moves the asset: a purchase or sale, not a plain ${r.noun}?`);
+    }
+  } else if (Number(t[r.qty]) > 0) {
+    const leg = tx.transfers
+      .filter((x) => assetTokens.includes(x.contractAddress) && (r.qtyDir === 'in' ? x.to === w : x.from === w))
+      .reduce((sum, x) => sum + amountOf(x), 0);
+    const wantQty = Number(t[r.qty]);
+    if (!leg) flag('check', 'no asset token moves with it (a native ETH swap?)');
+    else if (Math.abs(leg - wantQty) / wantQty > 0.005) flag('check', `it moves ${leg} of the asset; the ${r.noun} says ${wantQty}`);
+  }
+  const day = parseDate(t[r.date]);
+  if (tx.at < day - DAY || tx.at >= day + 2 * DAY) {
+    flag('wrong', `it is dated ${fmtDate(new Date(tx.at).toISOString().slice(0, 10))}; the ${r.noun} says ${fmtDate(t[r.date])}`);
+  }
+  return { verdict, notes };
 }

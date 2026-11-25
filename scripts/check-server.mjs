@@ -108,6 +108,15 @@ const mockServer = http.createServer((req, res) => {
       mock.es.keys.add(q.get('apikey'));
       mock.es.chains?.push(q.get('chainid'));
       if (mock.es.error) return res.end(JSON.stringify({ status: '0', message: 'NOTOK', result: mock.es.error }));
+      // The proxy module answers as JSON-RPC: a receipt from `receipts`, a
+      // block's time as its number times twelve, as getblocknobytime's here.
+      if (q.get('module') === 'proxy') {
+        if (q.get('action') === 'eth_getTransactionReceipt') {
+          return res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: mock.es.receipts?.[q.get('txhash')] ?? null }));
+        }
+        const n = Number(BigInt(q.get('tag')));
+        return res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { number: q.get('tag'), timestamp: `0x${(n * 12).toString(16)}` } }));
+      }
       if (q.get('module') === 'block') {
         return res.end(JSON.stringify({ status: '1', message: 'OK', result: String(Math.floor(Number(q.get('timestamp')) / 12)) }));
       }
@@ -1336,6 +1345,62 @@ await check("a Base node's day is read to its last block, in a bounded number of
   assert.ok(mock.rpc.byMethod.eth_getBlockByNumber <= 60, `${mock.rpc.byMethod.eth_getBlockByNumber} block reads`);
   mock.rpc.sw = Infinity;
   mock.rpc.max = 10000;
+});
+
+await check('the hash audit names what cannot be the stage, and --apply forgets only searched ones', async () => {
+  const [day, next] = ['2026-09-02', '2026-09-03'];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  const T = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+  const pad = (a) => `0x${'0'.repeat(24)}${a.slice(2).toLowerCase()}`;
+  const leg = (contract, from, to, amount, dec = 6) => ({
+    address: contract, topics: [T, pad(from), pad(to)], data: `0x${BigInt(Math.round(amount * 10 ** dec)).toString(16)}`,
+  });
+  const receipt = (iso, logs, status = '0x1') => ({ status, blockNumber: `0x${Math.floor(Date.parse(iso) / 12000).toString(16)}`, logs });
+  mock.es.receipts = {
+    // A swap within the coin, stored as the loan by an old search.
+    [hashOf(141)]: receipt(`${day}T10:00:00Z`, [leg(EURC_C, SCAN, ROUTER, 30000), leg(EURC_C, ROUTER, SCAN, 30000)]),
+    // The purchase, pasted: right.
+    [hashOf(142)]: receipt(`${day}T10:05:00Z`, [leg(EURC_C, SCAN, ROUTER, 30000), leg(WETH_C, ROUTER, SCAN, 12.6491, 18)]),
+    // The repayment, a week off its day.
+    [hashOf(144)]: receipt('2026-09-10T10:00:00Z', [leg(EURC_C, SCAN, POOL, 30001.09)]),
+  };
+  const db = new Database(path.join(tmp, 'api.db'));
+  const put = db.prepare('INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?)');
+  put.run(t.id, 'borrow', hashOf(141), 'search', new Date().toISOString());
+  put.run(t.id, 'buy', hashOf(142), 'manual', new Date().toISOString());
+  // The sale's hash is on no chain at all.
+  put.run(t.id, 'sell', hashOf(143), 'search', new Date().toISOString());
+  put.run(t.id, 'repay', hashOf(144), 'manual', new Date().toISOString());
+  db.close();
+  const audit = (...args) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['scripts/audit-hashes.mjs', ...args], {
+        cwd: root,
+        env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: path.join(tmp, 'api.db'), ETHERSCAN_API_KEY: ES_KEY },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '';
+      let err = '';
+      child.stdout.on('data', (c) => (out += c));
+      child.stderr.on('data', (c) => (err += c));
+      child.on('close', (status) => (status === 0 ? resolve(out) : reject(new Error(err || out))));
+    });
+  const out = await audit();
+  const line = (stage) => out.split('\n').findIndex((l) => l.includes(`#${t.id} ${stage}`));
+  const at = (stage) => out.split('\n').slice(line(stage), line(stage) + 3).join('\n');
+  assert.match(at('Borrowed'), /^WRONG .*\n.*a swap within EURC, not a loan/);
+  assert.match(at('Bought'), /^OK /);
+  assert.match(at('Sold'), /^WRONG .*\n.*no such transaction on Ethereum/);
+  assert.match(at('Repaid'), /^WRONG .*\n.*dated 10 Sep 2026; the repayment says 3 Sep 2026/);
+  assert.match(out, /2 wrong hashes were found by a search: run again with --apply/);
+  // A dry run writes nothing.
+  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]).sort(), ['borrow', 'buy', 'repay', 'sell']);
+  assert.ok(!out.includes(ES_KEY));
+  const applied = await audit('--apply');
+  assert.match(applied, /Forgot 2 wrong searched hashes\. Pasted ones are only reported\./);
+  assert.deepEqual(Object.keys((await api('GET', '/api/stage-txs')).data[t.id]).sort(), ['buy', 'repay']);
+  mock.es.receipts = {};
+  await api('DELETE', `/api/trades/${t.id}`);
 });
 
 await check('with no ETHERSCAN_API_KEY a search says so and asks nothing', async () => {
