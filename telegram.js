@@ -82,7 +82,10 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
     // Wrong setup rather than a wrong message: a token Telegram does not know
     // (401), a chat the bot is not in or was removed from (403), a chat id that
     // names nothing, a group since upgraded to a supergroup, or a group whose
-    // admins have not let the bot post (400, "not enough rights"). Fixing
+    // admins have not let the bot post (400, "not enough rights", "have no
+    // rights to send a message"), or a channel it is not an admin of ("need
+    // administrator rights in the channel chat") - those two were taken for a
+    // refusal of the message and used the reached goal up for good. Fixing
     // config.env or the group cures these, so whatever was being sent is worth
     // sending again once it is - an alert waits for that rather than being
     // used up, which is what `setup` tells it.
@@ -93,7 +96,9 @@ export async function sendTelegramMessage(text, { parseMode = null, chatId: to =
       res.status === 403 ||
       res.status === 404 ||
       (res.status === 400 &&
-        /chat not found|upgraded to a supergroup|not a member|bot was kicked|not enough rights/i.test(described));
+        /chat not found|upgraded to a supergroup|not a member|bot was kicked|not enough rights|have no rights to send|need administrator rights|CHAT_WRITE_FORBIDDEN|CHAT_ADMIN_REQUIRED|TOPIC_CLOSED/i.test(
+          described,
+        ));
     return { ok: false, retryable, setup, error: described };
   } catch (err) {
     // No connection at all - refused, no DNS, no route - means the request

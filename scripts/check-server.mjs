@@ -176,6 +176,12 @@ const mockServer = http.createServer((req, res) => {
     }
     if (req.url.includes('/getMe')) return res.end('{"ok":true,"result":{"username":"TestBot"}}');
     if (req.url.includes('/sendMessage')) {
+      // Run once while this send is in flight: what the user does meanwhile.
+      if (mock.tgDuring) {
+        const during = mock.tgDuring;
+        mock.tgDuring = null;
+        during();
+      }
       const [status = 200, description = ''] = mock.tg.shift() ?? [];
       // [200, 'html']: a captive portal's page, not Telegram's answer.
       if (status === 200 && description === 'html') {
@@ -1894,10 +1900,17 @@ await check('a Telegram setup error keeps the alert waiting, and it goes once fi
   mock.tg.push([404, 'Not Found']);
   await runAlertSweep();
   assert.equal(getAlertById(alert.id).status, 'armed');
-  // In the group, but its admins have not let it post.
-  mock.tg.push([400, 'Bad Request: not enough rights to send text messages to the chat']);
-  await runAlertSweep();
-  assert.equal(getAlertById(alert.id).status, 'armed');
+  // In the group, but its admins have not let it post; or a channel it is
+  // not an admin of. The last two used the goal up as a refusal of the text.
+  for (const said of [
+    'Bad Request: not enough rights to send text messages to the chat',
+    'Bad Request: have no rights to send a message',
+    'Bad Request: need administrator rights in the channel chat',
+  ]) {
+    mock.tg.push([400, said]);
+    await runAlertSweep();
+    assert.equal(getAlertById(alert.id).status, 'armed', said);
+  }
   assert.equal(attemptsOf(alert.id), 0);
   await priceAt(2600);
   mock.sent.length = 0;
@@ -1906,6 +1919,24 @@ await check('a Telegram setup error keeps the alert waiting, and it goes once fi
   assert.equal(a.status, 'fired');
   assert.equal(a.lastError, null);
   assert.equal(mock.sent.length, 1);
+});
+
+await check('a goal replaced while its send is in flight ends failed, as one replaced after', async () => {
+  const t = holding();
+  const first = saveAlert(t, 2550, 2600);
+  await priceAt(2540);
+  let second = null;
+  // The bell saved a new goal while the message was on its way; then it failed.
+  mock.tgDuring = () => {
+    second = saveAlert(t, 2300, 2540);
+  };
+  mock.tg.push([502, 'Bad Gateway']);
+  await runAlertSweep();
+  const old = getAlertById(first.id);
+  assert.equal(old.status, 'failed', 'was fired, for a message that never went');
+  assert.equal(old.lastError, 'Bad Gateway. Replaced by a new goal before it was sent.');
+  assert.equal(getAlertById(second.id).status, 'armed');
+  mock.tg.length = 0;
 });
 
 await check('a refusal of the message itself is final', async () => {

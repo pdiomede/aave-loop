@@ -497,30 +497,41 @@ let sweeping = false;
  * when a newer goal already watches the trade (see the comment in `fire`).
  * `counted` adds the failure to `attempts` and gives up at `@max`.
  */
-const backToArmed = ({ counted }) =>
-  prepare(`
-    UPDATE alerts SET
-      status = CASE
-        ${counted ? "WHEN attempts + 1 >= @max THEN 'failed'" : ''}
-        WHEN NOT EXISTS (
-          SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING}
-        ) THEN 'closed'
-        -- Its trade changed asset while it was being sent: the goal is a
-        -- price of the other market now (see closeUnwatched).
-        WHEN EXISTS (
-          SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${ALERT_OFF_MARKET}
-        ) THEN 'closed'
-        WHEN EXISTS (
+const backToArmed = ({ counted }) => {
+  const holds = `EXISTS (SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${HOLDING})`;
+  // Its trade changed asset while it was being sent: the goal is a price of
+  // the other market now (see closeUnwatched).
+  const offMarket = `EXISTS (SELECT 1 FROM trades t WHERE t.id = alerts.trade_id AND ${ALERT_OFF_MARKET})`;
+  const superseded = `EXISTS (
           SELECT 1 FROM alerts other
            WHERE other.trade_id = alerts.trade_id
              AND other.status = 'armed'
              AND other.id <> alerts.id
-        ) THEN 'fired'
+        )`;
+  // A newer goal saved while this one was being sent: closed as failed, with
+  // the replacement named, as `failReachedArmed` closes one replaced after
+  // its failure. Left as 'fired', the Alerts view called a message that
+  // never went FIRED, and the same replacement read two ways by a second.
+  const replaced = `${counted ? 'attempts + 1 < @max AND ' : ''}${holds} AND NOT ${offMarket} AND ${superseded}`;
+  return prepare(`
+    UPDATE alerts SET
+      status = CASE
+        ${counted ? "WHEN attempts + 1 >= @max THEN 'failed'" : ''}
+        WHEN NOT ${holds} THEN 'closed'
+        WHEN ${offMarket} THEN 'closed'
+        WHEN ${superseded} THEN 'failed'
         ELSE 'armed'
       END,
-      ${counted ? 'attempts = attempts + 1,' : ''} last_error = @error, updated_at = @now
+      ${counted ? 'attempts = attempts + 1,' : ''}
+      last_error = CASE
+        WHEN ${replaced}
+          THEN @error || CASE WHEN @error LIKE '%.' THEN ' ' ELSE '. ' END || 'Replaced by a new goal before it was sent.'
+        ELSE @error
+      END,
+      updated_at = @now
     WHERE id = @id
   `);
+};
 
 async function fire(row, price, market, { when = 'now' } = {}) {
   // Today's rate, asked for properly: this message leaves the machine. A lookup
@@ -595,8 +606,9 @@ async function fire(row, price, market, { when = 'now' } = {}) {
     //
     // One statement rather than a read and a write, because two copies of this
     // app poll the same file and anything in between is a race. Superseded, the
-    // row stays as the claim left it and carries the reason, which is what the
-    // "not sent" note on the card is derived from.
+    // row is closed as failed with the replacement named - what a goal replaced
+    // after its failure gets (`failReachedArmed`) - and carries the reason,
+    // which is what the "not sent" note on the card is derived from.
     //
     // Counted in SQL, from the row as it stands. Counted here from `row`, read
     // when the sweep began and many seconds old by now, a failure recorded by

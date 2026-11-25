@@ -1073,6 +1073,34 @@ async function pickUpServerRates() {
   render();
 }
 
+/**
+ * While a goal is armed, read the alerts again on the price poll, so one
+ * that fires shows as fired. Read only at boot, on a visit and on a return to
+ * the tab, a tab left in view kept a fired goal ARMED in the Alerts table and
+ * its bell lit on the trade until it was reloaded. Redrawn only when
+ * something changed, and not under someone's hands (a form, a dialog, focus
+ * in the table): then at the next poll that finds the page free.
+ */
+let alertsChanged = false;
+const alertsSignature = () =>
+  JSON.stringify((state.alertLog ?? []).map((a) => [a.id, a.status, a.firedAt, a.lastError]));
+
+async function pickUpFiredAlerts() {
+  if (!alertsChanged && Object.keys(state.alerts ?? {}).length === 0) return;
+  const before = alertsSignature();
+  await loadAlertLog();
+  if (alertsSignature() !== before) alertsChanged = true;
+  if (!alertsChanged || document.querySelector('dialog[open]')) return;
+  if (state.view === 'alerts') {
+    alertsChanged = false;
+    redrawAlerts();
+    return;
+  }
+  if (underUsersHands()) return;
+  alertsChanged = false;
+  render();
+}
+
 async function loadPrices() {
   const seq = ++priceSeq;
   try {
@@ -1084,6 +1112,7 @@ async function loadPrices() {
     // picks today's rate up. It throttles itself to every half hour.
     loadFxNow().catch(() => {});
     pickUpServerRates().catch(() => {});
+    pickUpFiredAlerts().catch(() => {});
   } catch (err) {
     /*
      * The figure is left exactly as it was. A price lookup that could not get
@@ -5176,10 +5205,25 @@ function alertDialogBody(t, d, a) {
     !isNum(now) && !isNum(d.buyPriceUsd)
       ? `<p class="modal__note">The ${market} price could not be fetched, so this will alert when ${market}
          <strong>rises</strong> to the goal.</p>`
-      : !isNum(now) && old
-        ? `<p class="modal__note">That ${market} price is not recent, so whether this waits for a rise or a fall
-           is set against the purchase price, ${usd(d.buyPriceUsd)}.</p>`
+      : !isNum(now)
+        ? // Whether the price is old or there is none at all: with none, a goal
+          // of 155 on SOL bought at 150 was saved to wait for a rise with no
+          // word of it, and fired the moment SOL came back at 160.
+          `<p class="modal__note">${old ? `That ${market} price is not recent` : `There is no recent ${market} price`},
+           so whether this waits for a rise or a fall is set against the purchase price, ${usd(d.buyPriceUsd)}.</p>`
         : '';
+
+  // A goal already reached whose message has not gone (a send refused, or
+  // waiting on Telegram): the window said it would go "when ${market} reaches
+  // this price", and Save gave the owed message up (closed as failed) and
+  // armed a new goal, often the other way, with nothing said.
+  const owed =
+    a?.firedAt
+      ? `<p class="modal__note"><span class="chip chip--warn">not sent</span>
+          This goal was reached${isNum(a.firedPrice) ? ` at ${usd(a.firedPrice)}` : ''} on ${fmtDate(String(a.firedAt).slice(0, 10))}
+          and its message has not gone yet${a.lastError ? `: ${esc(a.lastError)}` : ''}. It goes once Telegram takes it;
+          saving a goal now gives that message up.</p>`
+      : '';
 
   const note = cfg?.configured
     ? `<p class="modal__note">We will send this to
@@ -5211,6 +5255,7 @@ function alertDialogBody(t, d, a) {
           placeholder: GOAL_PLACEHOLDER[market] ?? '3000',
           autofocus: true,
         })}
+        ${owed}
         ${noBasis}
         ${note}
         <p class="modal__preview" data-alert-preview hidden></p>
@@ -5371,7 +5416,12 @@ async function submitAlert(form) {
     // dialog renders in the browser's top layer, above everything.
     closeAlertDialog();
     render();
-    toast(`Alert set for ${usd(alert.goalPrice)}.`);
+    // Which way it waits, as saved: set against a price or the purchase the
+    // window may not have shown as such, "Alert set for $3,400.00" hid that a
+    // goal meant as a fall had been saved to wait for a rise.
+    const way = alert.direction === 'below' ? 'fall' : 'rise';
+    const mk = alert.market ?? marketOf(state.trades.find((x) => x.id === id) ?? {});
+    toast(`Alert set: waits for ${mk} to ${way} to ${usd(alert.goalPrice)}.`);
   } catch (err) {
     showFormError(form, err.message, err.field);
   } finally {
@@ -5450,9 +5500,15 @@ function focusAlertRow(at, pageChanged = false) {
  * beyond the list.
  */
 async function deleteAllAlerts() {
-  const total = state.alertLog?.length ?? 0;
+  // The list as the dialog counts it, taken once, before asking: up to its
+  // newest alert and no further. Read after the answer, a list reloaded
+  // behind the dialog (a visit back to the tab) took in a goal set
+  // elsewhere meanwhile, and "Delete all 5 alerts?" deleted 6.
+  const shown = state.alertLog ?? [];
+  const total = shown.length;
   if (total === 0) return;
-  const armed = state.alertLog.filter((a) => a.status === 'armed').length;
+  const armed = shown.filter((a) => a.status === 'armed').length;
+  const through = Math.max(...shown.map((a) => a.id));
 
   const ok = await confirmDialog({
     title: `Delete all ${total} alert${total === 1 ? '' : 's'}?`,
@@ -5465,9 +5521,7 @@ async function deleteAllAlerts() {
   });
   if (!ok) return;
 
-  // Up to the newest alert in the list the dialog counted, and no further: a
-  // goal set since the list was read is not one the user agreed to delete.
-  const through = Math.max(...state.alertLog.map((a) => a.id));
+  // A goal set since the list was read is not one the user agreed to delete.
   try {
     const { deleted } = await api(`/api/alerts?through=${through}`, { method: 'DELETE' });
     state.alertLog = state.alertLog.filter((a) => a.id > through);
@@ -5680,6 +5734,11 @@ async function refreshAlertsView({ keepFocus = false } = {}) {
   await loadAlertLog();
   const known = new Set(state.trades.map((t) => t.id));
   if (state.alertLog?.some((a) => !known.has(a.tradeId))) await loadTrades().catch(() => {});
+  redrawAlerts({ keepFocus });
+}
+
+/** `render`, putting focus back on the same row's control in the Alerts view. */
+function redrawAlerts({ keepFocus = true } = {}) {
   const mount = document.getElementById('alerts-mount');
   const was = keepFocus && mount?.contains(document.activeElement) ? document.activeElement : null;
   const again = was?.dataset.alertDelete

@@ -260,8 +260,11 @@ never restore a newer backup onto an older install). This is why:
 `telegram.js` answers every send with `{ ok, retryable, setup, notSent }`, and `alerts.js`
 treats the three failures differently. **Retryable** (5xx, 429, a timeout) puts the
 alert back to armed and counts a try; three end in FAILED. **Setup** (401, 403, 404,
-or a 400 naming the chat or the bot's rights) puts it back without counting, because
-fixing `config.env` or the group cures it. **notSent** (connection refused, no DNS, no
+or a 400 naming the chat or the bot's rights - "not enough rights", "have no rights to
+send", "need administrator rights") puts it back without counting, because
+fixing `config.env` or the group cures it. A send that fails after a newer goal was
+saved meanwhile is closed as FAILED with "Replaced by a new goal", as one replaced
+after its failure is (`backToArmed`, `failReachedArmed`). **notSent** (connection refused, no DNS, no
 route: the request never reached Telegram) also goes back uncounted; a timeout still
 counts, because that message may have arrived. Anything else is a refusal of the
 message itself and is final. A 200 whose body is not Telegram's JSON (a portal's
