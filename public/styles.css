@@ -2848,12 +2848,25 @@ th[aria-sort="ascending"] .th-sort__caret {
   margin-bottom: 16px;
 }
 
-/* The address takes the room; the name and the network, little. */
+/* The address takes the room; the name, the network and Add address, little.
+   The button sits on the fields' line, under an empty label as tall as
+   theirs, and is as tall as a field. */
 .wallet-form__grid {
   display: grid;
   gap: 14px 16px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto auto;
   align-items: start;
+}
+
+.wallet-form__submit .btn {
+  padding: 11px 16px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.wallet-form__error:not(:empty) {
+  display: block;
+  margin-top: 10px;
 }
 
 .field[data-field="wallet_address"] input,
@@ -3418,6 +3431,15 @@ th[aria-sort="ascending"] .th-sort__caret {
 
   .wallet-form__grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Under the fields on a phone, with no line beside it to keep level. */
+  .wallet-form__submit .field__head {
+    display: none;
+  }
+
+  .wallet-form__submit {
+    align-items: flex-end;
   }
 
   /* As cards the gutter goes on the row, since every cell spans it. Its card

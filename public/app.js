@@ -3816,11 +3816,12 @@ function fillWalletForm() {
       ${field({ name: 'wallet_name', label: 'Name', tip: 'What this wallet is called here, for example Ledger or Rabby hot. Up to 40 characters.', placeholder: 'Ledger' })}
       ${field({ name: 'wallet_address', label: 'Address', tip: 'The address, pasted from your wallet: 0x on Ethereum and its rollups, whose capitals are checked against a checksum; base58 on Solana, kept exactly as pasted.', placeholder: '0x… or Solana address' })}
       ${field({ name: 'wallet_network', label: 'Chain', tip: 'The chain this address is used on. The same address on two chains is two wallets, each with its own name.', value: '', options: NETWORKS })}
+      <div class="field wallet-form__submit">
+        <div class="field__head" aria-hidden="true"><span class="field__label">&nbsp;</span></div>
+        <button class="btn btn--primary" type="submit">Add address</button>
+      </div>
     </div>
-    <div class="form__actions">
-      <span class="form__error" data-form-error role="alert"></span>
-      <button class="btn btn--primary btn--sm" type="submit">Add address</button>
-    </div>`;
+    <span class="form__error wallet-form__error" data-form-error role="alert"></span>`;
 }
 
 /**

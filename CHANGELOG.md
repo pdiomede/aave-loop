@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Add address sits beside Chain,** on the fields' line, and the Address field is narrower to make room.
+
 ## [2.2.1] - 2026-11-25
 
 ### Added
