@@ -1608,8 +1608,9 @@ function walletCell(id) {
   const w = walletById(id);
   if (w) {
     const chain = NETWORK_META[networkOf(w)];
-    return `<span class="wallet-ref" tabindex="0" data-tip="${esc(`${w.address} on ${chain.label}`)}">${chainMark(networkOf(w))}${esc(w.name)}` +
-      ` <span class="wallet-ref__short">${esc(shortAddress(w.address))}</span></span>`;
+    // The chain's mark and the name; the address is in its tip.
+    return `<span class="wallet-ref" tabindex="0" data-tip="${esc(`${w.address} on ${chain.label}`)}">${chainMark(networkOf(w))}` +
+      `<span class="wallet-ref__name">${esc(w.name)}</span></span>`;
   }
   if (!walletsAskedFor.has(id)) {
     walletsAskedFor.add(id);

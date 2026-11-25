@@ -1022,34 +1022,51 @@ html {
   background: #ff0420;
 }
 
+/* A wallet named on a Borrowed card: its chain's mark and its name on one
+   line. The mark is a flex item: `.coin` is a grid box, and inline it took a
+   line of its own above the name. A long name wraps beside it - unwrapped it
+   ran past the card and, on a phone, gave the page a sideways scroll. */
+.wallet-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  text-align: left;
+}
+
 .wallet-ref .coin,
 .wallet-ref .chain-mark {
+  flex: none;
   width: 16px;
   height: 16px;
-  margin-right: 5px;
-  vertical-align: -3px;
 }
 
 .wallet-ref .chain-mark {
-  display: inline-grid;
   font-size: 7.5px;
 }
 
-.wallet-group__chain {
-  color: var(--text-muted);
-  font-size: 13px;
+/* Ethereum's logo is dark on transparent and vanished on the dark theme's
+   card: on a white disc with a ring, as the asset marks are. */
+.wallet-ref img.coin,
+.wallet-network img.coin {
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--hairline-strong);
 }
 
-/* A wallet named on a Borrowed card: the name, and its address shortened.
-   The name wraps - a long one ran past the card and, on a phone, gave the
-   page a sideways scroll - and the short address stays whole. */
-.wallet-ref {
-  white-space: normal;
+.wallet-ref__name {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.wallet-ref__short {
-  white-space: nowrap;
+/* The chain in a Simulation group's heading, centred on the line as the
+   name and the count are: an inline box there sat on the text's baseline,
+   above them. */
+.wallet-group__chain {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .wallet-ref__short {
