@@ -15,6 +15,7 @@ import {
   SELL_OVER_BUY,
   stages,
   reachedStages,
+  tracksGas,
   gasKey,
   todayISO,
   intervalMs,
@@ -558,6 +559,8 @@ const SWAP_KEYS = {
 };
 
 function checkSwapFee(patch, row) {
+  // A Solana platform's trade records no gas, swap costs included (`tracksGas`).
+  if (!tracksGas(row)) return;
   const reached = new Set(reachedStages(stages(row)));
   for (const [stage, keys] of Object.entries(SWAP_KEYS)) {
     const key = gasKey(stage);

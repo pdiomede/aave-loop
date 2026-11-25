@@ -391,6 +391,29 @@ await check('a purchase must say what its swap cost, and 0 is a cost', async () 
   assert.equal(zero.status, 200);
 });
 
+await check('a Jupiter or Kamino trade saves its swaps with no cost: Solana records no gas', async () => {
+  const sol = (
+    await api('POST', '/api/trades', {
+      borrow_date: '2026-09-01', borrow_amount: '15000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter',
+    })
+  ).data;
+  const bought = await api('PATCH', `/api/trades/${sol.id}`, { buy_date: '2026-09-01', buy_amount: '15000', buy_eth: '100', asset: 'sol' });
+  assert.equal(bought.status, 200, JSON.stringify(bought.data));
+  const sold = await api('PATCH', `/api/trades/${sol.id}`, { sell_date: '2026-09-05', sell_amount: '15600', sell_eth: '100' });
+  assert.equal(sold.status, 200, JSON.stringify(sold.data));
+  const repaid = await api('PATCH', `/api/trades/${sol.id}`, { repay_date: '2026-09-05', repay_amount: '15010' });
+  // 15,600 - 15,000 - 10 of interest, no fee taken off and none missing.
+  assert.deepEqual([repaid.data.derived.netGainUsd, repaid.data.derived.feesUsd, repaid.data.derived.feesMissing], [590, null, []]);
+  // Moved to Kamino, still none; to Aave, its swaps want their cost again.
+  assert.equal((await api('PATCH', `/api/trades/${sol.id}`, { platform: 'kamino', buy_amount: '15000' })).status, 200);
+  const aave = await api('PATCH', `/api/trades/${sol.id}`, { platform: 'aave' });
+  assert.equal(aave.status, 200);
+  assert.deepEqual(aave.data.derived.feesMissing, ['borrow', 'buy', 'sell', 'repay']);
+  const again = await api('PATCH', `/api/trades/${sol.id}`, { buy_amount: '15000' });
+  assert.deepEqual([again.status, again.data.field], [400, 'buy_gas_usd']);
+  await api('DELETE', `/api/trades/${sol.id}`);
+});
+
 await check('an ETH price outside $1 to $1,000,000 is refused', async () => {
   // 30,000 for 80,773 ETH is $0.37 an ETH: 8.0773 typed without its point.
   const r = await api('PATCH', `/api/trades/${t1.id}`, { ...buy, buy_eth: '80773' });

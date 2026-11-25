@@ -18,6 +18,7 @@ import {
   TICKER_MARKETS,
   ASSET_WORDS,
   PLATFORM_WORDS,
+  tracksGas,
   assetOf,
   marketOf,
   priceFor,
@@ -256,7 +257,8 @@ const TIPS = {
   avgHold: 'Average days from borrowing to repaying, over closed trades with a dollar result.',
   feesPaid:
     "Every fee on this tab's trades, open ones too: the borrow and repay gas, the swaps' costs and fees, " +
-    `and the gas to lend and unstake the ${ASSET_WORDS}. Unrecorded ones are counted below.`,
+    `and the gas to lend and unstake the ${ASSET_WORDS}. Unrecorded ones are counted below. ` +
+    'Trades on Solana platforms (Jupiter, Kamino) carry no fees.',
   best:
     "The largest dollar result among closed trades that have one. The rate under it is that trade's own. " +
     'The % tiles rank by rate and often pick another trade.',
@@ -1592,8 +1594,25 @@ const actions = (submitLabel, cancelAttr) => `
 // The one figure on a stage that is not in the borrowed coin: gas is what the
 // transaction cost, typed in dollars whatever was borrowed, so it carries a
 // dollar sign where its neighbours carry a ticker.
+/**
+ * A gas field. Drawn hidden on a trade whose platform records no gas (Solana's,
+ * `tracksGas`), and marked `data-gas` so picking a platform in the same form
+ * shows or hides it there and then (`syncGasFields`). Hidden, a stored fee is
+ * still sent back as it was, so changing the platform back finds it again.
+ */
 const gasField = (t, name, label, tip, required = false) =>
-  field({ name, label, tip, required, type: 'number', value: t[name] ?? '', prefix: '$', placeholder: '3.20' });
+  field({ name, label, tip, required, type: 'number', value: t[name] ?? '', prefix: '$', placeholder: '3.20' }).replace(
+    '<div class="field"',
+    `<div class="field"${tracksGas(t) ? '' : ' hidden'} data-gas`,
+  );
+
+/** Show or hide a form's gas fields for the platform picked in it, if it has one. */
+function syncGasFields(form) {
+  const picked = form?.elements?.platform;
+  if (!picked) return;
+  const off = !tracksGas({ platform: picked.value });
+  for (const wrap of form.querySelectorAll('[data-gas]')) wrap.hidden = off;
+}
 
 /**
  * The new trade's platform, for the card's heading. Its input belongs to the
@@ -2091,13 +2110,16 @@ function stageSummary(stage, t, d) {
   // Last on every card, in dollars whatever was borrowed. A stage saved before
   // fees were asked for has none, and says so: hiding the row would look like
   // the fee was never wanted, and $0.00 would state a fee nobody measured.
+  // On a Solana platform no gas is recorded (`d.gasless`), so no gas row is
+  // drawn at all: "not recorded" would say a fee was due that nobody asks for.
   const gasRow = (key, label = 'Gas fee', rowCls = '') => {
+    if (d.gasless) return '';
     const fee = t[gasKey(key)];
     return row(label, isNum(fee) ? usd(fee) : NOT_RECORDED, '', rowCls);
   };
   // An optional Aave fee left blank is a leg that was not taken, not one that
   // went unrecorded, so it gets no row rather than a "not recorded" one.
-  const optionalGasRow = (key, label) => (isNum(t[key]) ? row(label, usd(t[key])) : '');
+  const optionalGasRow = (key, label) => (!d.gasless && isNum(t[key]) ? row(label, usd(t[key])) : '');
 
   switch (stage) {
     case 'borrow':
@@ -2181,7 +2203,7 @@ function stageSummary(stage, t, d) {
         // and the result is ruled off from the rest like a total under a sum,
         // and set bold like one.
         gasRow('repay', 'Gas fee', 'stage__row--gap') +
-        row('Total fees paid', feesText(d)) +
+        (d.gasless ? '' : row('Total fees paid', feesText(d))) +
         resultRow(row, row2, d, 'Net gain', d.netGain, d.netGainUsd, c, 'stage__row--gap stage__row--rule stage__row--strong') +
         // Coloured from the rate it prints, not from the dollar gain behind
         // it. A cent made on a 30,000 loan is a real gain and a green
@@ -2647,6 +2669,8 @@ function restoreDraft(draft) {
   // asset's among them, in the heading outside the form.
   const outside = form.id ? document.querySelectorAll(`[data-field-of="${form.id}"] [data-coin-select]`) : [];
   for (const box of [...form.querySelectorAll('[data-coin-select]'), ...outside]) syncCoinSelect(box);
+  // A platform picked but not saved: its gas field as the pick says.
+  syncGasFields(form);
   const repay = form.querySelector('input[name="repay_amount"]');
   if (repay && !draft.auto) delete repay.dataset.auto;
   if (draft.flagged?.message) showFormError(form, draft.flagged.message, draft.flagged.name, { focus: false });
@@ -6176,6 +6200,8 @@ function wire() {
       const unit = form.querySelector('[data-field="borrow_amount"] .control__suffix');
       if (unit) unit.textContent = input.value;
     }
+    // Jupiter or Kamino picked: Solana records no gas, so its field goes.
+    if (input.name === 'platform') syncGasFields(form);
 
     // The form's own, not the input's: the Bought card's asset picker sits in
     // the card's heading, outside its form, and `closest` on the input missed

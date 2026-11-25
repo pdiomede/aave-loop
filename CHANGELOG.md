@@ -17,6 +17,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **SOL and PSOL to buy and sell, on Jupiter and Kamino.** SOL is valued at its own price and PSOL (Phantom Staked SOL) at its own; both are in the asset picker, the cards, Stats' By asset and the Statement, and Jupiter and Kamino are platforms with their own Performance cards and By Platform rows.
 - **SOL in the header,** which now shows BTC, ETH and SOL, a row each, as do `/price` and `/watch`.
 - **Solana wallets.** A wallet can be on Solana, its base58 address kept exactly as pasted; each stage's signature is found on a Solana node (`HELIUS_API_KEY`, or `SOLANA_RPC_URL`) by its USDC and its SOL or PSOL, pasted by hand otherwise, and opens on Solscan. The audit checks Solana's too.
+- **No gas fees on Jupiter and Kamino.** A Solana transaction costs a fraction of a cent, so a trade there asks for no gas fee, swap cost, or fee to lend or unstake; its cards show none, and its figures and Stats count none and flag none as not recorded. Picking either platform hides the field there and then; a fee stored before is kept and counts again if the platform changes back.
 - **The landing page and social card** list Jupiter and Kamino, and SOL and PSOL; the card is `og7.png`.
 
 ### Fixed

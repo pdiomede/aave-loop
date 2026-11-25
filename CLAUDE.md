@@ -604,7 +604,14 @@ card of its own; a closing statement has no nothing-bought row.
   (`freshPrice`). WBTC needs it most: it has no ticker row to show its price.
 - **Gas fees are dollars, one per stage.** The swaps' ("Costs & Fees (swap)", gas
   plus the DEX fee) are required on a purchase or sale being written
-  (`checkSwapFee` in `server.js`); the borrow's and repayment's are optional. 0 is
+  (`checkSwapFee` in `server.js`); the borrow's and repayment's are optional.
+  **Except on a Solana platform** (Jupiter, Kamino: `PLATFORM_META.chain`,
+  `tracksGas(t)`), where gas is a fraction of a cent and is not asked for at all:
+  `derive` counts no fee there (`feesUsd` null, `feesMissing` empty, `gasless`
+  true), the forms draw the gas fields hidden (`data-gas`, toggled live by a
+  platform pick, `syncGasFields`), the cards leave the rows out and the CSV leaves
+  the columns blank. A fee stored before is kept, ignored, and counts again if the
+  platform goes back to one that tracks gas. 0 is
   a figure; NULL is "not recorded", never 0, whether left blank or on a trade from
   before fees existed: `feesUsd` is null and `feesMissing`
   names the stages. `derive` takes fees off `netGainUsd`, the projected gain and

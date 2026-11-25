@@ -97,6 +97,10 @@ check('a pasted grouping the server refuses is refused here too', () => {
 check('a required field must be filled, an optional fee may be blank', () => {
   assert.equal(validateField('borrow_amount', ''), 'Amount borrowed is required.');
   assert.equal(validateField('buy_gas_usd', ''), 'Costs & Fees (swap) is required.');
+  assert.equal(validateField('sell_gas_usd', '', { platform: 'aave' }), 'Costs & Fees (swap) is required.');
+  // Solana records no gas: Jupiter's and Kamino's swaps need no cost.
+  assert.equal(validateField('buy_gas_usd', '', { platform: 'jupiter' }), null);
+  assert.equal(validateField('sell_gas_usd', '', { platform: 'kamino' }), null);
   assert.equal(validateField('borrow_gas_usd', ''), null);
   assert.equal(validateField('repay_gas_usd', ''), null);
   assert.equal(validateField('buy_lend_gas_usd', ''), null);

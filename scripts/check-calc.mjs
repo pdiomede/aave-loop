@@ -365,6 +365,21 @@ const flat = (gas) => ({
   repay_date: '2026-09-04', repay_amount: 10000, repay_gas_usd: 0, created_at: '2026-09-01T00:00:00Z',
 });
 
+check('a Jupiter or Kamino trade counts no gas, and none is missing', () => {
+  // flat(2): a 10,000 loop at 0% whose 2 of fees are the whole loss. On
+  // Jupiter the fees stored are not counted, nor is the repayment's blank one.
+  const evm = derive({ ...flat(2), platform: 'aave', repay_gas_usd: null }, AS_OF);
+  assert.deepEqual([evm.netGainUsd, evm.feesUsd, evm.feesMissing, evm.gasless], [-2, 2, ['repay'], false]);
+  const sol = derive({ ...flat(2), platform: 'jupiter', repay_gas_usd: null }, AS_OF);
+  assert.deepEqual([sol.netGainUsd, sol.netGain, sol.feesUsd, sol.feesMissing, sol.gasless], [0, 0, null, [], true]);
+  // Stats: Kamino's trade adds no fee and is no trade with fees not recorded.
+  const r = summaryReport([{ ...flat(2), id: 1, platform: 'aave' }, { ...flat(2), id: 2, platform: 'kamino', repay_gas_usd: null }], AS_OF);
+  assert.deepEqual([r.feesPaid, r.feesUnrecorded], [2, 0]);
+  // The CSV leaves its fee columns blank, so they add up to its fees_usd.
+  const [head, row] = tradesCsv([{ ...flat(2), platform: 'jupiter' }]).trim().split(/\r?\n/).map((l) => l.split(';'));
+  for (const c of ['buy_swap_cost_usd', 'sell_swap_cost_usd', 'fees_usd', 'fees_not_recorded']) assert.equal(row[head.indexOf(c)], '', c);
+});
+
 check('the CSV rounds a half cent away from zero, as the page prints it', () => {
   const [head, row] = tradesCsv([flat(1.375)]).trim().split(/\r?\n/).map((l) => l.split(';'));
   assert.equal(row[head.indexOf('net_gain_usd')], '-1,38');
