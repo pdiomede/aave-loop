@@ -303,7 +303,7 @@ const TIPS = {
   alerts: {
     trade:
       'The trade the goal is on. A new goal replaces one not yet reached, and adds a row otherwise; a reached goal still waiting to be sent is kept, as FAILED.',
-    goal: "The price to wait for, in USD: ETH's for an ETH trade, BTC's for a cbBTC one, WBTC's for a WBTC one.",
+    goal: "The price to wait for, in USD, of what the trade holds: BTC's for a cbBTC trade, and every other asset's own - ETH's, WBTC's, SOL's or PSOL's.",
     direction:
       "Set when saved, against the market's price at that moment, or the purchase price when no recent price could be had. A goal above it waits for a rise; below it, for a fall.",
     status:
@@ -318,9 +318,9 @@ const TIPS = {
   wallets: {
     name: 'What this wallet is called here. No two share a name, in any case.',
     address:
-      'Checksummed (EIP-55): the mix of capitals is a check on the rest, so a typo in a pasted address shows. ' +
-      'Typed all in one case, it is saved in this form.',
-    network: 'The chain the address is used on: Ethereum, Base, Arbitrum or Optimism.',
+      'On Ethereum and its rollups, checksummed (EIP-55): the mix of capitals is a check on the rest, so a typo in a pasted address shows, ' +
+      'and one typed all in one case is saved in this form. On Solana, base58 kept exactly as pasted: it has no checksum.',
+    network: `The chain the address is used on: ${NETWORKS.map((n) => NETWORK_META[n].label).join(', ').replace(/, ([^,]*)$/, ' or $1')}.`,
     added: 'When it was added to this list.',
     trades: 'Trades linked to this wallet. One in use cannot be deleted until they name another, or none.',
   },
@@ -727,7 +727,7 @@ const state = {
   statsOpen: loadStatsOpen(),
   page: 1,
   // Price alerts, keyed by trade id, plus what the server knows about where an
-  // alert would go and what each market last cost (`{ ETH, BTC, WBTC }`). All three
+  // alert would go and what each market last cost (keyed by `MARKETS`). Every one
   // are fetched once at boot and kept in step by the writes themselves, so a
   // card can read them synchronously while it renders.
   alerts: {},
@@ -739,8 +739,8 @@ const state = {
   alertLog: null,
   alertLogError: null,
   alertsPage: 1,
-  // What each market costs, `{ ETH, BTC, WBTC }`, for the ticker in the header
-  // (ETH and BTC only, `TICKER_MARKETS`) and every estimate. Deliberately not `alertPrices` above: that one belongs to
+  // What each market costs, keyed by `MARKETS`, for the ticker in the header
+  // (BTC, ETH and SOL only, `TICKER_MARKETS`) and every estimate. Deliberately not `alertPrices` above: that one belongs to
   // the alert window, is refreshed on its own by `loadAlerts({ refresh: true
   // })`, and arrives through a call that also rewrites `state.alerts`. Polling
   // for a header figure through that would put a second writer on the
@@ -969,7 +969,7 @@ async function loadStageTxs() {
 /* --------------------------------------------------------- price ticker */
 
 /**
- * What ETH and BTC cost, in the header, on every tab.
+ * What BTC, ETH and SOL cost (`TICKER_MARKETS`), in the header, on every tab.
  *
  * Its own endpoint and its own slice of state. `/api/alerts` carries the armed
  * alert map and the Telegram configuration and has no change windows on it at
@@ -991,7 +991,7 @@ const priceNow = (t) => {
   return isNum(p) ? p : null;
 };
 
-/** `{ ETH, BTC, WBTC }` as plain numbers, for `openGainsUsd`. */
+/** Every market's price as a plain number, keyed by `MARKETS`, for `openGainsUsd`. */
 const priceMap = () => Object.fromEntries(MARKETS.map((m) => [m, state.prices[m]?.price ?? null]));
 
 /**
@@ -1154,7 +1154,7 @@ const TICKER_WINDOWS = [
 ];
 
 /**
- * A row per market, ETH over BTC, each with its own windows. A market with no
+ * A row per market, in `TICKER_MARKETS` order (BTC, ETH, SOL), each with its own windows. A market with no
  * price has no row; with neither the mount is emptied, and it is `display:
  * none` while it is empty, so a price that never arrives leaves no gap behind.
  */
@@ -2890,7 +2890,7 @@ function platformTable(rows) {
 }
 
 /**
- * By asset: the tab's trades split by what the loan bought, ETH or cbBTC, in
+ * By asset: the tab's trades split by what the loan bought (`ASSETS`), in
  * the shape of By Platform and built by the same loop (`byAsset` in
  * lib/calc.js). A loan with nothing bought yet has a row of its own, so the
  * rows add up to Total borrowed. Dollars only, as By Platform is.
@@ -3490,8 +3490,8 @@ function openGainLines() {
     `Est. gain ${fig(g.total)}${g.missing && priced ? ` ${RATE_MISSING}` : ''}`,
   ];
   // Which market's price is missing or old, and for how many positions: the
-  // reason the total above is a dash or rough. Said here because WBTC, unlike
-  // ETH and BTC, has no ticker row to show it.
+  // reason the total above is a dash or rough. Said here because WBTC and
+  // PSOL, unlike BTC, ETH and SOL, have no ticker row to show it.
   const byMarket = new Map();
   for (const t of state.trades) {
     const d = derive(t);
@@ -3780,7 +3780,7 @@ function renderWalletsView() {
   } else if (state.wallets.length === 0) {
     html = `<div class="empty">
       <h3>No addresses yet</h3>
-      <p>Add the Ethereum wallets you trade from, each under a name.</p>
+      <p>Add the wallets you trade from, on Ethereum, its rollups or Solana, each under a name.</p>
     </div>`;
   } else {
     html = `<div class="table-scroll"><table class="table table--flush wallets-table">

@@ -264,7 +264,7 @@ db.exec(`
  * exception for the same reason the `*_fx` columns are: a price observed at a
  * moment cannot be recomputed later, so not keeping it loses it.
  *
- * `market_price` holds a row per market the app follows, ETH, BTC and WBTC
+ * `market_price` holds a row per market the app follows (`MARKETS`)
  * (MARKETS in lib/calc.js; cbBTC is valued at BTC, WBTC at its own). It is on disk rather than in a
  * module variable so a restart starts warm and a second copy of the app sees
  * the same figure, which matters because both poll. It replaced `eth_price`,
@@ -428,7 +428,7 @@ const GAS_COLUMN_TYPES = [
 // old ones. Same pairing again - the DDL and this list both carry it.
 const PLATFORM_COLUMNS = [['platform', 'TEXT']];
 
-// What the loan bought, ETH or cbBTC (ASSETS in lib/calc.js). Unlike the
+// What the loan bought, one of ASSETS in lib/calc.js. Unlike the
 // platform, a trade from before it was asked for is known: ETH was the only
 // choice, so the default fills every existing row with 'eth' as the column is
 // added, and a new trade that names none starts there too, as the picker does.

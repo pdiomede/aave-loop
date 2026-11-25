@@ -382,6 +382,8 @@ check('a Solana address is base58 of 32 bytes, kept exactly as typed', () => {
   assert.match(parseAddress(`${sol.slice(0, -1)}0`, 'solana').error, /only base58/);
   assert.match(parseAddress(sol.slice(0, 30), 'solana').error, /not a Solana address/);
   assert.match(parseAddress(`${sol}abc`, 'solana').error, /not a Solana address/);
+  // The right length but not 32 bytes: no "44 characters, which is 32 to 44".
+  assert.equal(parseAddress('z'.repeat(44), 'solana').error, 'That does not read as a Solana address: check it for a typo.');
   assert.match(parseAddress('0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359', 'solana').error, /A Solana address is base58/);
   assert.match(parseAddress('toly.sol', 'solana').error, /\.sol names are not looked up/);
   // And a base58 one is no Ethereum address.

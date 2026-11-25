@@ -258,7 +258,7 @@ export function cachedMarketPrice(market) {
   };
 }
 
-/** Every market's cached price, `{ ETH, BTC, WBTC }`, each a quote or null. */
+/** Every market's cached price, keyed by `MARKETS`, each a quote or null. */
 export function cachedMarketPrices() {
   return Object.fromEntries(MARKETS.map((m) => [m, cachedMarketPrice(m)]));
 }

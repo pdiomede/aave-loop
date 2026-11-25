@@ -78,8 +78,8 @@ const worthSaying = (age) => age === Infinity || (Number.isFinite(age) && age > 
 const fetchedWhen = (age) => (age === Infinity ? 'at an unknown time' : `${ageWords(age)} ago`);
 
 /**
- * The followed markets' prices (`TICKER_MARKETS`), ETH then BTC, a block each;
- * WBTC, fetched only to value WBTC trades, is not one of them. `quotes` is `{ ETH, BTC, WBTC }`
+ * The followed markets' prices (`TICKER_MARKETS`), BTC, ETH then SOL, a block each;
+ * WBTC and PSOL, fetched only to value their trades, are not among them. `quotes` is keyed by `MARKETS`
  * as `marketPrices` answers it. A market with no price is named once at the
  * end with the reason, rather than leaving the other's figure unsaid.
  */
@@ -168,7 +168,7 @@ const totalText = (h) => `${units(h.total, { asset: h.asset })} ${h.ticker}`;
 /* ----------------------------------------------------------------- holding */
 
 /**
- * The trades still holding ETH or cbBTC, with the alert on each where there is
+ * The trades still holding what they bought, with the alert on each where there is
  * one.
  *
  * Not every open position: a trade whose ETH is all sold but whose loan is not
@@ -200,7 +200,7 @@ const selectHolding = () =>
 const heldRows = () => selectHolding().all().filter((t) => ethHeldNow(derive(t, derivedOn(t))) > 0);
 
 /**
- * `prices` is `{ ETH, BTC, WBTC }` in dollars, and each row is valued at its own
+ * `prices` is keyed by `MARKETS`, in dollars, and each row is valued at its own
  * asset's market (`priceFor`): a cbBTC position at BTC, a WBTC one at WBTC. `ages` is
  * how old each of those prices is. `fxNow` is today's rate per borrowed coin,
  * the one the page's Open positions tile uses, so a euro position reads the
@@ -509,7 +509,7 @@ export async function priceMessage() {
  * call at all.
  */
 /**
- * How many trades still hold ETH or cbBTC, by the same test /holding uses.
+ * How many trades still hold what they bought, by the same test /holding uses.
  * /watch reports only while this is above zero: the prices every twenty
  * minutes is for deciding when to sell, and with nothing held there is
  * nothing to decide. Null when the ledger cannot be read, so a caller can

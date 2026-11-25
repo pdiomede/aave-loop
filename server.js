@@ -381,7 +381,7 @@ function normalise(body, { requireBorrow, asset = null }) {
   // Optional: blank unlinks the trade from its wallet.
   if (has('wallet_id')) out.wallet_id = walletIdIn(body.wallet_id);
 
-  // ETH or cbBTC, by id in any case. Never blank: the column is NOT NULL and a
+  // One of ASSETS, by id in any case. Never blank: the column is NOT NULL and a
   // purchase is always of something. Absent on a new trade, it starts on ETH
   // as the picker does (the column's default).
   if (has('asset')) {
@@ -883,12 +883,12 @@ function quoteView(quote) {
   };
 }
 
-/** Every market's quote, `{ ETH, BTC, WBTC }`, as `quoteView` gives each. */
+/** Every market's quote, keyed by `MARKETS`, as `quoteView` gives each. */
 const pricesView = (quotes) => Object.fromEntries(MARKETS.map((m) => [m, quoteView(quotes[m])]));
 
 /**
  * Everything the alert window needs, in one call: whether there is anywhere to
- * send a message, what ETH and BTC last cost, and every alert keyed by its
+ * send a message, what each market last cost, and every alert keyed by its
  * trade.
  *
  * `alerts` is the *armed* ones, keyed by trade, which is what the bell on a
@@ -932,9 +932,9 @@ app.get('/api/alerts', async (req, res, next) => {
 });
 
 /**
- * What ETH, BTC and WBTC cost, for the ticker in the page header (ETH and BTC,
- * `TICKER_MARKETS`) and every estimate (WBTC's too): `{ pollMs, prices:
- * { ETH, BTC, WBTC } }`, one quote per market in the shape `quoteView` gives. It was
+ * What every market costs, for the ticker in the page header (BTC, ETH and
+ * SOL, `TICKER_MARKETS`) and every estimate (WBTC's and PSOL's too): `{ pollMs,
+ * prices }`, keyed by `MARKETS`, one quote per market in the shape `quoteView` gives. It was
  * /api/eth while ETH was the only one.
  *
  * Its own route rather than a field on /api/alerts, which is the same argument
