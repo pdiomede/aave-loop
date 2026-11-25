@@ -24,6 +24,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Optimism and Base searches see a day's later transactions:** a day first read while it was still going on was kept for good once it ended, so a sale made that afternoon was never found.
 - **Forget (×) forgets only the hash it showed:** one pasted from another tab meanwhile was forgotten unseen, with the loan or repayment found by way of it; now it stays and the card shows it.
 - **Get onchain data carries on past a chain that stays busy:** a node that was down, or a refused node key, stopped the whole scan, leaving every wallet after it unsearched; that chain is now skipped and listed under Not searched.
+- **Stats follows rates that land while it is open:** the header moved to the new figures while the cards, the no-rate banner and the Total lines below stayed on the old ones until the view was changed.
 - **A paste field opened and folded away no longer keeps its stage out of every scan** ("1 left to the hash being pasted" with no field on screen).
 
 ## [2.2.1] - 2026-11-25

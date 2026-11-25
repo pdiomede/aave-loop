@@ -533,10 +533,13 @@ their names and hold units of the trade's asset; the CSV heads them `buy_qty` /
 `sell_qty`, and the swaps' "Costs & Fees" (`buy_gas_usd` / `sell_gas_usd`, gas plus
 the DEX fee) `buy_swap_cost_usd` / `sell_swap_cost_usd`. `ASSET_META.dp` is how a quantity prints (4 for ETH, SOL and PSOL, 8 for cbBTC and WBTC), and
 every "as printed" sum of quantities (`/holding`, `/summary`) uses it per asset and
-never adds two assets together. A sale is partial only if what it keeps prints as more
-than zero to those places: `derive`'s `isPartialSale` compares Bought and Sold as printed
-(`qtyAsPrinted`), and `retainedEth` after a partial sale is their printed difference, so
-the card's lines add up. 0.00004 ETH kept is a full exit, 0.00004 cbBTC a holding.
+never adds two assets together. A sale is partial only if it is under 99.99% of the
+purchase (dust left behind is a full exit, its whole cost taken off; deliberate since
+v0.0.2) and what it keeps prints as more than zero to those places: `derive`'s
+`isPartialSale` compares Bought and Sold as printed (`qtyAsPrinted`), and `retainedEth`
+after a partial sale is their printed difference, so the card's lines add up. Of 0.3 sold
+0.29996, 0.00004 ETH kept is a full exit, 0.00004 cbBTC a holding; of 1 cbBTC sold
+0.99996, the 0.00004 kept is within the 0.01% and a full exit too.
 
 Prices are per **market**, not per asset: `MARKETS` is `['ETH', 'BTC', 'WBTC', 'SOL', 'PSOL']`,
 cbBTC's `market` is BTC and WBTC's is WBTC, its own price (`wrapped-bitcoin`), so a

@@ -1071,7 +1071,12 @@ async function pickUpServerRates() {
   const before = rateSignature(state.trades);
   if (!(await loadTrades())) return;
   if (rateSignature(state.trades) === before) return;
-  if (underUsersHands()) return;
+  // Stats has nothing to type into - year tabs, fold buttons, the export
+  // buttons, each kept by its key through the redraw (`setKeepingFocus`) - so
+  // only an open dialog holds it back. Held back whenever focus was on a year
+  // tab or a fold, which is nearly always, its cards stayed on the old rates
+  // under a hero already showing the new ones, and nothing redrew them.
+  if (state.view === 'stats' ? document.querySelector('dialog[open]') : underUsersHands()) return;
   render();
 }
 
@@ -3500,7 +3505,9 @@ function renderStatsView() {
     .map(([key, title, body]) => collapsibleCard({ key, title, body, open: state.statsOpen.has(key) }))
     .join('');
 
-  mount.innerHTML = `
+  // Through `setKeepingFocus`: a redraw from new rates lands while a year tab
+  // or a fold button has focus.
+  setKeepingFocus(mount, `
     ${fxBanner(whole.missingFx, year === 'all' ? null : { year, count: r.missingFx })}
     <div class="years-bar">
       ${yearTabs(years, year)}
@@ -3516,7 +3523,7 @@ function renderStatsView() {
     ${platformCards}
     ${breakdownCards}
     ${SUMMARY_FOOT}
-  `;
+  `);
 }
 
 /**
