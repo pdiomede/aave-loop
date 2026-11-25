@@ -3801,6 +3801,32 @@ const searchedDependent = (id, stage) => {
   return dep && state.stageTxs?.[id]?.[dep]?.source === 'search' ? dep : null;
 };
 
+// What a stage's search goes by, as `txBasis` in etherscan.js (server-only):
+// its own date, amount and quantity, its anchor's, and the wallet, coin and
+// asset. A search's note is about those figures and stands only while they do.
+const TX_FIELDS = {
+  borrow: ['borrow_date', 'borrow_amount'],
+  buy: ['buy_date', 'buy_amount', 'buy_eth'],
+  sell: ['sell_date', 'sell_amount', 'sell_eth'],
+  repay: ['repay_date', 'repay_amount'],
+};
+const TX_ANCHOR = { borrow: 'buy', repay: 'sell' };
+const txBasisOf = (t, stage) =>
+  JSON.stringify(
+    [...TX_FIELDS[stage], ...(TX_FIELDS[TX_ANCHOR[stage]] ?? []), 'wallet_id', 'borrow_currency', 'asset'].map((k) => t?.[k] ?? null),
+  );
+
+/**
+ * The last search's note for a stage - why nothing was found, or how many
+ * transfers fitted equally - while the trade still reads as it was searched.
+ * Corrected since (the amount a not-found prompted, another wallet), the card
+ * said the new figure had been searched and named the old wallet.
+ */
+function txNoteOf(t, stage) {
+  const note = state.txNote[txKey(t.id, stage)];
+  return note && note.basis === txBasisOf(t, stage) ? note : null;
+}
+
 /**
  * A slim card's last line: the stage's transaction, linked to Etherscan, with
  * where it came from and a way to forget it; or the search on the wire; or
@@ -3809,7 +3835,7 @@ const searchedDependent = (id, stage) => {
 function txLine(t, stage) {
   const key = txKey(t.id, stage);
   const stored = state.stageTxs?.[t.id]?.[stage];
-  const note = state.txNote[key];
+  const note = txNoteOf(t, stage);
   if (stored) {
     // On the chain of the trade's wallet: a Base hash is no page on Etherscan.
     const chain = NETWORK_META[networkOf(walletById(t.wallet_id))];
@@ -3932,6 +3958,8 @@ async function searchStage(key) {
   const [id, stage] = key.split(':');
   state.txBusy.add(key);
   delete state.txNote[key];
+  // The trade as it is asked about: the note stands for these figures only.
+  const basis = txBasisOf(state.trades.find((x) => String(x.id) === id), stage);
   renderSimulation();
   let r;
   try {
@@ -3939,9 +3967,9 @@ async function searchStage(key) {
     if (r.found) {
       txWriteSeq += 1;
       state.stageTxs = { ...(state.stageTxs ?? {}), [id]: { ...(state.stageTxs?.[id] ?? {}), [stage]: { hash: r.hash, source: r.source, found_at: r.found_at } } };
-      if (r.others) state.txNote[key] = { others: r.others };
+      if (r.others) state.txNote[key] = { others: r.others, basis };
     } else {
-      state.txNote[key] = { reason: r.reason };
+      state.txNote[key] = { reason: r.reason, basis };
     }
   } catch (err) {
     // Refused (no wallet, a stage not recorded, a trade gone) is final for
@@ -3951,7 +3979,7 @@ async function searchStage(key) {
       err.status && err.status < 500
         ? { found: false, reason: err.message }
         : { found: false, reason: err.status ? err.message : 'Could not reach the server.', kind: 'busy' };
-    state.txNote[key] = { reason: r.reason };
+    state.txNote[key] = { reason: r.reason, basis };
   } finally {
     state.txBusy.delete(key);
   }
@@ -4103,6 +4131,7 @@ async function scanOnchain() {
       continue;
     }
     let r = await searchStage(key);
+    let leftTo = null;
     for (const wait of SCAN_WAITS) {
       if (r.kind !== 'busy' || scan.stopRequested) break;
       scan.waiting = wait;
@@ -4110,7 +4139,19 @@ async function scanOnchain() {
       await scanPause(wait * 1000, scan);
       scan.waiting = null;
       if (scan.stopRequested) break;
+      // Asked again as at the top: during the wait the card offers "Paste a
+      // hash", and searched again regardless, the field being typed into gave
+      // way to "Searching…", and a hash saved by hand was counted as found.
+      if (state.stageTxs?.[id]?.[stage]) leftTo = 'had';
+      else if (state.txPaste[key] !== undefined) leftTo = 'pasting';
+      if (leftTo) break;
       r = await searchStage(key);
+    }
+    if (leftTo) {
+      scan[leftTo] += 1;
+      scan.done += 1;
+      renderScanHead();
+      continue;
     }
     if (r.kind === 'busy' && scan.stopRequested) break;
     if (r.kind === 'setup' || r.kind === 'busy') {
@@ -4331,7 +4372,12 @@ function simTotals(trades) {
     // says so, and a sum that leaves a position out for want of a rate
     // carries the chip - bare, a partial sum read as the wallet's whole.
     const notes = [...new Set(trades.map((t) => priceNote(t, derive(t))).filter(Boolean))].join(' ');
-    const rateGap = g.missing && !notes ? ` ${RATE_MISSING}` : '';
+    // Every position priced - an old price is a price - so what is missing
+    // is a rate, as the header asks (`openGainLines`). Asked of the chips
+    // instead, an "old price" one hid the "no rate" one, and a sum leaving a
+    // euro position out read as the wallet's whole.
+    const priced = trades.every((t) => !estimateNeedsPrice(derive(t)) || priceNow(t) !== null);
+    const rateGap = g.missing && priced ? ` ${RATE_MISSING}` : '';
     parts.push(`<span>Est. gain ${fig(g.total)}${rateGap}${notes ? ` ${notes}` : ''}</span>`);
   }
   return parts.join('');

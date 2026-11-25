@@ -454,10 +454,12 @@ queue keeps it on the free tier; the page only adds patience.
 Found or pasted hashes live in `stage_tx` (db.js), one per trade and stage, so a
 stage is searched once. `POST /api/trades/:id/tx/:stage/find` answers a stored hash
 without searching, stores a found one only if the trade's `txBasis` fields are as the
-search read them and no other trade took that hash meanwhile (re-read inside the
-immediate transaction, then searched once more past it: two magnifiers pressed
-together linked one loan to two trades), and answers 200 found or not (the card shows
-why). A PATCH that
+search read them, no other trade took that hash meanwhile, and a loan's or
+repayment's pasted anchor is the one it was settled against (re-read inside the
+immediate transaction, then searched once more: two magnifiers pressed together linked
+one loan to two trades, and a purchase pasted mid-search left the loan of the guessed
+one beside it), and answers 200 found or not (the card shows why; the page keeps that
+note only while the trade's `txBasis` fields read as searched, `txNoteOf`). A PATCH that
 changes a stage's date, amount or quantity, or the trade's wallet, coin or asset,
 deletes that stage's searched hash in the same transaction; a pasted one (`PUT`) is
 kept - unless the trade's wallet moves to another chain, or to none, which deletes them

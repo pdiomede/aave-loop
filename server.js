@@ -1373,9 +1373,13 @@ const takenBy = (hash, tradeId) =>
 
 async function searchAndStore(trade, stage, wallet) {
   // Twice at most: a hash another trade took while this one searched is
-  // searched past, as it would have been had it been taken first.
+  // searched past, as it would have been had it been taken first; and a
+  // purchase or sale pasted meanwhile is searched against, as it would have
+  // been had it been pasted first.
+  const anchor = ANCHOR[stage];
   for (let pass = 0; pass < 2; pass += 1) {
-    const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id), ownHashes(trade.id));
+    const own = ownHashes(trade.id);
+    const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id), own);
     if (!r.found) return r;
     // Seconds have passed. Stored only if what the search went by is
     // unchanged, if no other trade took that hash meanwhile - the hashes it
@@ -1390,8 +1394,18 @@ async function searchAndStore(trade, stage, wallet) {
         if (txBasis(stage).some((k) => (now[k] ?? null) !== (trade[k] ?? null))) {
           return { found: false, reason: 'The trade was edited while it was being searched. Search again.' };
         }
+        // The loan or repayment was settled against the pasted purchase or
+        // sale as it was read before the wait. Pasted, replaced or forgotten
+        // since, this is not its answer: a loan searched while its purchase
+        // was pasted was stored from the guessed purchase, beside the pasted
+        // one, and the paste's `dropDependent` had found no loan to drop yet.
+        if (anchor && (ownHashes(trade.id)[anchor] ?? null) !== (own[anchor] ?? null)) {
+          return { again: `The ${STAGE_NAMES[anchor]}'s hash changed while this was searched. Search again.` };
+        }
         const taken = takenBy(r.hash, trade.id);
-        if (taken) return { taken: taken.trade_id };
+        if (taken) {
+          return { again: `That transaction was linked to trade #${taken.trade_id} while this one was searched. Search again.` };
+        }
         prepare(
           'INSERT INTO stage_tx (trade_id, stage, hash, source, found_at) VALUES (?, ?, ?, ?, ?) ' +
             'ON CONFLICT (trade_id, stage) DO NOTHING',
@@ -1401,13 +1415,8 @@ async function searchAndStore(trade, stage, wallet) {
         return { found: true, ...txView(row), at: mine ? r.at : null, others: mine ? r.others : 0 };
       })
       .immediate();
-    if (!out.taken) return out;
-    if (pass === 1) {
-      return {
-        found: false,
-        reason: `That transaction was linked to trade #${out.taken} while this one was searched. Search again.`,
-      };
-    }
+    if (!out.again) return out;
+    if (pass === 1) return { found: false, reason: out.again };
   }
   return { found: false, reason: 'The search failed. Try again.' };
 }

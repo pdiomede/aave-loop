@@ -55,6 +55,10 @@ const mock = { price: 3000, btc: 90000, wbtc: 89900, asked: 0, tg: [], sent: [],
 // Etherscan's V2 API: a block per twelve seconds, the transfers in `rows`,
 // or `error` as its refusal. `calls` counts every request, `keys` every key.
 mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
+// While set, a promise every Etherscan request waits on, counted in `held`:
+// a search held there is one in flight, for what happens meanwhile.
+mock.es.gate = null;
+mock.es.held = 0;
 // A chain's node (JSON-RPC), for chainnode.js: block n is two seconds after
 // RPC_T0 plus 2n, `logs` are its Transfer events, and a getLogs over more
 // than `max` blocks is refused the way mainnet.optimism.io refuses one.
@@ -71,7 +75,7 @@ const rpcLatest = () => {
 const mockServer = http.createServer((req, res) => {
   let body = '';
   req.on('data', (c) => (body += c));
-  req.on('end', () => {
+  req.on('end', async () => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url.startsWith('/rpc')) {
       mock.rpc.calls += 1;
@@ -103,6 +107,10 @@ const mockServer = http.createServer((req, res) => {
       return res.end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'no such method' } }));
     }
     if (req.url.startsWith('/etherscan')) {
+      if (mock.es.gate) {
+        mock.es.held += 1;
+        await mock.es.gate;
+      }
       const q = new URL(req.url, 'http://mock').searchParams;
       mock.es.calls += 1;
       mock.es.keys.add(q.get('apikey'));
@@ -1095,6 +1103,29 @@ await check("Etherscan's refusals are said in words, never with the key", async 
   assert.ok(!JSON.stringify(echoed.data).includes(ES_KEY), echoed.data.reason);
   assert.match(echoed.data.reason, /<key>/);
   mock.es.error = null;
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
+await check('a purchase pasted while its loan is searched is what the loan is settled against', async () => {
+  // The purchase is guessed as #4 by its WETH, so the loan as #3; pasted as
+  // #2 meanwhile, the loan is #1, as it is when #2 is pasted first. Stored
+  // as #3 beside the pasted #2, it was the other loop's loan.
+  const [day, next] = ['2026-07-06', '2026-07-07'];
+  mock.es.rows = twoLoops(SCAN, day, next);
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  let release;
+  mock.es.gate = new Promise((r) => (release = r));
+  mock.es.held = 0;
+  const loan = find(t.id, 'borrow');
+  for (let i = 0; i < 200 && !mock.es.held; i += 1) await new Promise((r) => setTimeout(r, 10));
+  assert.ok(mock.es.held, 'the search is in flight');
+  assert.equal((await api('PUT', `/api/trades/${t.id}/tx/buy`, { hash: hashOf(2) })).status, 200);
+  mock.es.gate = null;
+  release();
+  const r = await loan;
+  assert.equal(r.data.hash, hashOf(1), r.data.reason);
+  const stored = (await api('GET', '/api/stage-txs')).data[t.id];
+  assert.deepEqual([stored.borrow.hash, stored.buy.hash, stored.buy.source], [hashOf(1), hashOf(2), 'manual']);
   await api('DELETE', `/api/trades/${t.id}`);
 });
 
