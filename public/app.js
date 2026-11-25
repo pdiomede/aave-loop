@@ -2,6 +2,7 @@ import {
   derive,
   summarize,
   summaryReport,
+  breakdownTotal,
   statsYears,
   statsYear,
   accruedInterest,
@@ -2946,7 +2947,23 @@ function platformLabel(p, extra = '') {
  * currency. Borrowed is dollars only - one app holds loans in several coins,
  * and their native sum would be a figure in no coin at all.
  */
-function platformTable(rows) {
+/**
+ * The Total line closing By Platform, By asset and By currency: the columns
+ * added up (`breakdownTotal`), under a ruled line. Dollars only, so By
+ * currency's native line has no total: its coins cannot be added.
+ */
+function totalRow(total) {
+  return `<tr class="table__total">
+        <td data-label="">Total${total.missingFx ? ` ${RATE_MISSING}` : ''}</td>
+        <td data-label="Closed" class="num">${total.closed || dash}</td>
+        <td data-label="Open" class="num">${total.open || dash}</td>
+        <td data-label="Borrowed" class="num">${isNum(total.borrowed) ? usd(total.borrowed) : dash}</td>
+        <td data-label="Net gain" class="num ${gainClass(total.netGain)}">${signedUsd(total.netGain) || dash}</td>
+        <td data-label="Avg annualized" class="num ${pctClass(total.avgPct)}">${pct(total.avgPct) || dash}</td>
+      </tr>`;
+}
+
+function platformTable(rows, total) {
   if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
   return `<table class="table table--flush">
     <thead>
@@ -2969,6 +2986,7 @@ function platformTable(rows) {
       </tr>`,
         )
         .join('')}
+      ${totalRow(total)}
     </tbody>
   </table>`;
 }
@@ -2979,7 +2997,7 @@ function platformTable(rows) {
  * lib/calc.js). A loan with nothing bought yet has a row of its own, so the
  * rows add up to Total borrowed. Dollars only, as By Platform is.
  */
-function assetTable(rows) {
+function assetTable(rows, total) {
   if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
   const label = (a, extra) =>
     a === null
@@ -3006,11 +3024,12 @@ function assetTable(rows) {
       </tr>`,
         )
         .join('')}
+      ${totalRow(total)}
     </tbody>
   </table>`;
 }
 
-function currencyTable(rows) {
+function currencyTable(rows, total) {
   if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
   // Borrowed is shown in dollars so the rows can be compared, with the native
   // total beneath it: unlike the totals above, a native figure means something
@@ -3046,6 +3065,7 @@ function currencyTable(rows) {
       </tr>`,
         )
         .join('')}
+      ${totalRow(total)}
     </tbody>
   </table>`;
 }
@@ -3468,10 +3488,11 @@ function renderStatsView() {
 
   // The four breakdown tables fold too, closed until opened, so the page
   // opens on the overview and Performance rather than a long scroll of tables.
+  const total = breakdownTotal(r);
   const breakdownCards = [
-    ['by-platform', 'By Platform', platformTable(r.byPlatform)],
-    ['by-asset', 'By asset (All Platforms)', assetTable(r.byAsset)],
-    ['by-currency', 'By currency (All Platforms)', currencyTable(r.byCurrency)],
+    ['by-platform', 'By Platform', platformTable(r.byPlatform, total)],
+    ['by-asset', 'By asset (All Platforms)', assetTable(r.byAsset, total)],
+    ['by-currency', 'By currency (All Platforms)', currencyTable(r.byCurrency, total)],
     ['by-month', 'By month closed (All Platforms)', monthTable(r.byMonth, { closed: r.closedCount, valued: r.valuedCount })],
   ]
     .map(([key, title, body]) => collapsibleCard({ key, title, body, open: state.statsOpen.has(key) }))

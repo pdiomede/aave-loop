@@ -5,6 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Added
+
+- **A Total line closes By Platform, By asset and By currency,** under a ruled line: Closed, Open, Borrowed and Net gain added up, and the tab's blended Avg annualized.
+
 ### Changed
 
 - **Add address sits beside Chain,** on the fields' line, and the Address field is narrower to make room.

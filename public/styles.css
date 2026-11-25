@@ -1595,6 +1595,13 @@ html {
   font-variant-numeric: tabular-nums;
 }
 
+/* The Total line closing Stats' breakdown tables: set off by a ruled line
+   above it, as a sum is on paper, and in the weight of a heading. */
+.table tbody tr.table__total td {
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 var(--text-faint);
+}
+
 .row {
   cursor: pointer;
   transition: background-color 0.12s ease;
@@ -3376,6 +3383,15 @@ th[aria-sort="ascending"] .th-sort__caret {
     display: block;
     padding: 8px 0;
     box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+
+  /* Stacked, the Total line's rule goes on the row, not on each of its cells. */
+  .table--flush tbody tr.table__total {
+    box-shadow: inset 0 1px 0 var(--text-faint);
+  }
+
+  .table--flush tbody tr.table__total td {
+    box-shadow: none;
   }
 
   .table--flush tbody td {

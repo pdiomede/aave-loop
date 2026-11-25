@@ -22,6 +22,7 @@ import {
   openGainsUsd,
   parseAmount,
   summaryReport,
+  breakdownTotal,
   derivedOn,
   intervalMs,
   parseDate,
@@ -709,6 +710,34 @@ check('Stats: a closed trade whose rate cannot be worked out is not ranked by ra
   const odd = shut(2, '2026-02-20', 5);
   const r = summaryReport([shut(1, '2026-03-11', 50), odd], AS_OF);
   assert.equal(r.worstPct.id, 1);
+});
+
+check('Stats: the Total line under By Platform, asset and currency is its columns added up', () => {
+  // Aave +50 on ETH in 10 days, Morpho +30 on cbBTC in 20, one recorded
+  // nowhere +20 in 5, 2,000 open on Morpho with nothing bought, and a closed
+  // EURC trade with no rate: counted, but in no dollar figure.
+  const open = { id: 4, borrow_currency: 'USDC', borrow_date: '2026-09-01', borrow_amount: 2000, borrow_apr: 0, platform: 'morpho' };
+  const r = summaryReport([
+    shut(1, '2026-03-11', 50, { platform: 'aave' }),
+    shut(2, '2026-03-21', 30, { platform: 'morpho', asset: 'cbbtc', buy_eth: 0.01, sell_eth: 0.01 }),
+    shut(3, '2026-03-06', 20),
+    open,
+    shut(5, '2026-03-11', 10, { borrow_currency: 'EURC', platform: 'aave' }),
+  ], AS_OF);
+  const total = breakdownTotal(r);
+  // Worked by hand: 4 closed, 1 open, 1,000 x 3 + 2,000 borrowed in dollars,
+  // +100 net, and (50/1000*365/10*10 + 30/1000*365/20*20 + 20/1000*365/5*5)
+  // / (10 + 20 + 5) thousand-days = 36.5 / 35 * 100 = 104.2857...%.
+  assert.deepEqual([total.closed, total.open, total.borrowed, total.netGain], [4, 1, 5000, 100]);
+  assert.ok(Math.abs(total.avgPct - 3650 / 35) < 1e-9, `avgPct ${total.avgPct}`);
+  assert.equal(total.missingFx, 1);
+  const add = (rows, f) => rows.reduce((a, b) => a + Math.round((b[f] ?? 0) * 100), 0) / 100;
+  for (const rows of [r.byPlatform, r.byAsset, r.byCurrency]) {
+    assert.deepEqual([add(rows, 'closed'), add(rows, 'open'), add(rows, 'borrowed'), add(rows, 'netGain')], [4, 1, 5000, 100]);
+  }
+  // A tab whose only loan has no rate: Borrowed is unknown, not $0.00.
+  const none = breakdownTotal(summaryReport([{ ...open, borrow_currency: 'EURC' }], AS_OF));
+  assert.equal(none.borrowed, null);
 });
 
 check('Stats: Morpho has a By Platform row of its own, after Aave and Ether.fi', () => {
