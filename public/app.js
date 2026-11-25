@@ -3991,9 +3991,15 @@ async function searchStage(key) {
 async function findTx(key) {
   if (state.txBusy.has(key)) return;
   await searchStage(key);
-  // Focus to what replaced the magnifier: the link, or the reason's paste.
-  const card = document.querySelector(`[data-tx-clear="${key}"], [data-tx-paste="${key}"]`)?.closest('.sim-card');
-  card?.querySelector('.tx-line__hash, [data-tx-paste]')?.focus();
+  // Focus to what replaced the magnifier - the link, or the reason's paste -
+  // only while it is still on the magnifier (or the link the redraw moved it
+  // to), or nowhere. A search takes seconds; someone who moved on meanwhile,
+  // into the next card's paste, had focus pulled back here mid-word.
+  const card = document.querySelector(`[data-tx-card="${key}"]`);
+  const at = document.activeElement;
+  const stayed =
+    !at || at === document.body || (card?.contains(at) && at.matches(`[data-tx-find="${key}"], [data-tx-link="${key}"]`));
+  if (stayed) card?.querySelector('.tx-line__hash, [data-tx-paste]')?.focus();
 }
 
 /* -------------------------------------------------------- get onchain data */
@@ -4059,6 +4065,10 @@ async function scanOnchain() {
     if (Date.now() - state.simScan.startedAt < 600) return;
     state.simScan.stopRequested = true;
     renderScanHead();
+    return;
+  }
+  if (state.loaded && state.wallets === null && state.walletsError) {
+    toast(`Could not load the wallets, so there is nothing to search with: ${state.walletsError}`);
     return;
   }
   if (!state.loaded || state.wallets === null) {
@@ -4426,7 +4436,12 @@ function renderSimulation() {
   if (!mount) return;
   let html;
   if (state.loadFailed) html = LOAD_FAILED;
-  else if (!state.loaded || state.wallets === null) html = LOADING;
+  // The wallets could not be read: said, as the Addresses card above says it.
+  // Drawn as loading, it read "Reading your trades" for good, and Get onchain
+  // data answered that the ledger was still loading.
+  else if (state.loaded && state.wallets === null && state.walletsError) {
+    html = `<div class="empty"><h3>Could not load the wallets</h3><p>${esc(state.walletsError)} Trades are grouped by wallet here, so they show once the wallets can be read.</p></div>`;
+  } else if (!state.loaded || state.wallets === null) html = LOADING;
   else if (!state.trades.length) {
     html = '<div class="empty"><h3>No trades yet</h3><p>Trades show here under the wallet they name.</p></div>';
   } else {
