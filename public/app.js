@@ -3323,7 +3323,6 @@ function perfGrid(r, app = '') {
           .replace(/closed (trades|loans)/g, `closed ${app} $1`)
       : text;
   return `<div class="perf-grid">
-    ${perfTile('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', tip(TIPS.interestPaid))}
     ${
       // Not gated on a closed trade, unlike every other tile here. This one
       // counts open trades too - the tooltip says so, and the Borrowed
@@ -3342,12 +3341,7 @@ function perfGrid(r, app = '') {
         tip(TIPS.totalBorrowed),
       )
     }
-    ${perfTile(
-      'Average hold',
-      r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`,
-      '',
-      tip(TIPS.avgHold),
-    )}
+    ${perfTile('Interest paid', valuedAny ? usd(r.interestPaid) : '', '', tip(TIPS.interestPaid))}
     ${perfTile(
       'Total fees paid',
       isNum(r.feesPaid) ? usd(r.feesPaid) : '',
@@ -3357,8 +3351,16 @@ function perfGrid(r, app = '') {
         ? `${r.feesUnrecorded} trade${r.feesUnrecorded === 1 ? '' : 's'} with fees not recorded`
         : '',
     )}
+    ${perfTile(
+      'Average hold',
+      r.avgHoldDays === null ? '' : `${r.avgHoldDays.toFixed(1)} days`,
+      '',
+      tip(TIPS.avgHold),
+    )}
     ${
-      // The four figures above stay together on the first row and these
+      // The four figures above stay together on the first row, in the
+      // order a loop's cost is read - borrowed, interest, fees,
+      // then how long it was held - and these
       // four take the second, reading gain, loss, gain, loss - so the
       // dollar pair and the rate pair sit one above the other and the same
       // trade can be found in both columns.
