@@ -289,6 +289,14 @@ const TIPS = {
     netGain: 'Dollar result of closed trades on this platform, after gas.',
     avgPct: 'Closed trades on this platform, blended by loan size and days held.',
   },
+  wallet: {
+    wallet: 'The wallet the trade was run from, as named on the Wallets tab. A trade that names none has its own row.',
+    closed: 'Trades from this wallet, sold and repaid.',
+    open: 'Trades from this wallet not yet repaid.',
+    borrowed: 'Everything borrowed by trades run from this wallet, open and closed, in dollars.',
+    netGain: 'Dollar result of closed trades from this wallet, after gas.',
+    avgPct: 'Closed trades from this wallet, blended by loan size and days held.',
+  },
   asset: {
     asset: 'What the loan bought. A loan with nothing bought yet has no asset, and its own row.',
     closed: 'Trades that bought this, sold and repaid.',
@@ -505,9 +513,9 @@ function loadSort() {
 }
 
 // Every card that folds: on Stats one Performance card per platform and the
-// four breakdown tables, and on Wallets the Addresses card. A key no longer
+// breakdown tables, and on Wallets the Addresses card. A key no longer
 // here is dropped on load.
-const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-asset', 'by-currency', 'by-month', 'addresses'];
+const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-wallet', 'by-asset', 'by-currency', 'by-month', 'addresses'];
 
 function loadStatsOpen() {
   try {
@@ -2905,7 +2913,7 @@ function summaryCard(title, body, note = '') {
 
 /**
  * A card whose body can be folded away: the per-platform Performance cards and
- * the four breakdown tables on Stats.
+ * the breakdown tables on Stats.
  * The head is one button carrying `aria-expanded`, so the whole bar is the
  * target and a keyboard reaches it like any other button. Toggled in place by
  * `toggleCollapse`, not by a re-render, and remembered by `key`.
@@ -2955,7 +2963,7 @@ function platformLabel(p, extra = '') {
  * and their native sum would be a figure in no coin at all.
  */
 /**
- * The Total line closing By Platform, By asset and By currency: the columns
+ * The Total line closing By Platform, By wallet, By asset and By currency: the columns
  * added up (`breakdownTotal`), under a ruled line. Dollars only, so By
  * currency's native line has no total: its coins cannot be added.
  */
@@ -2985,6 +2993,52 @@ function platformTable(rows, total) {
         .map(
           (r) => `<tr>
         <td data-label="Platform">${platformLabel(r.platform, r.missingFx ? ` ${RATE_MISSING}` : '')}</td>
+        <td data-label="Closed" class="num">${r.closed || dash}</td>
+        <td data-label="Open" class="num">${r.open || dash}</td>
+        <td data-label="Borrowed" class="num">${isNum(r.borrowed) ? usd(r.borrowed) : dash}</td>
+        <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain) || dash}</td>
+        <td data-label="Avg annualized" class="num ${pctClass(r.avgPct)}">${pct(r.avgPct) || dash}</td>
+      </tr>`,
+        )
+        .join('')}
+      ${totalRow(total)}
+    </tbody>
+  </table>`;
+}
+
+/**
+ * By wallet: the tab's trades split by the wallet they name (`byWallet` in
+ * lib/calc.js), in the shape of By Platform and built by the same loop, so the
+ * rows add up to the Total line. In the Wallets tab's order, by name; a wallet
+ * the list on hand does not hold yet (added from another tab) after them, by
+ * id, read for once by `walletCell`; No wallet last. Each wallet as the
+ * Borrowed card names it, its chain's mark and name with the address as tip.
+ */
+function walletTable(rows, total) {
+  if (rows.length === 0) return `<p class="muted">Nothing borrowed yet.</p>`;
+  const rank = new Map([...(state.wallets ?? [])].sort(byWalletName).map((w, i) => [w.id, i]));
+  const place = (r) => (r.wallet === null ? [2, 0] : rank.has(r.wallet) ? [0, rank.get(r.wallet)] : [1, r.wallet]);
+  const ordered = [...rows].sort((a, b) => {
+    const [x, y] = [place(a), place(b)];
+    return x[0] - y[0] || x[1] - y[1];
+  });
+  const label = (id, extra) =>
+    id === null
+      ? `<span class="row__asset"><span class="platform-mark" aria-hidden="true"><span class="platform-mark__none"></span></span><span class="muted">No wallet</span>${extra}</span>`
+      : `<span class="row__asset">${walletCell(id)}${extra}</span>`;
+  return `<table class="table table--flush">
+    <thead>
+      <tr>
+        ${hintHead('Wallet', TIPS.wallet.wallet)}${hintHead('Closed', TIPS.wallet.closed)}
+        ${hintHead('Open', TIPS.wallet.open)}${hintHead('Borrowed', TIPS.wallet.borrowed)}
+        ${hintHead('Net gain', TIPS.wallet.netGain)}${hintHead('Avg annualized', TIPS.wallet.avgPct)}
+      </tr>
+    </thead>
+    <tbody>
+      ${ordered
+        .map(
+          (r) => `<tr>
+        <td data-label="Wallet">${label(r.wallet, r.missingFx ? ` ${RATE_MISSING}` : '')}</td>
         <td data-label="Closed" class="num">${r.closed || dash}</td>
         <td data-label="Open" class="num">${r.open || dash}</td>
         <td data-label="Borrowed" class="num">${isNum(r.borrowed) ? usd(r.borrowed) : dash}</td>
@@ -3238,6 +3292,16 @@ function tradesForYear(year, asOf) {
 }
 
 /**
+ * A trade's wallet for the CSV: its name, address and chain, or the
+ * "Wallet #id" the page shows for one the list on hand does not hold yet.
+ */
+function csvWallet(id) {
+  const w = walletById(id);
+  if (!w) return { name: `Wallet #${id}` };
+  return { name: w.name, address: w.address, chain: NETWORK_META[networkOf(w)].label };
+}
+
+/**
  * Hand the CSV for a year tab to the browser as a download.
  *
  * Exported as of the day the tab was drawn, not the day of the click. Nothing
@@ -3252,7 +3316,7 @@ function exportCsv(year) {
     toast('No trades to export.');
     return;
   }
-  downloadBlob(new Blob([tradesCsv(trades, asOf)], { type: 'text/csv;charset=utf-8' }), csvFileName(year));
+  downloadBlob(new Blob([tradesCsv(trades, asOf, csvWallet)], { type: 'text/csv;charset=utf-8' }), csvFileName(year));
   toast(`Exported ${trades.length} trade${trades.length === 1 ? '' : 's'}.`);
 }
 
@@ -3495,15 +3559,19 @@ function renderStatsView() {
     });
   }).join('');
 
-  // The four breakdown tables fold too, closed until opened, so the page
+  // The breakdown tables fold too, closed until opened, so the page
   // opens on the overview and Performance rather than a long scroll of tables.
   const total = breakdownTotal(r);
   const breakdownCards = [
     ['by-platform', 'By Platform', platformTable(r.byPlatform, total)],
+    // Only once some trade on the tab names a wallet: before then its one row,
+    // No wallet, would repeat the Total line beneath it.
+    r.byWallet.some((b) => b.wallet !== null) && ['by-wallet', 'By wallet (All Platforms)', walletTable(r.byWallet, total)],
     ['by-asset', 'By asset (All Platforms)', assetTable(r.byAsset, total)],
     ['by-currency', 'By currency (All Platforms)', currencyTable(r.byCurrency, total)],
     ['by-month', 'By month closed (All Platforms)', monthTable(r.byMonth, { closed: r.closedCount, valued: r.valuedCount })],
   ]
+    .filter(Boolean)
     .map(([key, title, body]) => collapsibleCard({ key, title, body, open: state.statsOpen.has(key) }))
     .join('');
 

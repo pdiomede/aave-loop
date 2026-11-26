@@ -718,10 +718,11 @@ check('Stats: the Total line under By Platform, asset and currency is its column
   // Aave +50 on ETH in 10 days, Morpho +30 on cbBTC in 20, one recorded
   // nowhere +20 in 5, 2,000 open on Morpho with nothing bought, and a closed
   // EURC trade with no rate: counted, but in no dollar figure.
-  const open = { id: 4, borrow_currency: 'USDC', borrow_date: '2026-09-01', borrow_amount: 2000, borrow_apr: 0, platform: 'morpho' };
+  // Wallets: 2 holds trades 1 and 4, 1 holds trade 2, trades 3 and 5 none.
+  const open = { id: 4, borrow_currency: 'USDC', borrow_date: '2026-09-01', borrow_amount: 2000, borrow_apr: 0, platform: 'morpho', wallet_id: 2 };
   const r = summaryReport([
-    shut(1, '2026-03-11', 50, { platform: 'aave' }),
-    shut(2, '2026-03-21', 30, { platform: 'morpho', asset: 'cbbtc', buy_eth: 0.01, sell_eth: 0.01 }),
+    shut(1, '2026-03-11', 50, { platform: 'aave', wallet_id: 2 }),
+    shut(2, '2026-03-21', 30, { platform: 'morpho', asset: 'cbbtc', buy_eth: 0.01, sell_eth: 0.01, wallet_id: 1 }),
     shut(3, '2026-03-06', 20),
     open,
     shut(5, '2026-03-11', 10, { borrow_currency: 'EURC', platform: 'aave' }),
@@ -734,12 +735,41 @@ check('Stats: the Total line under By Platform, asset and currency is its column
   assert.ok(Math.abs(total.avgPct - 3650 / 35) < 1e-9, `avgPct ${total.avgPct}`);
   assert.equal(total.missingFx, 1);
   const add = (rows, f) => rows.reduce((a, b) => a + Math.round((b[f] ?? 0) * 100), 0) / 100;
-  for (const rows of [r.byPlatform, r.byAsset, r.byCurrency]) {
+  for (const rows of [r.byPlatform, r.byWallet, r.byAsset, r.byCurrency]) {
     assert.deepEqual([add(rows, 'closed'), add(rows, 'open'), add(rows, 'borrowed'), add(rows, 'netGain')], [4, 1, 5000, 100]);
   }
   // A tab whose only loan has no rate: Borrowed is unknown, not $0.00.
   const none = breakdownTotal(summaryReport([{ ...open, borrow_currency: 'EURC' }], AS_OF));
   assert.equal(none.borrowed, null);
+});
+
+check('Stats: By wallet groups by the wallet named, none last, and an id that names none counts as none', () => {
+  // 1,000 at 0% on 1 ETH each: wallet 2 +50 and +10 (one id arriving as
+  // text), wallet 1 +40, and four naming no wallet: none, 0, a fraction, junk.
+  const r = summaryReport([
+    shut(1, '2026-03-11', 50, { wallet_id: 2 }),
+    shut(2, '2026-03-11', 40, { wallet_id: 1 }),
+    shut(3, '2026-03-11', 10, { wallet_id: '2' }),
+    shut(4, '2026-03-11', 5),
+    shut(5, '2026-03-11', 5, { wallet_id: 0 }),
+    shut(6, '2026-03-11', 5, { wallet_id: 1.5 }),
+    shut(7, '2026-03-11', 5, { wallet_id: 'x' }),
+  ], AS_OF);
+  assert.deepEqual(r.byWallet.map((b) => b.wallet), [1, 2, null]);
+  assert.deepEqual(r.byWallet.map((b) => [b.closed, b.borrowed, b.netGain]), [[1, 1000, 40], [2, 2000, 60], [4, 4000, 20]]);
+  assert.ok(r.byWallet.every((b) => !('borrowedNative' in b) && !('netGainNative' in b)), 'dollars only');
+});
+
+check('the CSV names each trade\'s wallet, its address and chain, and defuses a name read as a formula', () => {
+  const wallets = { 3: { name: '=Main', address: '0xAbC0000000000000000000000000000000000001', chain: 'Base' } };
+  const text = tradesCsv([{ ...flat(0), wallet_id: 3 }, { ...flat(0), id: 8 }], AS_OF, (id) => wallets[id] ?? null);
+  const [head, a, b] = text.trim().split(/\r?\n/).map((l) => l.split(';'));
+  const at = (row, c) => row[head.indexOf(c)];
+  assert.deepEqual([at(a, 'wallet'), at(a, 'wallet_address'), at(a, 'wallet_chain')], ["'=Main", '0xAbC0000000000000000000000000000000000001', 'Base']);
+  assert.deepEqual([at(b, 'wallet'), at(b, 'wallet_address'), at(b, 'wallet_chain')], ['', '', '']);
+  // Called with no wallets at all, as before: the columns are there, empty.
+  const [, c] = tradesCsv([{ ...flat(0), wallet_id: 3 }], AS_OF).trim().split(/\r?\n/).map((l) => l.split(';'));
+  assert.equal(c[head.indexOf('wallet')], '');
 });
 
 check('Stats: Morpho has a By Platform row of its own, after Aave and Ether.fi', () => {

@@ -8,6 +8,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ### Added
 
 - **A Total line closes By Platform, By asset and By currency,** under a ruled line: Closed, Open, Borrowed and Net gain added up, and the tab's blended Avg annualized.
+- **Stats has a By wallet table:** Closed, Open, Borrowed, Net gain and Avg annualized for each wallet, by name, then No wallet, with the Total line. It shows once a trade on the tab names a wallet.
+- **The CSV names each trade's wallet:** `wallet`, `wallet_address` and `wallet_chain` after `asset`, empty when it names none.
 
 ### Changed
 

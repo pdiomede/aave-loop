@@ -382,6 +382,11 @@ write hold the lock together. The Add form sits outside `#wallets-mount`, so the
 redraw a price triggers cannot wipe it, and a rename being typed lives in
 `state.walletRename` for the same reason.
 
+Stats' By wallet is `summaryReport().byWallet`, keyed by `wallet_id` (a row for none),
+ordered by name on the page; it shows only once a trade on the tab names a wallet. The
+CSV's `wallet`, `wallet_address` and `wallet_chain` come from a `walletOf` callback the
+page passes (`csvWallet`), as `lib/csv.js` holds no wallets.
+
 A trade names its wallet in `trades.wallet_id INTEGER REFERENCES wallets(id)`:
 optional (NULL is none, never guessed), with no ON DELETE action, so with
 `foreign_keys` on a wallet in use cannot be deleted. `DELETE /api/wallets/:id` refuses
@@ -522,7 +527,7 @@ new platform needs only its `PLATFORM_META` entry, a logo in `public/` and its i
 `PLATFORMS`. `/holding` adds a line per platform under its totals (`holdingText`),
 each gain summed in cents as printed so the lines add up to Unrealised, and only when
 the held trades span two platforms or more. The Performance cards
-and the four breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
+and the breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
 start closed, and keep their open/closed state in localStorage (`ethroundtrip-stats-open`).
 Wallets' Addresses card folds by the same key list (`addresses`), but its markup is
 in `index.html`, so `syncAddressesFold` puts the saved state on it at boot.

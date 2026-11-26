@@ -347,8 +347,8 @@ help - what this bot can do
   - **Cost:** two Etherscan calls per hash the first time (about 3 minutes for 200
     stages on the free plan), then from the cache until a restart. Solana the same
     way, through Helius.
-- **The wallet elsewhere.** A trade's wallet shows on its Borrowed card only: not in
-  the CSV, Stats or Telegram yet.
+- **The wallet in Telegram.** Stats has By wallet and the CSV the wallet's name,
+  address and chain (26 Nov); `/holding` does not name a trade's wallet yet.
 
 ## Known limits and loose ends
 
