@@ -197,7 +197,7 @@ check('a figure that prints as zero carries no minus, and is not called a loss',
 check('a closed euro trade with no rate is "no rate", not $0.00', () => {
   const pdf = build([trade({ loan: 9000, proceeds: 9500, buyGas: 1, sellGas: 1, currency: 'EURC' })]);
   assert.ok(shows(pdf, 'no rate'));
-  assert.ok(shows(pdf, '1 trade has no exchange rate yet, so its result is left out of the totals below.'));
+  assert.ok(shows(pdf, '1 trade has no exchange rate yet, so its gain and interest are left out of the totals below; its fees are counted.'));
   assert.ok(!shows(pdf, '$0.00'), 'nothing measured is printed as zero');
   assert.ok(shows(pdf, '-'), 'a dash where the rate is missing');
   assert.ok(shows(pdf, '1 closed trade, none with a rate yet'));

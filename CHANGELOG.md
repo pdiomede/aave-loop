@@ -26,6 +26,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Get onchain data carries on past a chain that stays busy:** a node that was down, or a refused node key, stopped the whole scan, leaving every wallet after it unsearched; that chain is now skipped and listed under Not searched.
 - **Stats follows rates that land while it is open:** the header moved to the new figures while the cards, the no-rate banner and the Total lines below stayed on the old ones until the view was changed.
 - **A paste field opened and folded away no longer keeps its stage out of every scan** ("1 left to the hash being pasted" with no field on screen).
+- **The CSV's fees_usd reads 0 on a Jupiter or Kamino trade,** as Stats counts it, not blank, which read as a fee nobody recorded.
+- **The Statement's no-rate line says what it leaves out:** the trade's gain and interest; its fees are still counted, which "its result is left out of the totals" denied.
+- **The Closed column's tips say sold and repaid,** which is what it counts; "Repaid trades" also described an older row repaid with nothing sold, which is in neither column.
+- **The server says at startup which calendar it counts days on,** and asks for `TZ` while it is on UTC: there, `/holding` and `/summary` counted a day's interest less than the page from midnight to 1am in Rome.
 
 ## [2.2.1] - 2026-11-25
 

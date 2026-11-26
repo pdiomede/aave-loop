@@ -78,6 +78,10 @@ the default, above 2^31 − 1 ms it is capped. Node turns an out-of-range timer 
 so a huge value meant to switch something off made it fire continuously.
 `ETHROUNDTRIP_BOT_POLL_S` is clamped to 1–50 seconds, and `/watch` to at least a minute.
 
+`TZ` sets the calendar the server counts days on (`todayISO`: interest, days held, the
+bot's replies); the page counts on the reader's. Production should run with the
+owner's zone (`TZ=Europe/Rome` in the service), and the startup log says which it uses.
+
 `ETHROUNDTRIP_CONFIG` relocates `config.env`. Everything in that file can be overridden by
 exporting it for one run; the shell always wins over the file.
 

@@ -270,9 +270,11 @@ const TIPS = {
   worstPct:
     'The weakest annualized return among closed trades with a dollar result, or the biggest loss by rate. ' +
     'Trades whose rate cannot be worked out are left out, not counted as zero.',
+  // Closed is sold and repaid (`isRealized`): "Repaid trades" also described an
+  // older row repaid with nothing sold, which is counted in neither column.
   cur: {
     currency: 'The stablecoin borrowed. Trades are grouped by what you borrowed.',
-    closed: 'Repaid trades in this currency.',
+    closed: 'Trades sold and repaid in this currency.',
     open: 'Trades in this currency not yet repaid.',
     borrowed:
       'Everything borrowed in this currency, open and closed, in dollars. Below, the same total in the coin.',
@@ -281,7 +283,7 @@ const TIPS = {
   },
   platform: {
     platform: 'Where the loop was run. A trade from before this was asked for is not recorded.',
-    closed: 'Repaid trades on this platform.',
+    closed: 'Trades sold and repaid on this platform.',
     open: 'Trades on this platform not yet repaid.',
     borrowed: 'Everything borrowed on this platform, open and closed, in dollars.',
     netGain: 'Dollar result of closed trades on this platform, after gas.',
@@ -289,7 +291,7 @@ const TIPS = {
   },
   asset: {
     asset: 'What the loan bought. A loan with nothing bought yet has no asset, and its own row.',
-    closed: 'Repaid trades that bought this.',
+    closed: 'Trades that bought this, sold and repaid.',
     open: 'Trades that bought this, not yet repaid.',
     borrowed: 'Everything borrowed to buy this, open and closed, in dollars.',
     netGain: 'Dollar result of closed trades that bought this, after gas.',

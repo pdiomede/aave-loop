@@ -379,9 +379,11 @@ check('a Jupiter or Kamino trade counts no gas, and none is missing', () => {
   // Kamino's alone: no fee is a known $0.00, not a dash for one unmeasured.
   const k = summaryReport([{ ...flat(2), id: 3, platform: 'kamino' }], AS_OF);
   assert.deepEqual([k.feesPaid, k.feesUnrecorded], [0, 0]);
-  // The CSV leaves its fee columns blank, so they add up to its fees_usd.
+  // The CSV leaves its gas columns blank, and its fees_usd is the $0.00 Stats
+  // counts, not a blank that read as a fee nobody recorded.
   const [head, row] = tradesCsv([{ ...flat(2), platform: 'jupiter' }]).trim().split(/\r?\n/).map((l) => l.split(';'));
-  for (const c of ['buy_swap_cost_usd', 'sell_swap_cost_usd', 'fees_usd', 'fees_not_recorded']) assert.equal(row[head.indexOf(c)], '', c);
+  for (const c of ['buy_swap_cost_usd', 'sell_swap_cost_usd', 'fees_not_recorded']) assert.equal(row[head.indexOf(c)], '', c);
+  assert.equal(row[head.indexOf('fees_usd')], '0');
 });
 
 check('the CSV rounds a half cent away from zero, as the page prints it', () => {

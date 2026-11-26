@@ -1600,12 +1600,31 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Something went wrong on the server.' });
 });
 
+/**
+ * The day this process counts to, said at startup. Interest, days held and
+ * the bot's replies are worked out on the server's own calendar (`todayISO`),
+ * the page's on the reader's: on a VPS left on UTC, /holding and /summary
+ * counted a day's interest less than the page from midnight to 1am in Rome
+ * (2am in summer). `TZ=Europe/Rome` in the service puts both on one calendar;
+ * the hint shows only while the server is on UTC, where it is most likely
+ * unset rather than chosen.
+ */
+function calendarNote() {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const utc = /^(Etc\/)?(UTC|GMT|UCT|Universal|Zulu)$/.test(zone);
+  return (
+    `Dates: today is ${todayISO()} on ${zone} time.` +
+    (utc ? ' Set TZ in the service to your own zone (TZ=Europe/Rome) so the bot counts days as the page does.' : '')
+  );
+}
+
 // Loopback only. This is a personal ledger with no authentication, so it has
 // no business being reachable from the rest of the network.
 const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`ETH Roundtrip v${pkg.version} running at http://localhost:${PORT}`);
   const oldNames = oldSettingsNote();
   if (oldNames) console.log(oldNames);
+  console.log(calendarNote());
   // Started here rather than at import, so the port being taken below cannot
   // leave a poller running in a process that is on its way out.
   reportConfig();
