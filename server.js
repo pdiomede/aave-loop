@@ -1386,6 +1386,23 @@ function ownElsewhere(tradeId, stage) {
   return new Set(prepare('SELECT hash FROM stage_tx WHERE trade_id = ? AND stage != ?').all(tradeId, stage).map((r) => r.hash));
 }
 
+/**
+ * The purchases and sales recorded on a wallet in a coin, this trade's own
+ * included, as the search reads a swap: none of them is a loan or repayment.
+ * A repayment searched before its purchase took the purchase - coin out,
+ * asset in - when no plain repayment transfer existed; one searched before
+ * another loop's purchase took that loop's.
+ */
+function walletSwaps(trade) {
+  return prepare('SELECT * FROM trades WHERE wallet_id = ? AND borrow_currency = ?')
+    .all(trade.wallet_id, trade.borrow_currency)
+    .flatMap((t) =>
+      ['buy', 'sell']
+        .filter((st) => stageRecorded(t, st) && Number(t[`${st}_eth`]) > 0)
+        .map((st) => ({ stage: st, amount: Number(t[`${st}_amount`]), qty: Number(t[`${st}_eth`]), asset: assetOf(t) })),
+    );
+}
+
 /** Who holds `hash`, other than this trade's own `stage`: what a search may not store over. */
 const heldBesides = (hash, tradeId, stage) =>
   prepare('SELECT trade_id, stage FROM stage_tx WHERE hash = ? AND NOT (trade_id = ? AND stage = ?)').get(hash, tradeId, stage);
@@ -1398,7 +1415,9 @@ async function searchAndStore(trade, stage, wallet) {
   const anchor = ANCHOR[stage];
   for (let pass = 0; pass < 2; pass += 1) {
     const own = ownHashes(trade.id);
-    const r = await findStageTx(trade, stage, wallet, claimedHashes(trade.id), own, ownElsewhere(trade.id, stage));
+    const r = await findStageTx(
+      trade, stage, wallet, claimedHashes(trade.id), own, ownElsewhere(trade.id, stage), walletSwaps(trade),
+    );
     if (!r.found) return r;
     // Seconds have passed. Stored only if what the search went by is
     // unchanged, if no other trade took that hash meanwhile - the hashes it

@@ -401,6 +401,21 @@ const foldFor = (network) => (isSolana(network) ? (s) => String(s ?? '') : lower
 const amountOf = (row) => Number(row.value) / 10 ** Number(row.tokenDecimal);
 
 /**
+ * How much of the coin one transaction moves the stage's way, as near the
+ * typed amount as it can be read: its legs added up, or one of them. A swap
+ * on a split route pays in more than one transfer - Uniswap's router took
+ * 18,000 and 12,000 for a 30,000 purchase - and read leg by leg no leg fitted,
+ * so the purchase was not found and the repayment was stored in its place.
+ * One leg alone still counts, for a transaction that also pays someone else.
+ */
+function coinMoved(legs, want) {
+  const amounts = legs.map(amountOf);
+  if (!amounts.length) return null;
+  const sum = amounts.reduce((a, b) => a + b, 0);
+  return [sum, ...amounts].sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0];
+}
+
+/**
  * The transfers that could be this stage, best first. Ranked by the amount
  * first - anything within 0.05% or a cent of the typed one counts as exact
  * (`near`), the rest by how far off they are - and only then, for a purchase
@@ -409,7 +424,7 @@ const amountOf = (row) => Number(row.value) / 10 ** Number(row.tokenDecimal);
  * through aEthWETH, say) lost to another trade's sale 0.08% off whose WETH leg
  * happened to fit. Pure, over rows already fetched.
  */
-function candidates(rows, t, stage, wallet, claimed) {
+function candidates(rows, t, stage, wallet, claimed, swaps = []) {
   const r = RULE[stage];
   const network = networkOf(wallet);
   const lower = foldFor(network);
@@ -418,32 +433,58 @@ function candidates(rows, t, stage, wallet, claimed) {
   const w = lower(wallet.address);
   const assetTokens = ASSET_TOKEN[network]?.[assetOf(t)] ?? [];
   const wantQty = r.qty ? Number(t[r.qty]) : null;
+  const allAssets = Object.values(ASSET_TOKEN[network] ?? {}).flat();
   const out = [];
+  const seen = new Set();
   for (const row of rows) {
     if (!tokens.includes(lower(row.contractAddress))) continue;
     if (r.dir === 'in' ? lower(row.to) !== w : lower(row.from) !== w) continue;
+    // A transaction at a time, its legs read together (`coinMoved`).
+    if (seen.has(lower(row.hash))) continue;
+    seen.add(lower(row.hash));
     if (claimed.has(lower(row.hash))) continue;
     if (!withinStageDays(t, stage, Number(row.timeStamp) * 1000)) continue;
-    const amount = amountOf(row);
+    const sameTx = rows.filter((x) => lower(x.hash) === lower(row.hash));
+    const legs = sameTx
+      .filter((x) => tokens.includes(lower(x.contractAddress)))
+      .filter((x) => (r.dir === 'in' ? lower(x.to) === w : lower(x.from) === w));
+    const amount = coinMoved(legs, want);
     const off = Math.abs(amount - want);
     if (!(off <= Math.max(0.01, want * TOLERANCE))) continue;
     const byAmount = off <= Math.max(0.01, want * NEAR) ? 0 : off / want;
-    const sameTx = rows.filter((x) => x.hash === row.hash);
     let byQty = 0;
     if (!r.qty) {
       // A loan or repayment moves the coin and nothing else back. A
       // transaction that also moves the same coin the other way is a swap
       // within it - USDC to USDC.e on a rollup, 20,001.5 out and 20,001.5 in -
       // and was taken for the repayment that followed it. One that moves the
-      // asset is a purchase or a sale - a repayment and a 30,000 purchase are
-      // within 0.05% of each other - and ranks after a plain transfer rather
-      // than being ruled out, since a loop contract can borrow and swap in one.
+      // asset ranks after a plain transfer rather than being ruled out: a
+      // loan can be taken in the transaction that supplies its collateral,
+      // and a repayment in the one that withdraws it.
       const back = sameTx
         .filter((x) => tokens.includes(lower(x.contractAddress)))
         .filter((x) => (r.dir === 'in' ? lower(x.from) === w : lower(x.to) === w))
         .reduce((sum, x) => sum + amountOf(x), 0);
       if (back >= amount / 2) continue;
-      byQty = sameTx.some((x) => assetTokens.includes(lower(x.contractAddress))) ? 1 : 0;
+      // But not a recorded purchase or sale, of this trade or another on the
+      // wallet: coin out with the asset in, about a purchase's amount and
+      // quantity, is that purchase. A repayment searched before its own
+      // purchase stored the purchase as the repayment, and the purchase was
+      // then never found; one searched before another loop's purchase, that
+      // loop's (`swaps`, read by the caller; one already stored is `claimed`).
+      const swapStage = r.dir === 'out' ? 'buy' : 'sell';
+      const swapIn = RULE[swapStage].qtyDir === 'in';
+      const isSwap = swaps.some((sw) => {
+        if (sw.stage !== swapStage || Math.abs(amount - sw.amount) > Math.max(0.01, sw.amount * TOLERANCE)) return false;
+        const theirs = ASSET_TOKEN[network]?.[sw.asset] ?? [];
+        const leg = sameTx
+          .filter((x) => theirs.includes(lower(x.contractAddress)))
+          .filter((x) => (swapIn ? lower(x.to) === w : lower(x.from) === w))
+          .reduce((sum, x) => sum + amountOf(x), 0);
+        return leg > 0 && Math.abs(leg - sw.qty) / sw.qty <= 0.005;
+      });
+      if (isSwap) continue;
+      byQty = sameTx.some((x) => allAssets.includes(lower(x.contractAddress))) ? 1 : 0;
     }
     if (wantQty > 0) {
       // The asset leg of the same transaction, in the stage's direction; none
@@ -466,12 +507,12 @@ const same = (a, b) => a === b || Math.abs(a - b) <= SAME;
 const SAME = 1e-6;
 
 /** The best fit for a stage, or null, with how many others fitted as well. */
-function pick(rows, t, stage, wallet, claimed, own = {}, elsewhere = new Set()) {
+function pick(rows, t, stage, wallet, claimed, own = {}, elsewhere = new Set(), swaps = []) {
   const lower = foldFor(networkOf(wallet));
   // Not the trade's own other stages (`elsewhere`) - its purchase was stored
   // as its repayment - but only here: the purchase or sale worked out below
   // to settle a tie is looked for among them, as it should be.
-  const list = candidates(rows, t, stage, wallet, claimed).filter((c) => !elsewhere.has(c.hash));
+  const list = candidates(rows, t, stage, wallet, claimed, swaps).filter((c) => !elsewhere.has(c.hash));
   if (!list.length) return null;
   let tied = list.filter((c) => same(c.byAmount, list[0].byAmount) && same(c.byQty, list[0].byQty));
   if (tied.length > 1) {
@@ -507,12 +548,14 @@ function pick(rows, t, stage, wallet, claimed, own = {}, elsewhere = new Set()) 
  * trade's purchase was offered as this one's repayment when only the same
  * stage was excluded; `own` the trade's own pasted hashes, by stage;
  * `elsewhere` every hash the trade holds at its other stages, never this
- * stage's answer. Answers `{ found: true, hash, at, amount, others }` or
+ * stage's answer; `swaps` the purchases and sales recorded on the wallet,
+ * `{ stage, amount, qty, asset }`, none of which is a loan or repayment.
+ * Answers `{ found: true, hash, at, amount, others }` or
  * `{ found: false, reason, kind }` (`kind` as `EtherscanError`'s, none for a
  * stage not found), never throws: a search that could not be done
  * is a result the card shows.
  */
-export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {}, elsewhere = new Set()) {
+export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {}, elsewhere = new Set(), swaps = []) {
   const network = networkOf(wallet);
   const chain = NETWORK_META[network];
   const solana = isSolana(network);
@@ -538,7 +581,7 @@ export async function findStageTx(t, stage, wallet, claimed = new Set(), own = {
       : node
         ? await nodeRows(network, wallet.address, from, to)
         : await transfersBetween(chain.chainId, wallet.address, from, to, key);
-    const best = pick(rows, t, stage, wallet, claimed, own, elsewhere);
+    const best = pick(rows, t, stage, wallet, claimed, own, elsewhere, swaps);
     if (best) {
       return { found: true, hash: best.hash, at: new Date(best.at).toISOString(), amount: best.amount, others: best.others };
     }
@@ -658,7 +701,10 @@ export function auditStage(t, stage, wallet, tx) {
   const moving = tx.transfers.filter(
     (x) => tokens.includes(x.contractAddress) && (r.dir === 'in' ? x.to === w : x.from === w),
   );
-  const best = moving.map((x) => ({ x, amount: amountOf(x) })).sort((a, b) => Math.abs(a.amount - want) - Math.abs(b.amount - want))[0];
+  // Its legs together, or one, as the search reads them (`coinMoved`): a
+  // split-route purchase pasted by hand read "it moves 18,000.00 USDC".
+  const moved = coinMoved(moving, want);
+  const best = moved === null ? null : { amount: moved };
   if (!best) {
     flag('wrong', `it moves no ${coin} ${r.dir === 'in' ? 'into' : 'out of'} ${wallet.name} on ${chain}`);
   } else {

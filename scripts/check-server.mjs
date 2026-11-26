@@ -1119,6 +1119,68 @@ await check("a trade's own purchase is never found as its repayment", async () =
   await api('DELETE', `/api/trades/${t.id}`);
 });
 
+await check('a repayment searched before its purchase, or before another loop\'s, never takes that purchase', async () => {
+  // Repaid with collateral, so no plain repayment transfer. The 2.2.2 rule
+  // held only once the purchase was stored: searched first, the repayment
+  // took the purchase (coin out, WETH in), and the purchase was never found.
+  const [day, next] = ['2026-08-24', '2026-08-25'];
+  mock.es.rows = [
+    xfer(51, `${day}T09:00:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(52, `${day}T09:05:00Z`, EURC_C, SCAN, ROUTER, 30000),
+    xfer(52, `${day}T09:05:00Z`, WETH_C, ROUTER, SCAN, 12.6491, 18, 'WETH'),
+  ];
+  const a = (await api('POST', '/api/trades', loop(scanWallet.id, day, next, { repay_amount: '30000.5' }))).data;
+  const r = await find(a.id, 'repay');
+  assert.equal(r.data.found, false, `repayment stored as ${r.data.hash}`);
+  assert.equal((await find(a.id, 'buy')).data.hash, hashOf(52));
+  await api('DELETE', `/api/trades/${a.id}`);
+  // Another loop's purchase, not searched yet, the day this one is repaid.
+  const [d2, n2] = ['2026-08-27', '2026-08-28'];
+  mock.es.rows = [
+    xfer(53, `${n2}T18:00:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(54, `${n2}T18:05:00Z`, EURC_C, SCAN, ROUTER, 30000),
+    xfer(54, `${n2}T18:05:00Z`, WETH_C, ROUTER, SCAN, 12.7, 18, 'WETH'),
+  ];
+  const first = (await api('POST', '/api/trades', loop(scanWallet.id, d2, n2, { repay_amount: '30000.5' }))).data;
+  const second = (await api('POST', '/api/trades', borrow({
+    borrow_date: n2, borrow_amount: '30000', borrow_currency: 'EURC', wallet_id: scanWallet.id,
+    buy_date: n2, buy_amount: '30000', buy_eth: '12.7', buy_gas_usd: '1',
+  }))).data;
+  const theirs = await find(first.id, 'repay');
+  assert.equal(theirs.data.found, false, `another loop's purchase stored as this repayment: ${theirs.data.hash}`);
+  assert.equal((await find(second.id, 'buy')).data.hash, hashOf(54));
+  await api('DELETE', `/api/trades/${first.id}`);
+  await api('DELETE', `/api/trades/${second.id}`);
+});
+
+await check('a swap paid in several transfers is found, and not swapped for the repayment', async () => {
+  // A split route: 18,000 and 12,000 EURC out for 12.6491 WETH, the sale's
+  // proceeds back in two transfers. Read leg by leg nothing fitted, and the
+  // purchase took the next day's repayment.
+  const [day, next] = ['2026-08-30', '2026-08-31'];
+  mock.es.rows = [
+    xfer(61, `${day}T09:00:00Z`, EURC_C, POOL, SCAN, 30000),
+    xfer(62, `${day}T09:05:00Z`, EURC_C, SCAN, ROUTER, 18000),
+    xfer(62, `${day}T09:05:00Z`, EURC_C, SCAN, POOL, 12000),
+    xfer(62, `${day}T09:05:00Z`, WETH_C, ROUTER, SCAN, 7.6, 18, 'WETH'),
+    xfer(62, `${day}T09:05:00Z`, WETH_C, POOL, SCAN, 5.0491, 18, 'WETH'),
+    xfer(63, `${next}T10:00:00Z`, WETH_C, SCAN, ROUTER, 12.6491, 18, 'WETH'),
+    xfer(63, `${next}T10:00:00Z`, EURC_C, ROUTER, SCAN, 20000),
+    xfer(63, `${next}T10:00:00Z`, EURC_C, POOL, SCAN, 10127.92),
+    xfer(64, `${next}T10:05:00Z`, EURC_C, SCAN, POOL, 30001.09),
+  ];
+  const t = (await api('POST', '/api/trades', loop(scanWallet.id, day, next))).data;
+  assert.equal((await find(t.id, 'buy')).data.hash, hashOf(62));
+  assert.equal((await find(t.id, 'sell')).data.hash, hashOf(63));
+  assert.equal((await find(t.id, 'repay')).data.hash, hashOf(64));
+  assert.equal((await find(t.id, 'borrow')).data.hash, hashOf(61));
+  // And the audit reads it as the search does: "it moves 18,000.00 EURC" was WRONG.
+  const { auditStage } = await import('../etherscan.js');
+  const tx = { ok: true, at: Date.parse(`${day}T09:05:00Z`), transfers: mock.es.rows.filter((x) => x.hash === hashOf(62)) };
+  assert.deepEqual(auditStage(t, 'buy', scanWallet, tx), { verdict: 'ok', notes: [] });
+  await api('DELETE', `/api/trades/${t.id}`);
+});
+
 await check('a token named like the coin, or a transfer the wrong way, is not the stage', async () => {
   const day = '2026-09-10';
   mock.es.rows = [

@@ -4314,7 +4314,11 @@ function scanPause(ms, scan) {
  */
 function pastingInto(key) {
   if (state.txPaste[key] === undefined) return false;
-  if (state.txPaste[key] || document.querySelector(`[data-tx-form="${key}"]`)) return true;
+  // On screen, not merely in the page: a folded wallet group keeps its table
+  // in the markup, `hidden`, and the empty field inside it held its stage out
+  // of every scan as the folded trade's once did.
+  const field = document.querySelector(`[data-tx-form="${key}"]`);
+  if (state.txPaste[key] || (field && !field.closest('[hidden]'))) return true;
   delete state.txPaste[key];
   return false;
 }
@@ -4602,6 +4606,8 @@ async function clearTx(key) {
       return;
     }
   }
+  // Still on this card once the server answered, or nowhere: see `pasteTx`.
+  const stayed = stillIn(document.querySelector(`[data-tx-card="${key}"]`));
   txWriteSeq += 1;
   const dep = searchedDependent(id, stage);
   dropStageTx(id, stage);
@@ -4611,7 +4617,13 @@ async function clearTx(key) {
   if (dep) dropStageTx(id, dep);
   delete state.txNote[key];
   renderOnchainData();
-  document.querySelector(`[data-tx-find="${key}"]`)?.focus();
+  if (stayed) document.querySelector(`[data-tx-find="${key}"]`)?.focus();
+}
+
+/** Whether focus is still inside `el`, or on nothing, after a wait. */
+function stillIn(el) {
+  const at = document.activeElement;
+  return !at || at === document.body || Boolean(el?.contains(at));
 }
 
 /** Forget a stage's hash on the page, as the server has. */
@@ -4640,6 +4652,11 @@ async function pasteTx(form) {
     const before = state.stageTxs?.[id]?.[stage]?.hash;
     const dep = searchedDependent(id, stage);
     const row = await api(`/api/trades/${id}/tx/${stage}`, { method: 'PUT', body: JSON.stringify({ hash }) });
+    // Read before the redraw replaces the form: was the reader still in it?
+    // The save takes a moment; one who moved on meanwhile, into the next
+    // card's paste, had focus pulled back to this hash mid-word, as `findTx`
+    // once did.
+    const stayed = stillIn(document.querySelector(`[data-tx-form="${key}"]`) ?? form);
     txWriteSeq += 1;
     state.stageTxs = { ...(state.stageTxs ?? {}), [id]: { ...(state.stageTxs?.[id] ?? {}), [stage]: row } };
     // A new purchase or sale: the server dropped the searched loan or
@@ -4649,7 +4666,7 @@ async function pasteTx(form) {
     delete state.txPasteError[key];
     delete state.txNote[key];
     renderOnchainData();
-    document.querySelector(`[data-tx-clear="${key}"]`)?.closest('.sim-card')?.querySelector('.tx-line__hash')?.focus();
+    if (stayed) document.querySelector(`[data-tx-clear="${key}"]`)?.closest('.sim-card')?.querySelector('.tx-line__hash')?.focus();
   } catch (err) {
     state.txPasteError[key] = err.status ? err.message : 'Could not reach the server.';
     // Into the form on screen now: a redraw while the paste was on the wire

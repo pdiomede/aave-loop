@@ -461,8 +461,12 @@ another trade's purchase was offered as a repayment when only the same stage was
 excluded. Nor is the trade's own hash at another stage (`ownElsewhere`): its purchase was
 stored as its repayment when no plain repayment transfer existed. A paste may still name
 one transaction for two stages. A loan or repayment never counts a transaction that moves the same coin back
-the other way (a USDC to USDC.e swap on a rollup), and one that also moves the asset
-ranks after a plain transfer. The purchase or sale it is settled against is the trade's own
+the other way (a USDC to USDC.e swap on a rollup), nor one that is a recorded purchase or
+sale of any trade on the wallet, its own included (`walletSwaps` in server.js: about its
+amount and asset quantity), whether or not that one's hash is stored yet; one that
+otherwise moves an asset ranks after a plain transfer. A transaction's coin legs in the
+stage's direction are read together (`coinMoved`: their sum or one leg, whichever is
+nearer the amount), so a split-route swap is found; the audit reads them the same way. The purchase or sale it is settled against is the trade's own
 *pasted* hash when it has one; otherwise it is worked out again, and a guess passes
 its doubt (`others`) on to the loan, since a searched hash's doubt is not stored. So
 `txBasis` of the loan and repayment includes their anchor's fields, and pasting or

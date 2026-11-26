@@ -34,6 +34,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The Closed column's tips say sold and repaid,** which is what it counts; "Repaid trades" also described an older row repaid with nothing sold, which is in neither column.
 - **`/holding` stays within Telegram's 4,096 characters however many wallets:** the per-wallet lines had no limit, and with about 30 wallets of long names the reply was refused and nothing was sent; now the wallet lines, then the platform lines, give way when the whole table would not fit beside them.
 - **Focus stays on a Stats card when new rates clear its "no rate" chip:** a reader on the chip was sent back to the top of the page; now focus goes to the card's fold button.
+- **Onchain Data never takes a purchase or sale as a loan or repayment:** searched before the purchase it belonged to, or before another loop's purchase that day, a repayment with no plain transfer took that purchase, which was then never found.
+- **Onchain Data finds a swap paid in several transfers** (a split route: 18,000 and 12,000 out for one 30,000 purchase); read leg by leg it was missed and the repayment was stored in its place. The hash audit reads such a swap the same way.
+- **An empty paste field in a folded wallet group no longer keeps its stage out of Get onchain data.**
+- **Saving or forgetting a hash leaves focus where you moved meanwhile,** instead of pulling it back to that card mid-word.
 - **The server says at startup which calendar it counts days on,** and asks for `TZ` while it is on UTC: there, `/holding` and `/summary` counted a day's interest less than the page from midnight to 1am in Rome.
 
 ## [2.2.1] - 2026-11-25
