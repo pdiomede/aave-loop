@@ -528,7 +528,10 @@ new platform needs only its `PLATFORM_META` entry, a logo in `public/` and its i
 each gain summed in cents as printed so the lines add up to Unrealised, and only when
 the held trades span two platforms or more; then, by the same rule and after a blank line,
 a line per wallet (by name, No wallet last). Its table gains a wallet column (the name
-from a join on `wallets`, cut to 12 characters) once a held trade names a wallet. The Performance cards
+from a join on `wallets`, cut to 12 characters) once a held trade names a wallet. Those
+summary lines are the only part of the head that grows with the ledger, so they are kept
+only while the whole table fits beside them under Telegram's 4,096: wallet lines go first,
+then platform lines, and only then is the table cut (`fit`). The Performance cards
 and the breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
 start closed, and keep their open/closed state in localStorage (`ethroundtrip-stats-open`).
 Wallets' Addresses card folds by the same key list (`addresses`), but its markup is

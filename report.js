@@ -398,18 +398,17 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   // the line would repeat the totals above it, the rule the page's Open
   // positions grid keeps for a single position.
   const groupLines = (groups, keys, labelOf) => {
-    if (keys.length < 2) return false;
-    for (const k of keys) {
+    if (keys.length < 2) return [];
+    return keys.map((k) => {
       const { rows: mine, gain: g, known } = groups.get(k);
       const n = mine.length;
       const held = heldTotals(mine).map(totalText).join(' · ');
       const short = n - known;
       const fig = known === 0 ? '' : ` · ${signedUsd(g / 100)}${short ? ` (${short} not counted)` : ''}`;
-      head.push(escHtml(`${labelOf(k, mine)}: ${n} trade${n === 1 ? '' : 's'}${held ? ` · ${held}` : ''}${fig}`));
-    }
-    return true;
+      return escHtml(`${labelOf(k, mine)}: ${n} trade${n === 1 ? '' : 's'}${held ? ` · ${held}` : ''}${fig}`);
+    });
   };
-  const byPlatformShown = groupLines(
+  const platformLines = groupLines(
     byPlatform,
     [...PLATFORMS, null].filter((p) => byPlatform.has(p)),
     (p) => PLATFORM_META[p]?.label ?? 'Not recorded',
@@ -423,15 +422,30 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
     const [x, y] = [nocase(walletName(a, byWallet.get(a).rows)), nocase(walletName(b, byWallet.get(b).rows))];
     return x < y ? -1 : x > y ? 1 : a - b;
   });
-  // A blank line between the two sets, or "Frullino: 2 trades" read as a
-  // fourth platform under "Kamino: 1 trade".
-  if (byPlatformShown && walletKeys.length > 1) head.push('');
-  groupLines(byWallet, walletKeys, walletName);
+  const walletLines = groupLines(byWallet, walletKeys, walletName);
 
   // The table gets what the lines above it leave. It used to have 3,900 of
   // its own whatever they took, and a long ledger at an old price, its
   // stale-price and move lines included, came to 4,102 and got no reply.
-  const top = `${head.join('\n')}\n\n`;
+  //
+  // The platform and wallet lines are a summary of the table, and the only
+  // part of the head that grows with the ledger: one line per wallet, each as
+  // long as its name and holdings. Unbounded, 32 wallets of long names pushed
+  // the head alone past 4,096 and Telegram refused the reply, and fewer left
+  // the table "… and 130 more" with no row in it. So they are kept only while
+  // the whole table still fits beside them: the wallet lines go first, then
+  // the platform lines, and only with neither is the table cut.
+  const tableText = body.join('\n');
+  const layouts = [
+    // A blank line between the two sets, or "Frullino: 2 trades" read as a
+    // fourth platform under "Kamino: 1 trade".
+    [...platformLines, ...(platformLines.length && walletLines.length ? [''] : []), ...walletLines],
+    platformLines,
+    [],
+  ];
+  const topOf = (extra) => `${[...head, ...extra].join('\n')}\n\n`;
+  const fits = (extra) => tableText.length <= TELEGRAM_MAX - visibleLength(topOf(extra)) - MARGIN;
+  const top = topOf(layouts.find(fits) ?? []);
   return `${top}<pre>${escHtml(fit(body, TELEGRAM_MAX - visibleLength(top) - MARGIN))}</pre>`;
 }
 

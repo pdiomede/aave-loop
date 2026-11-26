@@ -2342,6 +2342,31 @@ await check('/holding names each trade\'s wallet, cut short in the table, and ad
   }
 });
 
+await check('/holding keeps within Telegram\'s 4,096 however many wallets: the summary lines give way to the table', async () => {
+  // 32 wallets of 40-character names, each holding one trade of each of the
+  // five assets: the wallet lines alone came to 4,765 characters, and
+  // Telegram refused the reply.
+  const qty = { eth: 1, cbbtc: 0.1, wbtc: 0.1, sol: 10, psol: 10 };
+  const rows = [];
+  for (let w = 1; w <= 32; w++) {
+    for (const asset of Object.keys(qty)) {
+      rows.push({ id: rows.length + 1, platform: 'aave', wallet_id: w, wallet_name: `Wallet number ${String(w).padStart(3, '0')} with a long name`,
+        asset, borrow_date: today, borrow_amount: 1000, borrow_currency: 'USDC', borrow_apr: 5, borrow_gas_usd: 1,
+        buy_date: today, buy_amount: 1000, buy_eth: qty[asset], buy_gas_usd: 1 });
+    }
+  }
+  const prices = { ETH: 3000, BTC: 90000, WBTC: 90000, SOL: 150, PSOL: 160 };
+  const visible = (html) => html.replace(/<[^>]+>/g, '').replace(/&(?:lt|gt|amp|quot|#\d+);/g, '_').length;
+  const text = holdingText(rows, prices, {});
+  assert.ok(visible(text) <= 4096, `visible ${visible(text)}`);
+  // The table keeps rows, the wallet lines are what gave way.
+  assert.match(text.split('<pre>')[1], /^#1 /);
+  assert.doesNotMatch(text, /Wallet number 001 with a long name: /);
+  // Five wallets leave the table room: their lines stay.
+  const few = holdingText(rows.filter((r) => r.wallet_id <= 5), prices, {});
+  assert.match(few, /\nWallet number 001 with a long name: 5 trades /);
+});
+
 await check('a trade repaid with no full sale is not held: its alert closes and /holding leaves it out', async () => {
   // A row from before the API refused repaid-without-sold. `derive` calls it
   // CLOSED; the SQL used to call it held.
