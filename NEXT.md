@@ -65,7 +65,10 @@ day's interest behind the page. In `systemctl edit`, the lines go between the tw
 
 ## 2.2.1 (25 Nov): Wallets, and a trade's wallet
 
-To do on the VPS. Deploy as in step 1 below (`git pull`, restart). No nginx, BotFather
+Done on the VPS by 26 Nov, keys and BotFather menu included, **except the hash
+audit** below (`scripts/audit-hashes.mjs`), still to run once.
+
+What it needed: Deploy as in step 1 below (`git pull`, restart). No nginx, BotFather
 or settings change: no inline script changed and no command was added. The first
 start adds `trades.wallet_id` and the `wallets` table by itself; every existing trade
 starts with no wallet. Then check, behind the password:
