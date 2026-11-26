@@ -1113,9 +1113,37 @@ async function pickUpFiredAlerts() {
     redrawAlerts();
     return;
   }
-  if (underUsersHands()) return;
+  // The bell and the Bought card's Alert line are only ever on screen inside
+  // an open trade, which holds the full redraw back - so a goal fired while
+  // its trade was open went on reading "Price alert at SOL $170.00" for good.
+  // Those two are redrawn in place; the rest waits for the next render.
+  if (underUsersHands()) {
+    refreshAlertMarks();
+    return;
+  }
   alertsChanged = false;
   render();
+}
+
+/**
+ * Each bell on screen, and the Alert line of the Bought card it sits on,
+ * redrawn from `state.alerts` without touching the forms around them.
+ */
+function refreshAlertMarks() {
+  for (const bell of document.querySelectorAll('[data-alert-trade]')) {
+    const t = state.trades.find((x) => String(x.id) === bell.dataset.alertTrade);
+    if (!t) continue;
+    const d = derive(t);
+    const rows = bell.closest('article.stage')?.querySelector(':scope > dl.stage__rows');
+    if (rows) setKeepingFocus(rows, stageSummary('buy', t, d));
+    const holder = document.createElement('div');
+    holder.innerHTML = alertBell(t, d);
+    const fresh = holder.firstElementChild;
+    if (!fresh) continue;
+    const focused = document.activeElement === bell;
+    bell.replaceWith(fresh);
+    if (focused) fresh.focus({ preventScroll: true });
+  }
 }
 
 async function loadPrices() {
@@ -2430,6 +2458,17 @@ function estChip(t, d) {
 const FOCUSABLE = '[tabindex], button, a[href], input, select, textarea';
 function setKeepingFocus(el, html) {
   if (!el) return;
+  const back = keepingFocus(el);
+  el.innerHTML = html;
+  back();
+}
+
+/**
+ * What `setKeepingFocus` does around its write, for a container redrawn some
+ * other way (the Alerts tab by `render`): read where focus is in `el` now, and
+ * answer a function that puts it back on the same control once it is redrawn.
+ */
+function keepingFocus(el) {
   const active = document.activeElement;
   const inside = el.contains(active) && active !== el;
   const index = inside ? [...el.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
@@ -2441,46 +2480,47 @@ function setKeepingFocus(el, html) {
     /* a control with no caret */
   }
   const place = inside ? focusPlace(active, el) : null;
-  el.innerHTML = html;
-  if (!inside) return;
-  // The same control by what it is, then by its kind and place within the
-  // nearest row or card known by what it is, then what stands in for it there
-  // (`data-focus-default`), and only then by its place in the whole container.
-  // By place alone, a card's "Paste a hash" turning into "Searching…" during a
-  // scan moved every control after it by one: focus left the hash being typed
-  // for Cancel, a hash link for its ×, and a chip for the next one along.
-  const takes = (n) => n && !n.disabled;
-  let target = null;
-  for (const sel of keys) {
-    target = el.querySelector(sel);
-    if (target) break;
-  }
-  if (!takes(target) && place) {
-    const scope = place.scope.map((sel) => el.querySelector(sel)).find(Boolean) ?? (place.scope.length ? null : el);
-    target = scope?.querySelectorAll(place.kind)[place.nth] ?? null;
-    // Gone from its card - the magnifier once its hash is found, "Paste a
-    // hash" while the stage is searched - focus stays in the card, on what
-    // replaced it, rather than falling to the page.
-    if (!takes(target) && scope && scope !== el) {
-      target =
-        [...scope.querySelectorAll('[data-focus-default]')].find(takes) ?? (scope.matches(FOCUSABLE) ? scope : null);
-      // Else the control that opens and closes it: a Stats card's fold button
-      // for its body. New rates took the "no rate" chip a reader was on out of
-      // By wallet, the card had nothing else in that place, and focus fell to
-      // the page, the reader sent back to the top.
-      if (!takes(target) && scope.id) target = el.querySelector(`[aria-controls="${CSS.escape(scope.id)}"]`);
+  return () => {
+    if (!inside) return;
+    // The same control by what it is, then by its kind and place within the
+    // nearest row or card known by what it is, then what stands in for it there
+    // (`data-focus-default`), and only then by its place in the whole container.
+    // By place alone, a card's "Paste a hash" turning into "Searching…" during a
+    // scan moved every control after it by one: focus left the hash being typed
+    // for Cancel, a hash link for its ×, and a chip for the next one along.
+    const takes = (n) => n && !n.disabled;
+    let target = null;
+    for (const sel of keys) {
+      target = el.querySelector(sel);
+      if (target) break;
     }
-  }
-  if (!takes(target)) target = index >= 0 ? el.querySelectorAll(FOCUSABLE)[index] : null;
-  if (!takes(target)) return;
-  target.focus({ preventScroll: true });
-  if (caret) {
-    try {
-      target.setSelectionRange(...caret);
-    } catch {
-      /* not a text control */
+    if (!takes(target) && place) {
+      const scope = place.scope.map((sel) => el.querySelector(sel)).find(Boolean) ?? (place.scope.length ? null : el);
+      target = scope?.querySelectorAll(place.kind)[place.nth] ?? null;
+      // Gone from its card - the magnifier once its hash is found, "Paste a
+      // hash" while the stage is searched - focus stays in the card, on what
+      // replaced it, rather than falling to the page.
+      if (!takes(target) && scope && scope !== el) {
+        target =
+          [...scope.querySelectorAll('[data-focus-default]')].find(takes) ?? (scope.matches(FOCUSABLE) ? scope : null);
+        // Else the control that opens and closes it: a Stats card's fold button
+        // for its body. New rates took the "no rate" chip a reader was on out of
+        // By wallet, the card had nothing else in that place, and focus fell to
+        // the page, the reader sent back to the top.
+        if (!takes(target) && scope.id) target = el.querySelector(`[aria-controls="${CSS.escape(scope.id)}"]`);
+      }
     }
-  }
+    if (!takes(target)) target = index >= 0 ? el.querySelectorAll(FOCUSABLE)[index] : null;
+    if (!takes(target)) return;
+    target.focus({ preventScroll: true });
+    if (caret) {
+      try {
+        target.setSelectionRange(...caret);
+      } catch {
+        /* not a text control */
+      }
+    }
+  };
 }
 
 /**
@@ -5420,7 +5460,7 @@ function alertDialogBody(t, d, a) {
   const owed =
     a?.firedAt
       ? `<p class="modal__note"><span class="chip chip--warn">not sent</span>
-          This goal was reached${isNum(a.firedPrice) ? ` at ${usd(a.firedPrice)}` : ''} on ${fmtDate(String(a.firedAt).slice(0, 10))}
+          This goal was reached${isNum(a.firedPrice) ? ` at ${usd(a.firedPrice)}` : ''} on ${fmtDate(localDay(a.firedAt))}
           and its message has not gone yet${a.lastError ? `: ${esc(a.lastError)}` : ''}. It goes once Telegram takes it;
           saving a goal now gives that message up.</p>`
       : '';
@@ -5579,7 +5619,10 @@ function refreshAlertPreview(id, { delay = 0 } = {}) {
 async function submitAlert(form) {
   const id = Number(form.dataset.alertForm);
   // Against the trade, so a cbBTC trade's error names a "BTC goal price".
-  if (!validateForm(form, state.trades.find((t) => t.id === id) || {})) return;
+  // With the market's price now, so a goal a thousand times off it is caught
+  // here (`goalNearPrice`) as the server would catch it.
+  const trade = state.trades.find((t) => t.id === id) || {};
+  if (!validateForm(form, { ...trade, market_price: state.prices[marketOf(trade)]?.price ?? null })) return;
   const done = beginSubmit(form);
   if (!done) return;
   try {
@@ -5613,8 +5656,10 @@ async function submitAlert(form) {
     }
     alertWriteSeq += 1;
     // Closed before the toast, which would otherwise be painted over: a
-    // dialog renders in the browser's top layer, above everything.
-    closeAlertDialog();
+    // dialog renders in the browser's top layer, above everything. Only while
+    // it still holds this form: a save that landed late, after Escape and
+    // another trade's bell, closed that window and the goal being typed in it.
+    if (alertDialog()?.contains(form)) closeAlertDialog();
     render();
     // Which way it waits, as saved: set against a price or the purchase the
     // window may not have shown as such, "Alert set for $3,400.00" hid that a
@@ -5940,14 +5985,13 @@ async function refreshAlertsView({ keepFocus = false } = {}) {
 /** `render`, putting focus back on the same row's control in the Alerts view. */
 function redrawAlerts({ keepFocus = true } = {}) {
   const mount = document.getElementById('alerts-mount');
-  const was = keepFocus && mount?.contains(document.activeElement) ? document.activeElement : null;
-  const again = was?.dataset.alertDelete
-    ? `[data-alert-delete="${CSS.escape(was.dataset.alertDelete)}"]`
-    : was?.getAttribute('aria-label')
-      ? `[aria-label="${CSS.escape(was.getAttribute('aria-label'))}"]`
-      : null;
+  // As every other redraw keeps it (`keepingFocus`): by key, then by kind and
+  // place in its row. Found again by its Delete button or aria-label alone,
+  // the "not sent" chip - focusable so its reason can be read by keyboard -
+  // had neither, and a refresh on coming back to the tab dropped it to the page.
+  const back = keepFocus && mount ? keepingFocus(mount) : () => {};
   render();
-  if (again) mount.querySelector(again)?.focus();
+  back();
 }
 
 /* ------------------------------------------------------------------ theme */

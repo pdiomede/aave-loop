@@ -38,6 +38,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **Onchain Data finds a swap paid in several transfers** (a split route: 18,000 and 12,000 out for one 30,000 purchase); read leg by leg it was missed and the repayment was stored in its place. The hash audit reads such a swap the same way.
 - **An empty paste field in a folded wallet group no longer keeps its stage out of Get onchain data.**
 - **Saving or forgetting a hash leaves focus where you moved meanwhile,** instead of pulling it back to that card mid-word.
+- **An alert goal is held to its market's own range and to the price now:** "3.500" on an ETH trade saved a $3.50 goal and a BTC "100.000" one of $100, each waiting for good; a goal outside the market's range, or beyond a tenth to ten times its price, is refused in the window and by the server.
+- **The alert message says what was spent** ("Spent: 9,876.54 USDC", with its dollars on the purchase day for a euro coin): without it the lines could not be added up to the Gain, and quantity times price missed it by a cent, or 15 on a euro trade.
+- **A goal reached while its trade is open clears its bell and Alert line:** an open trade held the redraw back, so the bell kept naming a goal already sent.
+- **The alert window dates a reached goal by the local day,** as the Alerts table does; late in the evening it named the day before.
+- **A goal saved late no longer closes another trade's alert window,** losing the goal being typed in it.
+- **Focus stays on an Alerts row's "not sent" chip** when the list is redrawn, instead of falling to the page.
 - **The server says at startup which calendar it counts days on,** and asks for `TZ` while it is on UTC: there, `/holding` and `/summary` counted a day's interest less than the page from midnight to 1am in Rome.
 
 ## [2.2.1] - 2026-11-25

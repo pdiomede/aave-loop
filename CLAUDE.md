@@ -626,7 +626,9 @@ card of its own; a closing statement has no nothing-bought row.
   for the four days it is marked provisional.
 - **Every figure has the same ceiling, `FIGURE_MAX`** (a trillion, in `lib/calc.js`),
   and an amount of the coin must print as at least 0.01; the server's `toNumber` and
-  the form's `validateField` share both, as they share `priceInRange` (alert goals)
+  the form's `validateField` share both, as they share `goalInRange` (an alert goal, in its
+  market's own `priceRange`) and `goalNearPrice` (within a tenth to ten times the market's
+  price now, when known)
   and `unitPriceInRange` (what a purchase or sale implies per unit, against its
   asset's own `ASSET_META.priceRange`: ETH $1-$10k (ETH's highest is about $4.9k;
   at $100k it overlapped BTC's and kept a cbBTC quantity as ETH), cbBTC and WBTC

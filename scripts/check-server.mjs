@@ -660,6 +660,10 @@ await check('an alert goal under $1 is refused, and its preview is empty', async
   const r = await api('PUT', `/api/trades/${t2.id}/alert`, { goal_price: '0.5' });
   assert.equal(r.status, 400);
   assert.equal((await api('GET', `/api/trades/${t2.id}/alert/preview?goal=0.5`)).data.text, null);
+  // Nor one outside its market's own range: "3.500" on an ETH trade was saved
+  // as a $3.50 goal that waited for good.
+  assert.equal((await api('PUT', `/api/trades/${t2.id}/alert`, { goal_price: '3.5' })).status, 400);
+  assert.equal((await api('GET', `/api/trades/${t2.id}/alert/preview?goal=3.5`)).data.text, null);
 });
 
 await check('the alert preview reads as the Telegram message will', async () => {
@@ -673,6 +677,7 @@ await check('the alert preview reads as the Telegram message will', async () => 
       '',
       `Trade #${t2.id}: borrowed 10,000.00 USDC on ${fmtDate(today)}`,
       'Bought: 4.0000 ETH',
+      'Spent: 10,000.00 USDC',
       'Purchase price: $2,500.00',
       '',
       'Worth now: $10,200.00',
@@ -2803,14 +2808,27 @@ await check('an alert\'s lines add up to its gain, to the cent', async () => {
   const dollars = (s) => Number(s.replace(/[$,+]/g, ''));
   for (let age = 1; age <= 30; age += 1) {
     const day = (n) => new Date(Date.parse(today) - n * 86_400_000).toISOString().slice(0, 10);
+    // Spent unlike the loan, as a real purchase is: with the two equal, the
+    // message could omit what was spent and still seem to add up.
     const t = { id: 1, platform: 'aave', borrow_currency: 'USDC', borrow_date: day(age + 1), borrow_amount: 12345.67,
-      borrow_apr: 4.37, buy_date: day(age), buy_amount: 12345.67, buy_eth: 3.7777, buy_gas_usd: 1.005 };
+      borrow_apr: 4.37, buy_date: day(age), buy_amount: 9876.54, buy_eth: 3.1234, buy_gas_usd: 1.005 };
     const text = alertMessage(t, { goal_price: 3450 }, 3450);
     const worth = dollars(text.match(/Worth now: (\$[\d,.]+)/)[1]);
+    const spent = dollars(text.match(/\nSpent: ([\d,.]+) USDC\n/)[1]);
     const [, gain, interest, fees] = text.match(/Gain \(\$\): ([+-]?\$[\d,.]+) after (\$[\d,.]+) interest and (\$[\d,.]+) fees/);
-    const sum = Math.round((worth - 12345.67 - dollars(interest) - dollars(fees)) * 100) / 100;
+    const sum = Math.round((worth - spent - dollars(interest) - dollars(fees)) * 100) / 100;
     assert.equal(sum, dollars(gain), `${age} days: ${text.split('\n').slice(-2).join(' | ')}`);
   }
+  // A euro trade: Spent in dollars on the purchase day, and the move since.
+  const e = { id: 2, platform: 'aave', borrow_currency: 'EURC', borrow_date: '2026-10-01', borrow_amount: 9000.27,
+    borrow_apr: 3, borrow_fx: 1.0537, buy_date: '2026-10-01', buy_amount: 9000.27, buy_eth: 3.12345, buy_fx: 1.0537,
+    buy_gas_usd: 2 };
+  const et = alertMessage(e, { goal_price: 3300 }, 3300, { EURC: 1.1713 });
+  const signed = (v) => (v.startsWith('-') ? -1 : 1) * dollars(v.replace(/^-/, ''));
+  const spentUsd = dollars(et.match(/\nSpent: 9,000\.27 EURC \((\$[\d,.]+)\)\n/)[1]);
+  const [, g, i, f, mv] = et.match(/Gain \(\$\): ([+-]?\$[\d,.]+) after (\$[\d,.]+) interest and (\$[\d,.]+) fees .*: ([+-]?\$[\d,.]+)\)/);
+  const w = dollars(et.match(/Worth now: (\$[\d,.]+)/)[1]);
+  assert.equal(Math.round((w - spentUsd - dollars(i) - dollars(f) + signed(mv)) * 100) / 100, signed(g), et);
 });
 
 /* --------------------------------------------------------------- the bot */

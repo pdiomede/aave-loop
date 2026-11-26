@@ -8,7 +8,9 @@ import {
   summaryReport,
   parseDate,
   parseAmount,
-  priceInRange,
+  goalInRange,
+  goalNearPrice,
+  goalFarText,
   unitPriceInRange,
   FIGURE_MAX,
   qtyAsPrinted,
@@ -987,12 +989,10 @@ app.get('/api/alerts/log', (_req, res) => res.json({ alerts: alertLog() }));
  * the change still holds the old script, and its delete would otherwise have
  * removed a different trade's alert and answered 204. This way it 404s.
  */
-/**
- * A goal ETH or BTC could plausibly be asked to reach, in dollars. Under a dollar was
- * saved and armed - "fell to your $0.00 goal", a goal that never fires - and
- * the preview rendered goals above the ceiling that the save then refused.
- */
-const goalInRange = priceInRange;
+// A goal is held to its market's own range (`goalInRange` in lib/calc.js),
+// shared with the form. Under a dollar was saved and armed - "fell to your
+// $0.00 goal", a goal that never fires - and the preview rendered goals above
+// the ceiling that the save then refused.
 
 app.put('/api/trades/:id/alert', async (req, res, next) => {
   try {
@@ -1020,7 +1020,7 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
       throw new BadRequest('The trade changed since this window opened. Close it and open it again.', 'goal_price');
     }
     const goal = asPrinted(toNumber(req.body?.goal_price, 'goal_price', `${market} goal price`));
-    if (!goalInRange(goal)) {
+    if (!goalInRange(goal, market)) {
       throw new BadRequest('That looks like a slipped digit. The price is in dollars.', 'goal_price');
     }
 
@@ -1029,6 +1029,10 @@ app.put('/api/trades/:id/alert', async (req, res, next) => {
     // wrong side of the market. `marketPrice` never throws and falls back to
     // the cache, so an unreachable service costs a moment and nothing else.
     const quote = await marketPrice(market);
+    // Nor a thousand times off the price now (`goalNearPrice`): ETH's own range
+    // starts at $1, so "3.500" was saved as a $3.50 goal. Any price will do to
+    // catch that, a cached one too.
+    if (!goalNearPrice(goal, quote?.price)) throw new BadRequest(goalFarText(market, quote.price), 'goal_price');
 
     // Asked again after the wait, which can be seconds: a sale recorded in the
     // meantime still had a goal saved on it - an armed alert on a sold trade -
@@ -1141,7 +1145,7 @@ app.get('/api/trades/:id/alert/preview', (req, res) => {
   const asked = req.query.market;
   if (
     goal === null ||
-    !goalInRange(goal) ||
+    !goalInRange(goal, marketOf(trade)) ||
     derive(trade).status !== STATUS.HOLDING ||
     (asked != null && asked !== '' && asked !== marketOf(trade))
   ) {
@@ -1151,7 +1155,10 @@ app.get('/api/trades/:id/alert/preview', (req, res) => {
   // The live price only settles which way the alert reads; the message itself
   // is written at the goal, because that is the position it will describe when
   // it goes out. Quoting today's price in it read as a contradiction.
-  res.json({ text: previewMessage(trade, goal, cachedMarketPrice(marketOf(trade))?.price ?? null) });
+  const now = cachedMarketPrice(marketOf(trade))?.price ?? null;
+  // Nothing to preview for a goal the save would refuse as too far off.
+  if (!goalNearPrice(goal, now)) return res.json({ text: null });
+  res.json({ text: previewMessage(trade, goal, now) });
 });
 
 app.delete('/api/trades/:id', (req, res) => {

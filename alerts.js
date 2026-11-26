@@ -394,6 +394,11 @@ export function alertMessage(trade, alert, price, fxNow = {}, { when = 'now' } =
     '',
     `Trade #${trade.id}: borrowed ${n2(trade.borrow_amount)} ${c} on ${fmtDate(trade.borrow_date)}`,
     `Bought: ${qty(trade.buy_eth, trade)}`,
+    // What the purchase cost, the largest figure the Gain takes off: without
+    // it the lines did not add up, and the quantity times the price per unit
+    // (both rounded) missed it by a cent, or by 15 on a euro trade. In the
+    // coin, with its dollars on the purchase day where the coin is not one.
+    `Spent: ${n2(trade.buy_amount)} ${c}${d.isUsdPegged || typeof d.buyUsd !== 'number' ? '' : ` ($${n2(d.buyUsd)})`}`,
   ];
 
   if (typeof d.buyPriceUsd === 'number') lines.push(`Purchase price: $${n2(d.buyPriceUsd)}`);

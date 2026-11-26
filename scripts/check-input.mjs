@@ -130,9 +130,24 @@ check('a date is between Ethereum and today, in stage order', () => {
   );
 });
 
-check('an alert goal is between $1 and $1,000,000', () => {
-  assert.equal(validateField('goal_price', '0.5'), 'That looks like a slipped digit. The price is in dollars.');
+check('an alert goal is within its market\'s own range', () => {
+  const slip = 'That looks like a slipped digit. The price is in dollars.';
+  assert.equal(validateField('goal_price', '0.5'), slip);
   assert.equal(validateField('goal_price', '3500'), null);
+  // "3.500" typed the European way on an ETH trade was a $3.50 goal, and a
+  // BTC "100.000" one of $100: each inside the $1-$1M every market shared.
+  assert.equal(validateField('goal_price', '100.000', { asset: 'cbbtc' }), slip);
+  // ETH's own range starts at $1, so "3.500" is caught by the price now.
+  assert.equal(validateField('goal_price', '3.500', { asset: 'eth' }), null, 'no price, nothing to judge by');
+  assert.equal(
+    validateField('goal_price', '3.500', { asset: 'eth', market_price: 3450 }),
+    "That is nowhere near ETH's price now, $3,450.00. Check the goal.",
+  );
+  assert.equal(validateField('goal_price', '5000', { asset: 'eth', market_price: 3450 }), null);
+  assert.equal(validateField('goal_price', '345', { asset: 'eth', market_price: 3450 }), null);
+  assert.equal(validateField('goal_price', '96500', { asset: 'cbbtc' }), null);
+  assert.equal(validateField('goal_price', '160', { asset: 'sol' }), null);
+  assert.equal(validateField('goal_price', '16000', { asset: 'sol' }), slip);
 });
 
 check('the ETH price a purchase implies must be one ETH could trade at', () => {
@@ -315,9 +330,10 @@ check('a figure past a trillion, or an amount that prints as 0.00, is refused as
 check('a goal is judged to the cent, and a quantity that prints as zero is refused, as the server does', () => {
   // 0.999 is a $1.00 goal to the server; the form refused it on the raw figure.
   assert.equal(validateField('goal_price', '0.999', {}), null);
-  assert.equal(validateField('goal_price', '1000000.004', {}), null);
+  // The ceiling is BTC's now (each market has its own range): $1M to the cent.
+  assert.equal(validateField('goal_price', '1000000.004', { asset: 'cbbtc' }), null);
   assert.match(validateField('goal_price', '0.994', {}), /slipped digit/);
-  assert.match(validateField('goal_price', '1000000.005', {}), /slipped digit/);
+  assert.match(validateField('goal_price', '1000000.005', { asset: 'cbbtc' }), /slipped digit/);
   assert.equal(validateField('buy_eth', '0.00004', { buy_amount: 0.12 }), 'ETH purchased must be at least 0.0001.');
   assert.equal(validateField('sell_eth', '0.00004', {}), 'ETH sold must be at least 0.0001.');
   assert.equal(validateField('buy_eth', '0.00000001', { asset: 'cbbtc', buy_amount: 0.01 }), null);
