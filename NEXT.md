@@ -312,9 +312,35 @@ help - what this bot can do
 
 ## To build next
 
-- **Wallets > Onchain Data.** Lists each wallet's trades and totals, and finds a closed
-  trade's transactions on Etherscan (25 Nov); what it should simulate beyond that is
-  still to be decided.
+- **Onchain Data checks each stage against its transaction** (planned 26 Nov, a
+  minor: 2.3.0). Onchain Data finds a stage's hash but keeps only the hash; this
+  reads the transaction's figures and says where the trade disagrees with them, so a
+  typo in an amount or quantity is caught.
+  - **Server:** `GET /api/trades/:id/tx/:stage/check` runs what the hash audit
+    already does, `txTransfers` then `auditStage` (etherscan.js), and answers the
+    verdict with the chain's figures: the coin moved, the asset quantity, the time.
+    `auditStage` is extended to return those figures, not only its notes.
+  - **No database change.** A confirmed transaction never changes, so each is cached
+    in memory once read; the verdict is worked out afresh against the trade every
+    time, so an edit re-checks at once and nothing stored goes stale.
+  - **Page:** each Onchain Data stage card with a hash shows "Matches the chain"
+    (within a cent or 0.05%, the search's own rule), or in amber "Chain: 30,012.40
+    EURC, you typed 30,021.40" with a **Use 30,012.40** button. That saves as the
+    stage editor does (`base`, the 409 conflict flow); nothing is changed unasked.
+    A date that differs is shown, not offered: the typed date is local, the
+    chain's UTC.
+  - **Get onchain data** also checks the hashes already stored; its report adds "N
+    don't match the chain", and each wallet's heading counts its stages that differ.
+  - **Not in the first version: gas.** The receipt gives the gas paid, but Costs &
+    Fees is gas plus the swap fee, so it cannot be filled from it, and it needs ETH's
+    price on that day. Later, perhaps, a hint under the field: "gas on chain: $1.84".
+  - **Checks** (`check-server.mjs`, mocked Etherscan): a hash that matches; an
+    amount typo, reported with the chain's figure; the Use button's save; an edit
+    that re-checks; a chain that cannot be reached reads "not checked", never
+    "matches".
+  - **Cost:** two Etherscan calls per hash the first time (about 3 minutes for 200
+    stages on the free plan), then from the cache until a restart. Solana the same
+    way, through Helius.
 - **The wallet elsewhere.** A trade's wallet shows on its Borrowed card only: not in
   the CSV, Stats or Telegram yet.
 
