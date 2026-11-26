@@ -48,28 +48,20 @@ Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
 
 ## 2.2.2 (26 Nov): Onchain Data fixes, Stats totals, Addresses icons
 
-To do on the VPS. Deploy as in step 1 below (`git pull`, restart). No nginx,
-BotFather or config.env change. One line in the service, so the bot counts days on
-the page's calendar (the VPS runs on UTC, so from midnight to 1am in Rome `/holding`
-and `/summary` were a day's interest behind the page):
-
-```bash
-sudo systemctl edit aaveloop
-```
-
-add, under `[Service]`:
+Deployed on 26 Nov, with `69bf4d2`. The service now runs on Rome's calendar, so the
+bot counts days as the page does: `/etc/systemd/system/aaveloop.service.d/override.conf`
+holds
 
 ```
+[Service]
 Environment=TZ=Europe/Rome
 ```
 
-then `sudo systemctl daemon-reload && sudo systemctl restart aaveloop`. Check:
-`sudo journalctl -u aaveloop -n 20 | grep Dates` reads "on Europe/Rome time". The
-03:00 backup cron line is in paolo's crontab and is not affected.
-
-Then, behind the password: Stats' By Platform, By asset and By currency end in a
-Total line; Performance's first row is Total borrowed, Interest paid, Total fees
-paid, Average hold; Wallets > Addresses starts folded, with copy and explorer icons.
+and the startup log reads "Dates: today is ... on Europe/Rome time." Before it, the
+VPS ran on UTC, and from midnight to 1am in Rome `/holding` and `/summary` were a
+day's interest behind the page. In `systemctl edit`, the lines go between the two
+`###` comments at the top; everything under the second is discarded. It takes a
+`daemon-reload` before the restart.
 
 ## 2.2.1 (25 Nov): Wallets, and a trade's wallet
 
