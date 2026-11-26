@@ -2464,6 +2464,11 @@ function setKeepingFocus(el, html) {
     if (!takes(target) && scope && scope !== el) {
       target =
         [...scope.querySelectorAll('[data-focus-default]')].find(takes) ?? (scope.matches(FOCUSABLE) ? scope : null);
+      // Else the control that opens and closes it: a Stats card's fold button
+      // for its body. New rates took the "no rate" chip a reader was on out of
+      // By wallet, the card had nothing else in that place, and focus fell to
+      // the page, the reader sent back to the top.
+      if (!takes(target) && scope.id) target = el.querySelector(`[aria-controls="${CSS.escape(scope.id)}"]`);
     }
   }
   if (!takes(target)) target = index >= 0 ? el.querySelectorAll(FOCUSABLE)[index] : null;

@@ -33,6 +33,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The Statement's no-rate line says what it leaves out:** the trade's gain and interest; its fees are still counted, which "its result is left out of the totals" denied.
 - **The Closed column's tips say sold and repaid,** which is what it counts; "Repaid trades" also described an older row repaid with nothing sold, which is in neither column.
 - **`/holding` stays within Telegram's 4,096 characters however many wallets:** the per-wallet lines had no limit, and with about 30 wallets of long names the reply was refused and nothing was sent; now the wallet lines, then the platform lines, give way when the whole table would not fit beside them.
+- **Focus stays on a Stats card when new rates clear its "no rate" chip:** a reader on the chip was sent back to the top of the page; now focus goes to the card's fold button.
 - **The server says at startup which calendar it counts days on,** and asks for `TZ` while it is on UTC: there, `/holding` and `/summary` counted a day's interest less than the page from midnight to 1am in Rome.
 
 ## [2.2.1] - 2026-11-25

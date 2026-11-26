@@ -317,7 +317,8 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   focus back on the same control in the new markup: by its keys (`focusKeys`: id,
   data-*), else by its kind and place within the nearest row or card that has keys
   (`focusPlace`), else on what stands in for it there (`data-focus-default`: a
-  stage card's magnifier, hash link or paste button), and only then by its index in
+  stage card's magnifier, hash link or paste button), else on the control that opens
+  that place (`aria-controls`: a Stats card's fold button), and only then by its index in
   the whole container. Give a control that can come and go a data-* key of its own.
   A control that is busy stays focusable (`aria-disabled`, not `disabled`), or focus
   falls to the page. The scan report waits for an open question (`dialogFree`)
