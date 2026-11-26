@@ -65,8 +65,11 @@ day's interest behind the page. In `systemctl edit`, the lines go between the tw
 
 ## 2.2.1 (25 Nov): Wallets, and a trade's wallet
 
-Done on the VPS by 26 Nov, keys and BotFather menu included, **except the hash
-audit** below (`scripts/audit-hashes.mjs`), still to run once.
+Done on the VPS by 26 Nov, keys and BotFather menu included. The hash audit ran on
+26 Nov: 30 hashes, 26 OK, 4 CHECK, 0 WRONG, so no `--apply` was needed. The four
+CHECKs are worth a look on the explorer: #10 and #16 Sold move no asset token out
+of the wallet (native ETH, or a CoW Swap order); #29 and #30 Borrowed (#30 on
+Solana) also move the asset (collateral supplied in the loan's transaction?).
 
 What it needed: Deploy as in step 1 below (`git pull`, restart). No nginx, BotFather
 or settings change: no inline script changed and no command was added. The first
