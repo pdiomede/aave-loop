@@ -188,11 +188,13 @@ const totalText = (h) => `${units(h.total, { asset: h.asset })} ${h.ticker}`;
 // Bought and not repaid: every trade that can hold ETH. Which of them do is
 // `derive`'s answer (`ethHeldNow`), not SQL's - HOLDING, the alerts' test,
 // counts a partial sale as holding nothing, and the bot left those out.
+// The wallet's name comes along, so the table can say which wallet holds what.
 const selectHolding = () =>
   prepare(`
-    SELECT t.*, a.goal_price AS alert_goal
+    SELECT t.*, a.goal_price AS alert_goal, w.name AS wallet_name
       FROM trades t
       LEFT JOIN alerts a ON a.trade_id = t.id AND a.status = 'armed'
+      LEFT JOIN wallets w ON w.id = t.wallet_id
      WHERE t.buy_date IS NOT NULL AND t.buy_amount IS NOT NULL AND t.buy_eth IS NOT NULL
        AND (t.repay_date IS NULL OR t.repay_amount IS NULL OR t.repay_amount <= 0)
      ORDER BY t.borrow_date, t.id
@@ -236,6 +238,17 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   // per platform under it. A trade from before the platform was asked for is
   // filed under null, "Not recorded", so the lines still add up.
   const byPlatform = new Map();
+  // The same by wallet, keyed by its id; null is a trade naming none.
+  const byWallet = new Map();
+  const tally = (groups, key, t, g) => {
+    if (!groups.has(key)) groups.set(key, { rows: [], gain: 0, known: 0 });
+    const mine = groups.get(key);
+    mine.rows.push(t);
+    if (g !== null) {
+      mine.gain += cents(g);
+      mine.known += 1;
+    }
+  };
 
   const cells = rows.map((t) => {
     const d = derive(t, derivedOn(t));
@@ -243,14 +256,8 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
 
     const price = priceOf(t);
     const g = price === null ? null : estimatedGainUsd(t, d, price, fxNow);
-    const where = PLATFORMS.includes(t.platform) ? t.platform : null;
-    if (!byPlatform.has(where)) byPlatform.set(where, { rows: [], gain: 0, known: 0 });
-    const mine = byPlatform.get(where);
-    mine.rows.push(t);
-    if (g !== null) {
-      mine.gain += cents(g);
-      mine.known += 1;
-    }
+    tally(byPlatform, PLATFORMS.includes(t.platform) ? t.platform : null, t, g);
+    tally(byWallet, t.wallet_id ?? null, t, g);
     if (g === null) {
       if (price === null) noPrice.set(marketOf(t), (noPrice.get(marketOf(t)) ?? 0) + 1);
       else noRate += 1;
@@ -277,6 +284,9 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
       // Where the trade runs. A trade from before it was asked for has none,
       // and a dash says so rather than calling it Aave.
       platform: PLATFORM_META[t.platform]?.label ?? MISSING,
+      // The wallet it runs from, by name, a dash for none; cut to a phone's
+      // share of the line, since a name is as long as its owner typed it.
+      wallet: walletLabel(t),
       // To the asset's own decimals, its ticker in a column of its own.
       qty: units(held, t),
       ticker: ASSET_META[assetOf(t)].ticker,
@@ -295,6 +305,10 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   const w = (key) => Math.max(...cells.map((c) => c[key].length));
   const wId = w('id');
   const wPlatform = w('platform');
+  // The wallet column only once some trade held names a wallet: before then
+  // it would be a column of dashes, and the line reads as it did before.
+  const withWallet = rows.some((t) => t.wallet_id != null);
+  const wWallet = w('wallet');
   const wQty = w('qty');
   const wTicker = w('ticker');
   const wPaid = w('paid');
@@ -308,7 +322,7 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
       // the same place rather than a word adrift.
       // On a ledger of ETH alone the ticker column is "ETH" every time, and
       // the line reads exactly as it did before cbBTC.
-      `${padRight(c.id, wId)}  ${padRight(c.platform, wPlatform)}  ${padLeft(c.qty, wQty)} ${padRight(c.ticker, wTicker)}  paid ${padLeft(c.paid, wPaid)}  ` +
+      `${padRight(c.id, wId)}  ${padRight(c.platform, wPlatform)}  ${withWallet ? `${padRight(c.wallet, wWallet)}  ` : ''}${padLeft(c.qty, wQty)} ${padRight(c.ticker, wTicker)}  paid ${padLeft(c.paid, wPaid)}  ` +
       // The bell goes last on purpose: an emoji is one character but takes
       // about two cells, so any column after it would sit crooked.
       `${padLeft(c.gain, wGain)}  ${padLeft(c.days, wDays)}${c.bell ? `  ${c.bell}` : ''}`,
@@ -383,24 +397,59 @@ export function holdingText(rows, prices = {}, fxNow = {}, { ages = {} } = {}) {
   // gives no figure. Only when the rows span two platforms or more: with one,
   // the line would repeat the totals above it, the rule the page's Open
   // positions grid keeps for a single position.
-  const groups = [...PLATFORMS, null].filter((p) => byPlatform.has(p));
-  if (groups.length > 1) {
-    for (const p of groups) {
-      const { rows: mine, gain: g, known } = byPlatform.get(p);
+  const groupLines = (groups, keys, labelOf) => {
+    if (keys.length < 2) return false;
+    for (const k of keys) {
+      const { rows: mine, gain: g, known } = groups.get(k);
       const n = mine.length;
       const held = heldTotals(mine).map(totalText).join(' · ');
       const short = n - known;
       const fig = known === 0 ? '' : ` · ${signedUsd(g / 100)}${short ? ` (${short} not counted)` : ''}`;
-      const label = PLATFORM_META[p]?.label ?? 'Not recorded';
-      head.push(escHtml(`${label}: ${n} trade${n === 1 ? '' : 's'}${held ? ` · ${held}` : ''}${fig}`));
+      head.push(escHtml(`${labelOf(k, mine)}: ${n} trade${n === 1 ? '' : 's'}${held ? ` · ${held}` : ''}${fig}`));
     }
-  }
+    return true;
+  };
+  const byPlatformShown = groupLines(
+    byPlatform,
+    [...PLATFORMS, null].filter((p) => byPlatform.has(p)),
+    (p) => PLATFORM_META[p]?.label ?? 'Not recorded',
+  );
+  // Then a line per wallet, by the same rule and built the same way, so these
+  // lines add up to Unrealised too: by name as the Wallets tab lists them,
+  // No wallet last. Its name in full here, where the table cuts it short.
+  const walletName = (id, mine) => (id === null ? 'No wallet' : (mine[0].wallet_name ?? `Wallet #${id}`));
+  const walletKeys = [...byWallet.keys()].sort((a, b) => {
+    if (a === null || b === null) return a === null ? 1 : -1;
+    const [x, y] = [nocase(walletName(a, byWallet.get(a).rows)), nocase(walletName(b, byWallet.get(b).rows))];
+    return x < y ? -1 : x > y ? 1 : a - b;
+  });
+  // A blank line between the two sets, or "Frullino: 2 trades" read as a
+  // fourth platform under "Kamino: 1 trade".
+  if (byPlatformShown && walletKeys.length > 1) head.push('');
+  groupLines(byWallet, walletKeys, walletName);
 
   // The table gets what the lines above it leave. It used to have 3,900 of
   // its own whatever they took, and a long ledger at an old price, its
   // stale-price and move lines included, came to 4,102 and got no reply.
   const top = `${head.join('\n')}\n\n`;
   return `${top}<pre>${escHtml(fit(body, TELEGRAM_MAX - visibleLength(top) - MARGIN))}</pre>`;
+}
+
+/**
+ * Folded as the Wallets tab and SQLite's NOCASE fold a name - ASCII letters
+ * only - so the lines come in the order the page lists the wallets.
+ */
+const nocase = (s) => String(s).replace(/[A-Z]/g, (c) => c.toLowerCase());
+
+// A wallet's name in the table: a dash for none, and cut to 12 characters
+// with an ellipsis, the line already carrying six columns on a phone. Its id
+// when the name is not to hand, as the page says it.
+const WALLET_COLUMN = 12;
+function walletLabel(t) {
+  if (t.wallet_id == null) return MISSING;
+  const name = t.wallet_name ?? `Wallet #${t.wallet_id}`;
+  const chars = [...name];
+  return chars.length > WALLET_COLUMN ? `${chars.slice(0, WALLET_COLUMN - 1).join('')}…` : name;
 }
 
 /** Trim trailing rows rather than let Telegram refuse the whole message. */

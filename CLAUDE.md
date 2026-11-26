@@ -526,7 +526,9 @@ per-platform Performance cards are `summaryReport` over that platform's trades, 
 new platform needs only its `PLATFORM_META` entry, a logo in `public/` and its id in
 `PLATFORMS`. `/holding` adds a line per platform under its totals (`holdingText`),
 each gain summed in cents as printed so the lines add up to Unrealised, and only when
-the held trades span two platforms or more. The Performance cards
+the held trades span two platforms or more; then, by the same rule and after a blank line,
+a line per wallet (by name, No wallet last). Its table gains a wallet column (the name
+from a join on `wallets`, cut to 12 characters) once a held trade names a wallet. The Performance cards
 and the breakdown tables fold (`collapsibleCard`, keys in `FOLDING_CARDS`),
 start closed, and keep their open/closed state in localStorage (`ethroundtrip-stats-open`).
 Wallets' Addresses card folds by the same key list (`addresses`), but its markup is

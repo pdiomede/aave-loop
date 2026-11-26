@@ -2303,6 +2303,45 @@ await check('/holding names each trade\'s platform, and a dash where none was re
   assert.match(lines[2], /^#3   -         1\.0000 ETH/);
 });
 
+await check('/holding names each trade\'s wallet, cut short in the table, and adds a line per wallet', async () => {
+  // 1,000 on 1 ETH at 0% each, all at $1,100: +100 apiece, so the wallet
+  // lines add up to Unrealised +$300.00.
+  const row = (id, wallet_id, wallet_name) => ({ id, platform: 'aave', wallet_id, wallet_name, borrow_date: today,
+    borrow_amount: 1000, borrow_currency: 'USDT', borrow_apr: 0, borrow_gas_usd: 0, buy_date: today, buy_amount: 1000,
+    buy_eth: 1, buy_gas_usd: 0 });
+  const text = holdingText([row(1, 2, 'zeta'), row(2, 1, 'A very long wallet name'), row(3, null, null)], { ETH: 1100 }, {});
+  const [head, table] = text.split('<pre>');
+  const lines = table.split('\n');
+  assert.match(lines[0], /^#1  Aave  zeta          1\.0000 ETH/);
+  assert.match(lines[1], /^#2  Aave  A very long…  1\.0000 ETH/);
+  assert.match(lines[2], /^#3  Aave  -             1\.0000 ETH/);
+  assert.match(head, /Unrealised \+\$300\.00 /);
+  // By name, case folded, No wallet last; the full name on its own line.
+  assert.match(head, /\nA very long wallet name: 1 trade · 1\.0000 ETH · \+\$100\.00\nzeta: 1 trade · 1\.0000 ETH · \+\$100\.00\nNo wallet: 1 trade · 1\.0000 ETH · \+\$100\.00\n/);
+  // No trade naming a wallet: no column, no lines, the table as before.
+  const plain = holdingText([row(1, null, null), row(2, null, null)], { ETH: 1100 }, {});
+  assert.match(plain.split('<pre>')[1], /^#1  Aave  1\.0000 ETH/);
+  assert.doesNotMatch(plain, /No wallet/);
+  // A name is escaped: the table and the line go out as HTML.
+  assert.match(holdingText([row(1, 4, '<b>'), row(2, null, null)], { ETH: 1100 }, {}), /&lt;b&gt;: 1 trade/);
+  // And from the ledger itself, by way of the wallets table.
+  const { holdingMessage } = await import('../report.js');
+  const now = new Date().toISOString();
+  const wallet = prepare(`INSERT INTO wallets (network, address, name, created_at, updated_at)
+    VALUES ('ethereum', '0x00000000000000000000000000000000000000a1', 'Holdwallet', @now, @now)`).run({ now }).lastInsertRowid;
+  const id = prepare(`
+    INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr, buy_date, buy_amount, buy_eth,
+                        buy_gas_usd, platform, wallet_id, created_at, updated_at)
+    VALUES (@today, 1000, 'USDC', 0, @today, 1000, 1, 0, 'aave', @wallet, @now, @now)
+  `).run({ today, wallet, now }).lastInsertRowid;
+  try {
+    assert.match(await holdingMessage(), new RegExp(`#${id} +Aave +Holdwallet +1\\.0000 ETH`));
+  } finally {
+    prepare('DELETE FROM trades WHERE id = ?').run(id);
+    prepare('DELETE FROM wallets WHERE id = ?').run(wallet);
+  }
+});
+
 await check('a trade repaid with no full sale is not held: its alert closes and /holding leaves it out', async () => {
   // A row from before the API refused repaid-without-sold. `derive` calls it
   // CLOSED; the SQL used to call it held.
