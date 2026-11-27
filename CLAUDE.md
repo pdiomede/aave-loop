@@ -345,8 +345,12 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   `ethroundtrip-trade-filter`) narrow the table only: `tableTrades()` is
   `sortedTrades()` filtered, and the table, its pager, `pageOfTrade` and
   `resortByEstimate` read it; Onchain Data, the totals and Stats keep reading every
-  trade. Open takes SOLD too, matching its pill. A save or a new trade the table
-  follows (`showTrade`) widens the filter to All when it would hide that row.
+  trade. Open takes SOLD too, matching its pill. There is deliberately no Sold
+  chip: the user always repays right after selling, so a trade is SOLD only for the
+  moment between the two saves and such a chip would always read 0. Do not propose
+  one, or any view, filter or alert built around trades resting at SOLD. A save or
+  a new trade the table follows (`showTrade`) widens the filter to All when it would
+  hide that row.
 - **Submit locks are per form**, keyed by what the form saves (`submitKey`), so a
   re-render mid-request cannot reopen one and one form saving never blocks another.
 - **A stage save says what it saw.** Opening a stage form snapshots the trade
