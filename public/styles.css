@@ -582,6 +582,115 @@ a.brand {
   margin-right: auto;
 }
 
+/* History's status chips sit beside its title and push New trade to the
+   right, as the title alone does on every other view's toolbar. */
+.toolbar__title:has(+ .toolbar__filter) {
+  margin-right: 0;
+}
+
+.toolbar__filter {
+  margin-right: auto;
+  margin-left: 8px;
+}
+
+/* On a phone the four chips and New trade do not fit beside the title: the
+   title takes the push back, and the chips a line of their own under it. */
+@media (max-width: 760px) {
+  .toolbar__title:has(+ .toolbar__filter) {
+    margin-right: auto;
+  }
+
+  .toolbar__filter {
+    order: 3;
+    flex-basis: 100%;
+    margin: 0;
+  }
+}
+
+/* Coloured as the status pills are (.pill--*): faint until pressed, then the
+   pill's own soft background. Open is the accent, as OPEN and SOLD are. */
+.filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fchip {
+  --fc: var(--text-muted);
+  --fc-soft: var(--surface-sunken);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--fc);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.fchip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.fchip--all::before {
+  display: none;
+}
+
+.fchip--closed { --fc: var(--positive); --fc-soft: var(--positive-soft); }
+.fchip--open { --fc: var(--accent); --fc-soft: var(--accent-soft); }
+.fchip--holding { --fc: var(--warn); --fc-soft: var(--warn-soft); }
+.fchip--all { --fc: var(--text); }
+
+.fchip:hover {
+  background: var(--fc-soft);
+}
+
+.fchip[aria-pressed="true"] {
+  background: var(--fc-soft);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px var(--fc);
+}
+
+.fchip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.fchip[aria-pressed="true"]:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--fc), 0 0 0 3px var(--accent-soft);
+}
+
+.fchip__count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* After the rules above, which it must win over. At full size the four came
+   to 388px and a 375px phone has 343: Holding took a line of its own. */
+@media (max-width: 760px) {
+  .filterbar {
+    gap: 5px;
+  }
+
+  .fchip {
+    gap: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+}
+
 /* Deliberately does not clip its overflow: a tooltip on the last row of a card
    has to be able to spill past the edge. The one thing the clip was holding in
    was the trades table, whose hovered last row would otherwise square the

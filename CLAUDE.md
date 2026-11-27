@@ -341,6 +341,12 @@ with `innerHTML`, one delegated `click` listener on `document.body`, no framewor
   an asset pick (`applyAsset` judges the field again in the new asset's words).
 - **`captureDraft`/`restoreDraft`** keep a half-typed stage form alive across
   re-renders. A change that re-renders the table must not discard it.
+- **History's status chips** (`state.filter`, `TRADE_FILTERS`, saved as
+  `ethroundtrip-trade-filter`) narrow the table only: `tableTrades()` is
+  `sortedTrades()` filtered, and the table, its pager, `pageOfTrade` and
+  `resortByEstimate` read it; Onchain Data, the totals and Stats keep reading every
+  trade. Open takes SOLD too, matching its pill. A save or a new trade the table
+  follows (`showTrade`) widens the filter to All when it would hide that row.
 - **Submit locks are per form**, keyed by what the form saves (`submitKey`), so a
   re-render mid-request cannot reopen one and one form saving never blocks another.
 - **A stage save says what it saw.** Opening a stage form snapshots the trade

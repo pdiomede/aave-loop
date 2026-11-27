@@ -32,7 +32,7 @@ A trade starts with the borrow; each stage is added as it happens.
 
 Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank lend or unstake fee means none was paid.
 
-- **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on.
+- **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on. The chips beside History (All, Closed, Open, Holding) narrow it to one status - Open includes trades sold but not yet repaid - and the choice is remembered in the browser; the pager counts only what the filter shows.
 - **Stats** shows performance for all platforms and, in cards that fold open, for each platform alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
 - **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
 - **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.

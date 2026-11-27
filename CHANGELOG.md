@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **History filters by status:** chips beside the heading - All, Closed, Open (sold but not repaid included) and Holding, each with its count and in its status's colour - show only those trades, and the pager counts only what is shown. The choice is remembered across views and restarts; a new trade or a save that would leave the filter switches it back to All so the row stays on screen.
+
 ## [2.2.2] - 2026-11-26
 
 ### Added

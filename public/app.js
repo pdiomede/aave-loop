@@ -544,6 +544,61 @@ function saveSort() {
 }
 
 /**
+ * The History table's status filter, the chips beside its heading. Open takes
+ * SOLD too: a trade sold and not repaid holds nothing but still owes its loan,
+ * and its pill is Open's colour. A part-sold trade is SOLD as well, so it is
+ * under Open, as its pill says, though /holding counts what it kept. Remembered
+ * like the sort, across views and restarts; the filter narrows the table only,
+ * never the totals, Stats or Onchain Data, which read every trade.
+ */
+const TRADE_FILTERS = ['all', 'closed', 'open', 'holding'];
+
+const FILTER_STATUSES = {
+  closed: ['CLOSED'],
+  open: ['OPEN', 'SOLD'],
+  holding: ['HOLDING'],
+};
+
+const FILTER_LABELS = { all: 'All', closed: 'Closed', open: 'Open', holding: 'Holding' };
+
+function loadFilter() {
+  try {
+    const saved = stored('trade-filter');
+    if (TRADE_FILTERS.includes(saved)) return saved;
+  } catch (e) {
+    /* private browsing */
+  }
+  return 'all';
+}
+
+function saveFilter() {
+  try {
+    store('trade-filter', state.filter);
+  } catch (e) {
+    /* the filter simply will not persist */
+  }
+}
+
+function inFilter(t, filter = state.filter) {
+  const statuses = FILTER_STATUSES[filter];
+  return !statuses || statuses.includes((t.derived || derive(t)).status);
+}
+
+/**
+ * Before following a trade to its page - a new one, or one whose save may
+ * have changed its status - widen the filter if it would hide that trade.
+ * Otherwise the row opened, the toast said saved, and the trade was nowhere
+ * on screen.
+ */
+function showTrade(id) {
+  const t = state.trades.find((x) => x.id === id);
+  if (t && !inFilter(t)) {
+    state.filter = 'all';
+    saveFilter();
+  }
+}
+
+/**
  * The trades in the order the table should show them.
  *
  * Works on a copy: state.trades stays exactly as the server sent it, because
@@ -585,6 +640,10 @@ function sortedTrades() {
   });
 }
 
+/** The History table's rows: sorted, then narrowed to the status filter. The
+ *  pager counts these, so its pages and "1-10 of N" are the filter's. */
+const tableTrades = () => sortedTrades().filter((t) => inFilter(t));
+
 const pageCount = (total) => Math.max(1, Math.ceil(total / PAGE_SIZE));
 
 /**
@@ -593,7 +652,7 @@ const pageCount = (total) => Math.max(1, Math.ceil(total / PAGE_SIZE));
  * the row would expand somewhere the user cannot see.
  */
 function pageOfTrade(id) {
-  const i = sortedTrades().findIndex((t) => t.id === id);
+  const i = tableTrades().findIndex((t) => t.id === id);
   return i < 0 ? state.page : Math.floor(i / PAGE_SIZE) + 1;
 }
 
@@ -736,6 +795,8 @@ const state = {
   // coming back to a ledger you have not looked at today and landing on page 4
   // of it is disorienting.
   sort: loadSort(),
+  // The History table's status chip, remembered like the sort (`loadFilter`).
+  filter: loadFilter(),
   // Which of the folding Stats cards are open (`FOLDING_CARDS`), remembered
   // in this browser. They start collapsed.
   statsOpen: loadStatsOpen(),
@@ -2619,8 +2680,9 @@ function resortByEstimate() {
   if (state.view !== 'trades' || state.sort.key !== 'gain') return false;
   const mount = document.getElementById('table-mount');
   if (!mount || underUsersHands()) return false;
-  const page = clampPage(state.trades.length);
-  const want = sortedTrades()
+  const rows = tableTrades();
+  const page = clampPage(rows.length);
+  const want = rows
     .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
     .map((t) => String(t.id));
   const have = [...mount.querySelectorAll('tr.row[data-trade]')].map((tr) => tr.dataset.trade);
@@ -2798,8 +2860,31 @@ function restoreDraft(draft) {
   return true;
 }
 
+/**
+ * The status chips beside History, each with how many trades it would show,
+ * so an empty one reads as empty before it is pressed. Nothing until the
+ * ledger has loaded and holds a trade: counts of a ledger not yet read would
+ * say 0, and on an empty one there is nothing to narrow.
+ */
+function renderFilterBar() {
+  const mount = document.getElementById('trade-filter');
+  if (!mount) return;
+  if (!state.loaded || state.trades.length === 0) {
+    mount.innerHTML = '';
+    return;
+  }
+  const count = (f) => state.trades.filter((t) => inFilter(t, f)).length;
+  mount.innerHTML = `<div class="filterbar" role="group" aria-label="Show trades">${TRADE_FILTERS.map(
+    (f) =>
+      `<button class="fchip fchip--${f}" type="button" data-trade-filter="${f}" aria-pressed="${
+        state.filter === f
+      }">${FILTER_LABELS[f]}<span class="fchip__count">${count(f)}</span></button>`,
+  ).join('')}</div>`;
+}
+
 function renderTable() {
   const mount = document.getElementById('table-mount');
+  renderFilterBar();
   if (!state.loaded) {
     mount.innerHTML = LOADING;
     return;
@@ -2813,7 +2898,16 @@ function renderTable() {
     return;
   }
 
-  const rows = sortedTrades();
+  const rows = tableTrades();
+  if (rows.length === 0) {
+    mount.innerHTML = `<div class="empty">
+      <h3>No ${FILTER_LABELS[state.filter].toLowerCase()} trades</h3>
+      <p>Nothing in the ledger has that status right now.</p>
+      <button class="btn btn--sm" type="button" data-trade-filter="all">Show all trades</button>
+    </div>`;
+    state.draft = null;
+    return;
+  }
   const total = rows.length;
   const page = clampPage(total);
   const start = (page - 1) * PAGE_SIZE;
@@ -5269,6 +5363,7 @@ async function submitStage(form) {
     // page. The row stays open, so follow it - otherwise the toast says saved
     // while the row and its open detail vanish off the screen. `submitBorrow`
     // has done this since paging arrived; editing never did.
+    showTrade(id);
     state.page = pageOfTrade(id);
     closeAlertsOnSale(id, { assetChanged });
     render();
@@ -5295,6 +5390,9 @@ async function submitStage(form) {
       state.trades = state.trades.map((t) => (t.id === id ? now : t));
       writeSeq += 1;
       if (state.editing?.id === id && state.editing?.stage === stage) state.editing.base = { ...now };
+      // The change elsewhere may have moved it out of the filter, and the
+      // form with the figures typed into it would go with the row.
+      showTrade(id);
       render();
     }
     // On the form as it is now. A re-render while the save was away replaces
@@ -5353,6 +5451,7 @@ async function submitBorrow(form) {
   state.openIds.add(created.id);
   // Go to wherever the new trade landed, so the row that just opened is on
   // screen whatever the table is sorted by.
+  showTrade(created.id);
   state.page = pageOfTrade(created.id);
   // Another trade's open editor stays open, as a stage save leaves it: this
   // used to close it, and the sale typed into it went too. Only when its row
@@ -6311,6 +6410,25 @@ function wire() {
       const hadFocus = document.activeElement === sortBtn;
       applySort(sortBtn.dataset.sort);
       if (hadFocus) document.querySelector(`[data-sort="${state.sort.key}"]`)?.focus();
+      return;
+    }
+
+    const filterBtn = e.target.closest('[data-trade-filter]');
+    if (filterBtn) {
+      const to = filterBtn.dataset.tradeFilter;
+      if (TRADE_FILTERS.includes(to) && to !== state.filter) {
+        state.filter = to;
+        saveFilter();
+        // As a sort change: page 1, and an editor whose row may have just left
+        // the table closes rather than stranding its draft.
+        state.page = 1;
+        state.editing = null;
+        const hadFocus = filterBtn === document.activeElement;
+        render();
+        // The chips are redrawn; back to the pressed one. From the empty
+        // state's Show all, whose button is gone, to the All chip.
+        if (hadFocus) document.querySelector(`.fchip[data-trade-filter="${to}"]`)?.focus();
+      }
       return;
     }
 
