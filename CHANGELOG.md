@@ -14,6 +14,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **A stage save refused as changed elsewhere keeps its form on screen:** when the change moved the trade out of the filter or to another page, the table stayed on the old page, the message said "your figures are still here", and the next page turn closed the form and lost them; it now follows the trade to its page.
 - **A row the filter hides no longer holds the table still:** left expanded, it stopped the Net gain order and newly arrived rates from being redrawn as if someone were working in it.
 - **The alert window keeps its trade on screen:** when its reload found the trade had left the filter (sold elsewhere), the table widens to All, and closing the window puts focus on the trade's row instead of the top of the page.
+- **The bell of a trade sold elsewhere no longer opens the alert window:** it took a goal that Save then refused; it now says the trade no longer holds its asset and puts focus on the row.
 - **The empty filter message reads for several chips:** "Nothing in the ledger has any of those statuses right now."
 
 ## [2.2.2] - 2026-11-26

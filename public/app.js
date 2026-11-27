@@ -5659,7 +5659,6 @@ async function openAlertDialog(id) {
   await Promise.all([loadAlerts({ refresh: true }).catch(() => {}), loadTrades().catch(() => {})]);
   const t = state.trades.find((x) => x.id === id);
   if (!t) return;
-  alertDialogTrade = id;
 
   // The card behind the window may have been saying the wrong thing too. And
   // kept on screen, as a save keeps its row: the reload can move the trade
@@ -5668,6 +5667,17 @@ async function openAlertDialog(id) {
   showTrade(id);
   state.page = pageOfTrade(id);
   render();
+
+  // Sold elsewhere (or its purchase undone) since the bell was drawn. The
+  // server takes a goal only while the trade is HOLDING, so the window took a
+  // goal and its preview and Save then refused it. Said here instead, with
+  // focus on the row, as the render took the bell away.
+  if (derive(t).status !== 'HOLDING') {
+    focusInView(document.querySelector(`#table-mount .row[data-trade="${id}"]`));
+    toast(`This trade no longer holds its ${tickerOf(t)}: a price alert only applies while it is held.`);
+    return;
+  }
+  alertDialogTrade = id;
 
   const dlg = alertDialog();
   // Deliberately not touching `state.editing`. Escape closes a dialog by
