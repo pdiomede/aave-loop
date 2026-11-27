@@ -5652,6 +5652,23 @@ function alertDialogBody(t, d, a) {
 /** The trade whose bell opened the window, so focus can go back to it. */
 let alertDialogTrade = null;
 
+/** Whether a trade can take a goal: the server's own test, HOLDING. */
+const takesAlert = (t) => derive(t).status === 'HOLDING';
+
+/**
+ * Said in place of the window when the trade no longer holds its asset - sold
+ * elsewhere, or its purchase undone - found as the window opens or as its
+ * Save is refused. The trade kept on screen, as a save keeps its row, and
+ * focus on that row, since the redraw took its bell away.
+ */
+function alertNotHeld(t) {
+  showTrade(t.id);
+  state.page = pageOfTrade(t.id);
+  render();
+  focusInView(document.querySelector(`#table-mount .row[data-trade="${t.id}"]`));
+  toast(`This trade no longer holds its ${tickerOf(t)}: a price alert only applies while it is held.`);
+}
+
 async function openAlertDialog(id) {
   // The trades too: the window is drawn in the trade's market, and a trade
   // switched to the other asset elsewhere was drawn from this tab's old copy -
@@ -5659,6 +5676,10 @@ async function openAlertDialog(id) {
   await Promise.all([loadAlerts({ refresh: true }).catch(() => {}), loadTrades().catch(() => {})]);
   const t = state.trades.find((x) => x.id === id);
   if (!t) return;
+  // Sold elsewhere (or its purchase undone) since the bell was drawn: the
+  // window took a goal, and its preview and Save then refused it.
+  if (!takesAlert(t)) return alertNotHeld(t);
+  alertDialogTrade = id;
 
   // The card behind the window may have been saying the wrong thing too. And
   // kept on screen, as a save keeps its row: the reload can move the trade
@@ -5667,17 +5688,6 @@ async function openAlertDialog(id) {
   showTrade(id);
   state.page = pageOfTrade(id);
   render();
-
-  // Sold elsewhere (or its purchase undone) since the bell was drawn. The
-  // server takes a goal only while the trade is HOLDING, so the window took a
-  // goal and its preview and Save then refused it. Said here instead, with
-  // focus on the row, as the render took the bell away.
-  if (derive(t).status !== 'HOLDING') {
-    focusInView(document.querySelector(`#table-mount .row[data-trade="${id}"]`));
-    toast(`This trade no longer holds its ${tickerOf(t)}: a price alert only applies while it is held.`);
-    return;
-  }
-  alertDialogTrade = id;
 
   const dlg = alertDialog();
   // Deliberately not touching `state.editing`. Escape closes a dialog by
@@ -5814,6 +5824,19 @@ async function submitAlert(form) {
     const mk = alert.market ?? marketOf(state.trades.find((x) => x.id === id) ?? {});
     toast(`Alert set: waits for ${mk} to ${way} to ${usd(alert.goalPrice)}.`);
   } catch (err) {
+    // Sold elsewhere while the window was open: the refusal said so in the
+    // form, which stayed up for a goal no save could set. Asked of the ledger,
+    // not read off the message, and only while this window is still the one
+    // open - the reload takes a moment.
+    if (err.status === 400) {
+      await loadTrades().catch(() => false);
+      const now = state.trades.find((t) => t.id === id);
+      if (now && !takesAlert(now) && alertDialog()?.contains(form)) {
+        closeAlertDialog();
+        alertNotHeld(now);
+        return;
+      }
+    }
     showFormError(form, err.message, err.field);
   } finally {
     done();
