@@ -5409,10 +5409,15 @@ async function submitStage(form) {
       const now = withoutDerived(err.current);
       state.trades = state.trades.map((t) => (t.id === id ? now : t));
       writeSeq += 1;
-      if (state.editing?.id === id && state.editing?.stage === stage) state.editing.base = { ...now };
+      const open = state.editing?.id === id && state.editing?.stage === stage;
+      if (open) state.editing.base = { ...now };
       // The change elsewhere may have moved it out of the filter, and the
-      // form with the figures typed into it would go with the row.
+      // form with the figures typed into it would go with the row. And to the
+      // row's page, as a save that lands does: widened to All, or re-sorted by
+      // the change, it sat on another page, the toast said "your figures are
+      // still here", and the next page turn closed the form and lost them.
       showTrade(id);
+      if (open) state.page = pageOfTrade(id);
       render();
     }
     // On the form as it is now. A re-render while the save was away replaces

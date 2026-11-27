@@ -9,6 +9,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 - **History filters by status:** chips beside the heading - All, Closed, Open (sold but not repaid included) and Holding, each with its count and in its status's colour - show only those trades; the status chips combine (Open and Holding together, say) and All clears them. The pager counts only what is shown. The choice is remembered across views and restarts; a new trade or a save that would leave the filter switches it back to All so the row stays on screen.
 
+### Fixed
+
+- **A stage save refused as changed elsewhere keeps its form on screen:** when the change moved the trade out of the filter or to another page, the table stayed on the old page, the message said "your figures are still here", and the next page turn closed the form and lost them; it now follows the trade to its page.
+
 ## [2.2.2] - 2026-11-26
 
 ### Added
