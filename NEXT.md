@@ -46,6 +46,13 @@ Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
 `/home/paolo/backup/aaveloop` holds one `myaave-...db` from 03:00 every night, 11 to
 24 Nov, fourteen in all as `--keep 14` asks.
 
+## 2.3.0 (27 Nov): History filters by status
+
+Not deployed yet. Nothing on the VPS beyond the usual pull and restart: no
+migration, no new setting, no inline script, so nginx's CSP is untouched. The
+filter is kept in each browser's storage (`ethroundtrip-trade-filter`), not on
+the server.
+
 ## 2.2.2 (26 Nov): Onchain Data fixes, Stats totals, Addresses icons
 
 Deployed on 26 Nov, with `69bf4d2`. The service now runs on Rome's calendar, so the
