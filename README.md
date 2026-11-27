@@ -1,10 +1,12 @@
 # ETH Roundtrip
 
-Track leveraged trade cycles on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, cbBTC, WBTC, SOL or PSOL, sell it, repay the loan, and see what the round trip actually earned.
+Track leveraged trade cycles: borrow a stablecoin, buy an asset, sell it, repay the loan, and see what the round trip really earned.
 
-**Platforms:** Aave, Ether.fi and Morpho; on Solana, Jupiter and Kamino. **Assets bought:** ETH; cbBTC (Coinbase's wrapped bitcoin), valued at BTC's price; WBTC, at its own; SOL; and PSOL (Phantom Staked SOL), at its own.
+- **Platforms:** Aave, Ether.fi, Morpho; on Solana, Jupiter and Kamino.
+- **Assets:** ETH, cbBTC (valued at BTC's price), WBTC, SOL, PSOL.
+- **Borrowed in:** USDC, USDT, DAI, GHO or EURC. Every total is in US dollars, to the cent.
 
-A local web app on SQLite, with no account and no wallet connection. Borrow in USDC, USDT, DAI, GHO or EURC; every total is in US dollars, to the cent, with ETH, SOL and PSOL to four places and cbBTC and WBTC to eight. Release notes are in [CHANGELOG.md](CHANGELOG.md). Licensed [MIT](LICENSE.md).
+A local web app on SQLite: no account, no wallet connection. Release notes in [CHANGELOG.md](CHANGELOG.md), licence [MIT](LICENSE.md).
 
 ## Run
 
@@ -12,87 +14,63 @@ A local web app on SQLite, with no account and no wallet connection. Borrow in U
 ./runETHRoundTrip.sh
 ```
 
-Opens on http://localhost:3000, loopback only, on Node 18 or newer. The script installs dependencies when the lockfile's packages change, and replaces an earlier ETH Roundtrip from this folder, on the port or on one it moved to, giving it up to 14 seconds to finish an alert it is sending. Another program on the port moves it to the next free port (`--kill` stops that program instead, `--port N` picks one).
+Opens on http://localhost:3000 (Node 18+). If the port is taken it moves to the next free one; `--kill` stops the other program instead, `--port N` picks one.
 
-- `./resetDatabase.sh` empties the ledger. It asks twice, refuses while a server has the file open (it asks `lsof`, or `fuser`, and will not run with neither), and keeps a backup under `data/backups`.
-- `./backupDatabase.sh` takes a backup that is safe while the server runs, by default into `~/aaveloop-backups` (the old name, kept so existing backups and cron lines stay valid); `--help` gives the cron line.
-- `node scripts/set-platform.mjs --etherfi <id> --apply` fills in the platform on trades recorded before it was asked for: the ids named go to Ether.fi, the rest to Aave. Without `--apply` it only lists what would change; it honours `ETHROUNDTRIP_DB`, and refuses a path where there is no ledger rather than create one.
-- `npm run check` runs four offline suites: the formulas in `lib/calc.js` against hand-worked figures, the forms' input rules, the Statement PDF, and the server itself against a throwaway database with Telegram and the price service mocked.
+| Command | Does |
+| --- | --- |
+| `./resetDatabase.sh` | empties the ledger, after a backup to `data/backups` |
+| `./backupDatabase.sh` | backs up while the server runs (`--help` for the cron line) |
+| `node scripts/set-platform.mjs --etherfi <id> --apply` | fills in the platform on old trades (dry run without `--apply`) |
+| `node scripts/audit-hashes.mjs` | checks stored transaction hashes against their trades |
+| `npm run check` | runs the offline test suites |
 
-## How a trade works
+## A trade, stage by stage
 
-A trade starts with the borrow; each stage is added as it happens.
-
-| Stage | You enter | Status becomes |
+| Stage | You enter | Status |
 | --- | --- | --- |
-| Borrow | platform (Aave, Ether.fi or Morpho), date, currency, amount, APR, gas fee (optional) | `OPEN` |
-| Buy | asset (ETH, cbBTC, WBTC, SOL or PSOL), date, amount spent, amount received, costs & fees (swap), gas fee to lend (optional) | `HOLDING` |
-| Sell | date, amount sold, amount received, gas fee to unstake (optional), costs & fees (swap) | `SOLD` |
-| Repay | date, amount repaid, gas fee (optional) | `CLOSED` |
+| Borrow | platform, date, coin, amount, APR, gas (optional) | `OPEN` |
+| Buy | asset, date, amount spent and received, swap costs | `HOLDING` |
+| Sell | date, amount sold and received, swap costs | `SOLD` |
+| Repay | date, amount repaid, gas (optional) | `CLOSED` |
 
-Fees are in dollars whatever was borrowed, and 0 is a figure. The swaps require theirs (gas plus the DEX fee). A blank borrow or repay fee shows as *not recorded*, never $0.00; a blank lend or unstake fee means none was paid.
+Fees are in dollars, and swap costs are required. A blank optional fee reads *not recorded*, never $0.00. On Solana platforms gas is not asked for.
 
-- **Trades** is the history table. Expand a row to see and edit its four stages; the Borrowed card says which platform the trade ran on. The chips beside History (All, Closed, Open, Holding) narrow it to one status - Open includes trades sold but not yet repaid - and the choice is remembered in the browser; the pager counts only what the filter shows.
-- **Stats** shows performance for all platforms and, in cards that fold open, for each platform alone; By Platform and By asset split the tab by platform and by what was bought; then net gain by currency and by month closed, the biggest and smallest trade in dollars and by annualized rate, interest paid, total borrowed, average hold and fees. It has a tab per year plus **All**: a trade counts in the year it was repaid, and one still open in the current year. Only closed trades count towards realized figures, and only those with a known exchange rate towards the money.
-- **Export CSV** downloads the tab's trades, one row each with every input and derived figure; an unknown figure is an empty cell. It is semicolon-separated with decimal commas, for Excel in a European locale.
-- **Statement** downloads the year's closing statement as a one-page PDF: the trades closed that year, never open ones.
-- **Wallets** keeps your wallet addresses, each under a name and on its chain (Ethereum, Base, Arbitrum, Optimism or Solana); a typo in a pasted 0x address is caught by its checksum, and a Solana address is kept exactly as pasted. A trade can name the wallet it was run from, picked after its platform, and the Onchain Data section lists every trade under its wallet with that wallet's totals. Any trade there, holding or closed, opens into its stages, and a magnifier on each recorded one finds its transaction on Etherscan (set `ETHERSCAN_API_KEY` in config.env, a free key from etherscan.io); **Get onchain data** finds every missing one in one go, with a report at the end, and `node scripts/audit-hashes.mjs` checks the stored ones against their trades. Each wallet is searched on its own chain: Ethereum and Arbitrum on Etherscan, Optimism on its public node, Base on a node you name in `BASE_RPC_URL` (otherwise its hashes are pasted by hand), and Solana on Helius's node with `HELIUS_API_KEY` (a free key from helius.dev) or one you name in `SOLANA_RPC_URL`, its signatures linked to Solscan.
-- **Open positions**, in the header, estimates what the open trades would make if closed today, at the current price of what each trade holds (ETH, BTC for cbBTC, or the asset's own price) and exchange rate. The table's Net gain column shows the same figure, tagged `est`, as do `/holding` and the alert messages.
+## The views
+
+- **Trades:** the history table. Expand a row to edit its stages. The chips beside History (All, Closed, Open, Holding) filter it; Open includes trades sold but not yet repaid.
+- **Stats:** performance overall and per platform, split by platform, asset, wallet, currency and month, with a tab per year. **Export CSV** and a one-page **Statement** PDF of the year's closed trades.
+- **Alerts:** every price alert and when it fired.
+- **Wallets:** your addresses on Ethereum, Base, Arbitrum, Optimism or Solana. **Onchain Data** groups trades by wallet and finds each stage's transaction (see below).
+- **Open positions** (header): what open trades would make if closed today. The table shows the same figure tagged `est`.
 
 ## The math
 
 | Figure | Formula |
 | --- | --- |
-| Buy / sell price (per unit of the asset) | `buy_amount / buy_eth`, `sell_amount / sell_eth` |
-| Gross gain | `sell_amount - buy_amount * (sell_eth / buy_eth)` |
-| Accrued interest | `borrow_amount * apr% * days / 365` |
-| Fees | the six stage fees, in dollars |
-| Net gain | `gross_gain - interest_paid - fees` |
+| Gross gain | `sell_amount - buy_amount * (sell_qty / buy_qty)` |
+| Interest | `borrow_amount * apr% * days / 365` |
+| Net gain | `gross_gain - interest - fees` |
 | Annualized | `net_gain_usd / borrow_usd * 365 / days` |
-| Estimate, holding | `buy_eth * market_price_now - (buy_amount + accrued_interest) * rate_today - fees` |
-| Estimate, sold | `(gross_gain - accrued_interest) * rate_today - fees`, plus anything still held at today's price less its cost |
+| Estimate, holding | `qty * price_now - (buy_amount + interest) * rate_today - fees` |
 
-Gross gain uses the cost of what was actually sold, so a profitable partial exit is never reported as a loss. The return is annualized: a 3 day trade netting 7.2% reads 876%. Every amount, conversion and fee is taken to the cent as printed, so each card and total adds up from its lines.
+A partial sale counts only the cost of what was sold. Every figure is rounded to the cent as printed, so each card adds up line by line.
 
 ## Exchange rates
 
-Amounts are recorded in the borrowed coin and reported in dollars. A EURC stage converts at the European Central Bank reference rate for its own day, so the euro's movement between borrowing and repaying lands in the result.
+A EURC stage converts at the European Central Bank's rate for its own day (through Frankfurter), so the euro's move between borrow and repay shows in the loan cost, which can be negative. A weekend uses Friday's rate; a day not yet published uses the day before's, marked provisional, until the real one arrives. Missing rates are looked up every hour, or at once with **Fetch rates** on Stats. Only estimates use today's rate.
 
-| Figure | Formula |
-| --- | --- |
-| Loan cost | `repaid_usd - borrowed_usd` |
-| of which interest | `interest_paid * repay_rate` |
-| of which currency | the rest: `borrowed * (repay_rate - borrow_rate)` |
-| Net gain | `gross_gain_usd - loan_cost - fees` |
+## Price alerts and the Telegram bot
 
-A loan cost can be negative: if the euro fell, the loan was cheaper in dollars than its interest.
-
-- **Rates are the ECB's**, through Frankfurter, a public mirror of its daily file at `api.frankfurter.dev/v1` (`ETHROUNDTRIP_FX_URL` points elsewhere). It publishes on business days, so a Sunday trade takes Friday's rate; the publication date is shown beside each figure so it can be checked against [the ECB's tables](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html).
-- **EURC is valued as one euro**, the honest approximation with no free feed for the coin itself.
-- **Rates fill themselves in.** A trade always saves. One without a rate is marked, left out of the totals, and looked up every hour; **Fetch rates** on Stats asks at once.
-- **A day not yet published takes the day before's rate, marked provisional,** and the real rate replaces it once the ECB publishes, however long the app was off in between. A rate more than six days older than its day is never used: the stage waits for a real one.
-- **Only estimates use today's rate.** A trade's own dollar figures stay at the rates of the days they happened.
-
-## Price alerts
-
-While a trade holds its asset, the **Bought** card has a bell. It takes one goal price and shows the message in full before saving. The goal is a price of the trade's market: ETH's for an ETH trade, BTC's for a cbBTC one, and every other asset's own. A goal above today's price waits for a rise, one below for a fall. A trade has one armed alert; saving again replaces it, and changing the trade's asset closes it.
-
-The prices come from CoinGecko, ETH, BTC, WBTC, SOL and PSOL in one request, without a key, every fifteen minutes, and only while an alert is armed. cbBTC is valued at BTC's price, WBTC and PSOL at their own; the header shows BTC, ETH and SOL. An alert fires once, even with two copies of the app on one database. It stays in the **Alerts** view, ten to a page, with the time and price its goal was reached. Selling closes it for good. Sending needs a Telegram bot in `config.env`; without one, goals are still saved and the window says what is missing.
-
-## Bot commands
-
-The bot answers in the chat `TELEGRAM_CHAT_ID` names, and in your private chat if `TELEGRAM_OWNER_ID` is set. Anything from another chat is ignored, since `/holding` is your whole position.
+While a trade holds its asset, the bell on its **Bought** card sets one goal price, in that trade's market. Prices come from CoinGecko every fifteen minutes while an alert is armed. An alert fires once and goes to Telegram; selling closes it.
 
 | Command | Returns |
 | --- | --- |
-| `/price` | BTC, ETH and SOL now, each with 24h, 7d and 30d change |
-| `/holding` | each trade still holding its asset, with its estimated gain at its own market's price, and a total per asset with what it is worth; when the trades span platforms, a line per platform with its trades, holdings and share of the gain; one sold in part is listed with what it kept. A trade sold in full but not repaid is open, and `/summary` counts it, but it holds nothing and is not listed |
-| `/summary` | realized net gain, blended annualized, closed trades, open positions, and what is held of each asset |
-| `/watch` / `/unwatch` | the BTC, ETH and SOL prices every twenty minutes in the chat that asked, sent only while a trade holds its asset, or stop. One watch at a time: `/watch` from the other chat moves it there |
+| `/price` | BTC, ETH and SOL now, with 24h, 7d and 30d change |
+| `/holding` | each trade still holding its asset, with its estimated gain |
+| `/summary` | realized gain, annualized, closed and open trades, holdings |
+| `/watch` / `/unwatch` | prices every 20 minutes while something is held, or stop |
 
-`/help`, `/start` and anything unrecognised list the commands. A `@name` suffix, capitals and arguments are fine. Commands are read by long polling, so nothing needs to be reachable from the internet; two copies of the app share one reader by a lease. `/watch` survives a restart.
-
-Telegram draws the Menu button only in a private chat. To get it, set `TELEGRAM_CHAT_ID` to your own user id, or keep the group and set `TELEGRAM_OWNER_ID` too; alerts still go to the group alone. To fill the `/` menu, send `/setcommands` to [@BotFather](https://t.me/BotFather) and paste:
+The bot answers only in `TELEGRAM_CHAT_ID`'s chat, and in your private chat if `TELEGRAM_OWNER_ID` is set. To fill the `/` menu, send `/setcommands` to [@BotFather](https://t.me/BotFather) and paste:
 
 ```
 price - BTC, ETH and SOL prices now, with 24h, 7d and 30d change
@@ -103,52 +81,47 @@ unwatch - stop the price updates
 help - what this bot can do
 ```
 
-## Setting up config.env
+## config.env
 
-1. **Make a bot.** Send `/newbot` to [@BotFather](https://t.me/BotFather). The token it returns is the bot; keep it like a password.
-2. **Choose the chat.** For a private chat, send `/start` to the bot and take your id from [@userinfobot](https://t.me/userinfobot). For a group, add the bot (it needs no admin rights), post a message starting with `/`, and read the id, which is negative:
-   ```bash
-   curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*'
-   ```
-   Do this with the app stopped or started with `ETHROUNDTRIP_BOT_OFF=1`: only one reader is allowed, and a running app takes the updates first. A group's id changes when it becomes a supergroup, which making the bot an admin can trigger; the log prints the id of every chat it ignores.
-3. **Write the file** in the app's directory, then fill it in:
-   ```bash
-   cp config.env.example config.env && chmod 600 config.env
-   ```
+```bash
+cp config.env.example config.env && chmod 600 config.env
+```
 
-   | Key | What it is |
-   | --- | --- |
-   | `TELEGRAM_BOT_TOKEN` | the token |
-   | `TELEGRAM_CHAT_ID` | the chat id |
-   | `TELEGRAM_CHAT_NAME` | display only |
-   | `TELEGRAM_OWNER_ID` | optional: your user id, so a group bot answers you privately too |
-4. **Restart.** The file is read at startup, which logs either `Price alerts will message <chat>.` or what is missing.
-5. **Send a test:**
-   ```bash
-   curl -X POST -H 'Content-Type: application/json' http://localhost:3000/api/alerts/test
-   ```
-   `{"ok":true}` and a message means it works; otherwise the answer says why (`chat not found`, `Unauthorized`). One test per ten seconds.
+| Key | What it is |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | from `/newbot` at [@BotFather](https://t.me/BotFather); keep it secret |
+| `TELEGRAM_CHAT_ID` | your user id ([@userinfobot](https://t.me/userinfobot)) or a group's negative id |
+| `TELEGRAM_OWNER_ID` | optional: your id, so a group bot also answers you privately |
+| `ETHERSCAN_API_KEY` | free key from etherscan.io, for Ethereum and Arbitrum transactions |
+| `HELIUS_API_KEY` or `SOLANA_RPC_URL` | for Solana transactions |
+| `BASE_RPC_URL` | a Base node; without one, Base hashes are pasted by hand |
 
-The format is `KEY=value` per line, with `#` comments, an optional `export ` and one pair of quotes stripped; no interpolation. An exported variable overrides the file for one run. Where the app directory is not yours to write, point at a file you own with `ETHROUNDTRIP_CONFIG=/path/to/file`. Settings were named `MYAAVE_*` before 20 Nov 2026; those names still work when the new one is unset, and the startup log lists any in use. `config.env` is gitignored, the app warns if others can read it, and the token never appears in a log or a response.
+To find a group's id, add the bot, post a `/` message, and with the app stopped run:
+
+```bash
+curl -s "https://api.telegram.org/bot<token>/getUpdates" | grep -o '"id":-[0-9]*'
+```
+
+Restart after editing; the startup log says whether alerts can be sent. Test with:
+
+```bash
+curl -X POST -H 'Content-Type: application/json' http://localhost:3000/api/alerts/test
+```
+
+An exported variable overrides the file for one run, and `ETHROUNDTRIP_CONFIG` points at a file elsewhere. The file is gitignored and the token never appears in a log.
 
 ## Layout
 
 ```
-landing/       public page, served by nginx
 server.js      Express API and static host
-db.js          SQLite connection and schema
-fx.js prices.js  exchange rates and the ETH, BTC and WBTC prices, cached
-telegram.js    sending one message
-alerts.js      price alerts and their timer
-bot.js         reading and answering commands
-report.js      what the bot says, with format.js
-config.js      reads config.env
-env.js         reads the ETHROUNDTRIP_* settings
-lib/           shared with the browser: calc.js (every formula), input.js (form rules),
-               csv.js (the export), statement.js and logo.js (the PDF)
-public/        interface
-scripts/       release tooling, npm run check, and og.html (the social card's source)
-*.sh           runETHRoundTrip.sh (start), backupDatabase.sh, resetDatabase.sh
-data/          SQLite file, not committed
-NEXT.md        what is left to do on the VPS, and what to build next
+db.js          SQLite schema
+lib/           shared with the browser: calc.js (every formula), input.js, csv.js, statement.js
+public/        the app's interface
+landing/       the public page, served by nginx
+alerts.js bot.js telegram.js report.js   alerts and the Telegram bot
+fx.js prices.js                          exchange rates and market prices
+etherscan.js chainnode.js solana.js      finding transactions on chain
+scripts/       checks and release tooling
+data/          the SQLite file, not committed
+NEXT.md        VPS steps after a release, and what to build next
 ```
