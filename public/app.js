@@ -2874,12 +2874,14 @@ function renderFilterBar() {
     return;
   }
   const count = (f) => state.trades.filter((t) => inFilter(t, f)).length;
-  mount.innerHTML = `<div class="filterbar" role="group" aria-label="Show trades">${TRADE_FILTERS.map(
-    (f) =>
-      `<button class="fchip fchip--${f}" type="button" data-trade-filter="${f}" aria-pressed="${
-        state.filter === f
-      }">${FILTER_LABELS[f]}<span class="fchip__count">${count(f)}</span></button>`,
-  ).join('')}</div>`;
+  // Named in words, not by its content: label and count ran together as
+  // "Closed12" for a screen reader.
+  mount.innerHTML = `<div class="filterbar" role="group" aria-label="Show trades">${TRADE_FILTERS.map((f) => {
+    const n = count(f);
+    return `<button class="fchip fchip--${f}" type="button" data-trade-filter="${f}" aria-pressed="${
+      state.filter === f
+    }" aria-label="${FILTER_LABELS[f]}, ${n} ${n === 1 ? 'trade' : 'trades'}">${FILTER_LABELS[f]} <span class="fchip__count" aria-hidden="true">${n}</span></button>`;
+  }).join('')}</div>`;
 }
 
 function renderTable() {
