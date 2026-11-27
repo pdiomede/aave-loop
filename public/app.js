@@ -2722,7 +2722,10 @@ function underUsersHands() {
   // Any expanded row, not only one on the page drawn: read from state rather
   // than the table, which a new order may already have moved it out of. A row
   // left open on another page only delays the redraw to the next render.
-  if (state.openIds.size > 0) return true;
+  // But not one the History filter hides: no page shows it, and no price or
+  // rate changes a status to bring it back, so it held the Net gain order
+  // and new rates back until something else redrew the table.
+  if (state.trades.some((t) => state.openIds.has(t.id) && inFilter(t))) return true;
   if (document.querySelector('[data-stage-form], dialog[open]')) return true;
   return !!document.querySelector('main')?.contains(document.activeElement);
 }
@@ -2922,7 +2925,7 @@ function renderTable() {
   if (rows.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No ${state.filter.map((f) => FILTER_LABELS[f].toLowerCase()).join(' or ')} trades</h3>
-      <p>Nothing in the ledger has that status right now.</p>
+      <p>Nothing in the ledger has ${state.filter.length > 1 ? 'any of those statuses' : 'that status'} right now.</p>
       <button class="btn btn--sm" type="button" data-trade-filter="all">Show all trades</button>
     </div>`;
     state.draft = null;
@@ -5658,7 +5661,12 @@ async function openAlertDialog(id) {
   if (!t) return;
   alertDialogTrade = id;
 
-  // The card behind the window may have been saying the wrong thing too.
+  // The card behind the window may have been saying the wrong thing too. And
+  // kept on screen, as a save keeps its row: the reload can move the trade
+  // out of the History filter or to another page, and closing the window then
+  // had no bell or row to give focus back to.
+  showTrade(id);
+  state.page = pageOfTrade(id);
   render();
 
   const dlg = alertDialog();
@@ -5684,7 +5692,11 @@ function closeAlertDialog() {
     setTimeout(() => {
       const active = document.activeElement;
       if (active && active !== document.body) return;
-      document.querySelector(`[data-alert-trade="${id}"]`)?.focus();
+      // The row when the bell has gone: the reload found the trade sold.
+      (
+        document.querySelector(`[data-alert-trade="${id}"]`) ??
+        document.querySelector(`#table-mount .row[data-trade="${id}"]`)
+      )?.focus();
     }, 0);
   }
   alertDialogTrade = null;
