@@ -550,6 +550,12 @@ function saveSort() {
  * under Open, as its pill says, though /holding counts what it kept. Remembered
  * like the sort, across views and restarts; the filter narrows the table only,
  * never the totals, Stats or Onchain Data, which read every trade.
+ *
+ * The status chips combine: state.filter is the list of those pressed, in
+ * TRADE_FILTERS order, and a trade shows if any of them takes it. An empty
+ * list is All. All three pressed is stored as All too (`pickFilter`): they
+ * cover every status derive() returns, so it is the same table, and one way
+ * to read "everything" keeps the All chip honest.
  */
 const TRADE_FILTERS = ['all', 'closed', 'open', 'holding'];
 
@@ -561,27 +567,39 @@ const FILTER_STATUSES = {
 
 const FILTER_LABELS = { all: 'All', closed: 'Closed', open: 'Open', holding: 'Holding' };
 
+/** A list of chip keys as state.filter holds it: known status chips only, once
+ *  each, in TRADE_FILTERS order, and [] for All - all three included. */
+function pickFilter(keys) {
+  const picked = TRADE_FILTERS.filter((f) => f in FILTER_STATUSES && keys.includes(f));
+  return picked.length === Object.keys(FILTER_STATUSES).length ? [] : picked;
+}
+
 function loadFilter() {
   try {
+    // Saved as the keys joined by commas, or 'all'; a single key saved before
+    // the chips combined ('closed') reads as that one chip.
     const saved = stored('trade-filter');
-    if (TRADE_FILTERS.includes(saved)) return saved;
+    if (typeof saved === 'string') return pickFilter(saved.split(','));
   } catch (e) {
     /* private browsing */
   }
-  return 'all';
+  return [];
 }
 
 function saveFilter() {
   try {
-    store('trade-filter', state.filter);
+    store('trade-filter', state.filter.join(',') || 'all');
   } catch (e) {
     /* the filter simply will not persist */
   }
 }
 
+/** Whether a trade is in the filter: state.filter, or one chip's key (the
+ *  chips' own counts). */
 function inFilter(t, filter = state.filter) {
-  const statuses = FILTER_STATUSES[filter];
-  return !statuses || statuses.includes((t.derived || derive(t)).status);
+  const keys = Array.isArray(filter) ? filter : [filter];
+  const statuses = keys.flatMap((f) => FILTER_STATUSES[f] || []);
+  return statuses.length === 0 || statuses.includes((t.derived || derive(t)).status);
 }
 
 /**
@@ -593,7 +611,7 @@ function inFilter(t, filter = state.filter) {
 function showTrade(id) {
   const t = state.trades.find((x) => x.id === id);
   if (t && !inFilter(t)) {
-    state.filter = 'all';
+    state.filter = [];
     saveFilter();
   }
 }
@@ -2879,7 +2897,7 @@ function renderFilterBar() {
   mount.innerHTML = `<div class="filterbar" role="group" aria-label="Show trades">${TRADE_FILTERS.map((f) => {
     const n = count(f);
     return `<button class="fchip fchip--${f}" type="button" data-trade-filter="${f}" aria-pressed="${
-      state.filter === f
+      f === 'all' ? state.filter.length === 0 : state.filter.includes(f)
     }" aria-label="${FILTER_LABELS[f]}, ${n} ${n === 1 ? 'trade' : 'trades'}">${FILTER_LABELS[f]} <span class="fchip__count" aria-hidden="true">${n}</span></button>`;
   }).join('')}</div>`;
 }
@@ -2903,7 +2921,7 @@ function renderTable() {
   const rows = tableTrades();
   if (rows.length === 0) {
     mount.innerHTML = `<div class="empty">
-      <h3>No ${FILTER_LABELS[state.filter].toLowerCase()} trades</h3>
+      <h3>No ${state.filter.map((f) => FILTER_LABELS[f].toLowerCase()).join(' or ')} trades</h3>
       <p>Nothing in the ledger has that status right now.</p>
       <button class="btn btn--sm" type="button" data-trade-filter="all">Show all trades</button>
     </div>`;
@@ -6418,8 +6436,17 @@ function wire() {
     const filterBtn = e.target.closest('[data-trade-filter]');
     if (filterBtn) {
       const to = filterBtn.dataset.tradeFilter;
-      if (TRADE_FILTERS.includes(to) && to !== state.filter) {
-        state.filter = to;
+      // All clears the chips; a status chip toggles, and the last one let go,
+      // or the third pressed, is All again (pickFilter).
+      const next = !TRADE_FILTERS.includes(to)
+        ? null
+        : to === 'all'
+          ? []
+          : pickFilter(
+              state.filter.includes(to) ? state.filter.filter((f) => f !== to) : [...state.filter, to],
+            );
+      if (next && next.join(',') !== state.filter.join(',')) {
+        state.filter = next;
         saveFilter();
         // As a sort change: page 1, and an editor whose row may have just left
         // the table closes rather than stranding its draft.

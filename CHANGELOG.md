@@ -7,7 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **History filters by status:** chips beside the heading - All, Closed, Open (sold but not repaid included) and Holding, each with its count and in its status's colour - show only those trades, and the pager counts only what is shown. The choice is remembered across views and restarts; a new trade or a save that would leave the filter switches it back to All so the row stays on screen.
+- **History filters by status:** chips beside the heading - All, Closed, Open (sold but not repaid included) and Holding, each with its count and in its status's colour - show only those trades; the status chips combine (Open and Holding together, say) and All clears them. The pager counts only what is shown. The choice is remembered across views and restarts; a new trade or a save that would leave the filter switches it back to All so the row stays on screen.
 
 ## [2.2.2] - 2026-11-26
 
