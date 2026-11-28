@@ -7,32 +7,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **Trades has year tabs** under the header - every year a trade was active in, newest first, the current one selected on each load, then All. The four tiles above it and the History table, its chips and pager follow the year picked.
-- **The years are file-folder tabs:** square tabs with rounded tops on a thin divider, the chosen one opening into a bordered panel that holds its year's tiles, in both themes, with the keyboard focus ring drawn inside each tab. More years than fit stay on one line that scrolls, fading out at an edge with more beyond it, a mouse wheel scrolling it, the chosen year kept in view. One folder holds the whole year: the tiles, a divider, then History with its chips, New trade and the table, inside a single border. Stats' years are the same folder tabs, Statement and Export CSV at the right of them, every card for the year inside one folder. Where the folder leaves the table too little room (to about 1240px wide) it scrolls inside it, and a trade's dates break only at their arrow on a phone.
-- **A year's tiles read it as it stood at its end:** a gain counts once, in the year the loan was repaid, and a loan still open on 31 Dec is one of that year's open positions, its Est. gain valued at 31 Dec's prices and exchange rate. The current year is read live, a trade dated after today's date (saved from a clock ahead) included. The table lists every trade active in the year, as it is today.
-- **`GET /api/year-end?year=2025`** answers each market's price at the close of 31 Dec and each non-dollar coin's rate for that day; prices are fetched from CoinGecko once, 1.5 s apart, and kept for good in `market_close`; a rate limit on that history never pauses the live prices or the alerts, and a coin CoinGecko refuses is not asked for again for a day. A price fixed for testing (`ETHROUNDTRIP_ETH_PRICE`) is today's only: the close is still looked up.
-- **A trade says whether it was opened Long or Short:** a third picker in the new trade's heading, "open as", starts empty and is required, as the platform is; the Borrowed card shows it and its editor changes it. A label only for now: every figure is still worked out as a long.
-- **The Trades table and Onchain Data mark each trade's side** with a green up or red down arrow before its coin, named on hover.
-- **Stats has a By Long/Short card,** laid out like By month closed: closed trades and net gain per side, with a Not recorded row for trades from before the side was asked for.
-- **`scripts/set-side.mjs` marks every trade with no side as Long** (dry run unless `--apply`); a side already set is kept, one that is neither refuses the run, and a user who cannot write the ledger is told to run it as the service's user.
-- **The landing page and the social card (`og8.png`) say trades are tracked long or short;** the card's ECB rates pill made room for it.
-- **The Statement PDF links the European Central Bank reference rate** in its note to the ECB's rate tables, as the Stats page does.
+- **Trades has year tabs** (every year a trade was active in, then All; the current year on load), drawn as file-folder tabs: one folder holds the year's tiles and its History, chips, pager and table. Stats' years use the same folder tabs.
+- **A year's tiles read it as it stood on 31 Dec:** a gain counts in the year it was repaid, and a loan still open then is an open position valued at that day's prices and rate (`GET /api/year-end`, fetched once from CoinGecko and kept).
+- **Each trade is marked Long or Short:** a required "open as" picker on a new trade, an arrow before its coin in the tables, and a By Long/Short card on Stats. A label only for now: figures are still worked out as a long. `scripts/set-side.mjs` marks existing trades Long.
+- **The Statement PDF links the ECB's reference rates,** as Stats does.
+- **The landing page and its social card (`og8.png`) mention long and short.**
 
 ### Changed
 
-- **The header's prices line up in columns:** each market's price, 1h, 24h and 7d stand under the others'; SOL's shorter price pushed its badges out of line.
-- **The Trades page opens on its figures:** the "Leverage trades" heading and its description are gone.
-- **Stats' All tab opens on an overview, "Overview (All years combined)",** as each year's tab does: Realized net gain, Blended annualized, Closed trades and Open positions.
-- **The header's tiles show on Trades only:** on Stats they put the Trades year's figures above Stats' own, and Alerts and Wallets did not need them. Stats' overview carries the Est. gain line under Open positions instead, kept current as prices and rates arrive.
-- **The landing page's step 2 reads "Buy ETH, BTC or SOL",** not "Buy ETH or cbBTC", and its four cards sit one, two or four across, never three with one left over.
+- **The header's tiles show on Trades only,** above its year; Stats' overview carries their Est. gain instead, and the "Leverage trades" heading is gone.
+- **Stats' All tab opens on an overview,** as each year's tab does.
+- **The header's prices line up in columns:** SOL's shorter price pushed its badges out of line.
 
 ### Fixed
 
-- **The Trades tiles no longer leave a blank band while the ledger loads,** or above "Could not load": they show once there are figures to show.
-- **The Long/Short arrow's name opens above it,** not below: on the last row, where the table scrolls sideways, it was cut off.
-- **Logos no longer blink while Get onchain data runs:** each stage searched redrew every wallet group twice, every coin, asset and chain logo made anew; a search now redraws only its own stage card.
-- **The ruled line above Stats' Total rows is drawn, and thicker:** a later rule for a table's last row took it away, so only the row hairline showed.
-- **The new trade's heading wraps a word with its picker:** "from" and "open as" no longer end one line with their picker on the next.
+- **Logos no longer blink during Get onchain data:** each search redrew the whole list; now only its own card.
+- **The ruled line above Stats' Total rows is drawn, and thicker:** a rule for a table's last row hid it.
+- **The new trade's heading keeps each word with its picker** when it wraps.
+- **The landing page's step 2 said "Buy ETH or cbBTC";** it lists ETH, BTC and SOL.
 
 ## [2.3.0] - 2026-11-27
 
@@ -52,85 +44,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **A Total line closes By Platform, By asset and By currency,** under a ruled line: Closed, Open, Borrowed and Net gain added up, and the tab's blended Avg annualized.
-- **Stats has a By wallet table:** Closed, Open, Borrowed, Net gain and Avg annualized for each wallet, by name, then No wallet, with the Total line. It shows once a trade on the tab names a wallet.
-- **The CSV names each trade's wallet:** `wallet`, `wallet_address` and `wallet_chain` after `asset`, empty when it names none.
-- **Telegram's `/holding` names each trade's wallet** in a column after the platform (cut to 12 characters), and adds a line per wallet under the platform lines when the held trades span two wallets or more, adding up to Unrealised like them.
+- **Stats' breakdowns close on a Total line,** and a By wallet table appears once a trade on the tab names a wallet.
+- **The CSV and Telegram's `/holding` name each trade's wallet;** `/holding` adds a line per wallet when holdings span two.
 
 ### Changed
 
-- **Addresses' Copy and explorer links are icons,** a copy icon and an open-in-new-tab icon beside the address on one line, with tooltips; a copied address shows a tick for a moment.
-- **Performance's first row reads Total borrowed, Interest paid, Total fees paid, Average hold;** the second row is as it was. The Statement PDF follows the same order.
-- **Add address sits beside Chain,** on the fields' line, and the Address field is narrower to make room.
-- **Stats shows a platform's Performance card only when it has trades** in the year shown; five cards saying "no trades" buried the ones that had some.
-- **Onchain Data's wallet headings line up in columns:** the chain, address, trade count and each totals figure stand under the same ones on every wallet, whatever the name's length.
-- **Onchain Data's note is reworded:** "Every trade is listed under its corresponding wallet, as displayed in the Trades tab."
+- **Performance opens on Total borrowed, Interest paid, Total fees paid and Average hold,** in the Statement too.
+- **A platform's Performance card shows only when it has trades** in the year shown.
+- **Addresses' Copy and explorer links are icons,** Add address sits beside Chain, and Onchain Data's wallet headings line up in columns.
 
 ### Fixed
 
-- **Onchain Data never finds a trade's own purchase as its repayment** (or its sale as its loan): with no plain repayment transfer to find (repaid with collateral, or from another wallet), the purchase's hash was stored as the repayment.
-- **Optimism and Base searches see a day's later transactions:** a day first read while it was still going on was kept for good once it ended, so a sale made that afternoon was never found.
-- **Forget (×) forgets only the hash it showed:** one pasted from another tab meanwhile was forgotten unseen, with the loan or repayment found by way of it; now it stays and the card shows it.
-- **Get onchain data carries on past a chain that stays busy:** a node that was down, or a refused node key, stopped the whole scan, leaving every wallet after it unsearched; that chain is now skipped and listed under Not searched.
-- **Stats follows rates that land while it is open:** the header moved to the new figures while the cards, the no-rate banner and the Total lines below stayed on the old ones until the view was changed.
-- **A paste field opened and folded away no longer keeps its stage out of every scan** ("1 left to the hash being pasted" with no field on screen).
-- **The CSV's fees_usd reads 0 on a Jupiter or Kamino trade,** as Stats counts it, not blank, which read as a fee nobody recorded.
-- **The Statement's no-rate line says what it leaves out:** the trade's gain and interest; its fees are still counted, which "its result is left out of the totals" denied.
-- **The Closed column's tips say sold and repaid,** which is what it counts; "Repaid trades" also described an older row repaid with nothing sold, which is in neither column.
-- **`/holding` stays within Telegram's 4,096 characters however many wallets:** the per-wallet lines had no limit, and with about 30 wallets of long names the reply was refused and nothing was sent; now the wallet lines, then the platform lines, give way when the whole table would not fit beside them.
-- **Focus stays on a Stats card when new rates clear its "no rate" chip:** a reader on the chip was sent back to the top of the page; now focus goes to the card's fold button.
-- **Onchain Data never takes a purchase or sale as a loan or repayment:** searched before the purchase it belonged to, or before another loop's purchase that day, a repayment with no plain transfer took that purchase, which was then never found.
-- **Onchain Data finds a swap paid in several transfers** (a split route: 18,000 and 12,000 out for one 30,000 purchase); read leg by leg it was missed and the repayment was stored in its place. The hash audit reads such a swap the same way.
-- **An empty paste field in a folded wallet group no longer keeps its stage out of Get onchain data.**
-- **Saving or forgetting a hash leaves focus where you moved meanwhile,** instead of pulling it back to that card mid-word.
-- **An alert goal is held to its market's own range and to the price now:** "3.500" on an ETH trade saved a $3.50 goal and a BTC "100.000" one of $100, each waiting for good; a goal outside the market's range, or beyond a tenth to ten times its price, is refused in the window and by the server.
-- **The alert message says what was spent** ("Spent: 9,876.54 USDC", with its dollars on the purchase day for a euro coin): without it the lines could not be added up to the Gain, and quantity times price missed it by a cent, or 15 on a euro trade.
-- **A goal reached while its trade is open clears its bell and Alert line:** an open trade held the redraw back, so the bell kept naming a goal already sent.
-- **The alert window dates a reached goal by the local day,** as the Alerts table does; late in the evening it named the day before.
-- **A goal saved late no longer closes another trade's alert window,** losing the goal being typed in it.
-- **Focus stays on an Alerts row's "not sent" chip** when the list is redrawn, instead of falling to the page.
-- **The server says at startup which calendar it counts days on,** and asks for `TZ` while it is on UTC: there, `/holding` and `/summary` counted a day's interest less than the page from midnight to 1am in Rome.
+- **Onchain Data matching:** it no longer takes a purchase or sale, the trade's own included, as a loan or repayment; it finds a swap paid in several transfers; and Optimism and Base see a day's later transactions.
+- **Get onchain data carries on past a busy chain,** and a paste field, open or folded, no longer keeps its stage out of the scan.
+- **Forget (×) forgets only the hash it showed,** and saving or forgetting a hash no longer pulls focus back.
+- **Stats follows rates that land while it is open,** keeping focus on the card.
+- **An alert goal is held to its market's range and near today's price:** "3.500" on an ETH trade saved a $3.50 goal. The alert message says what was spent, and a reached goal clears its bell.
+- **`/holding` stays within Telegram's 4,096 characters** however many wallets.
+- **Smaller fixes:** the CSV's fees on Jupiter and Kamino trades read 0, the Statement's no-rate line and the Closed tips say what they count, the alert window dates by the local day, and the server warns at startup while it counts days in UTC.
 
 ## [2.2.1] - 2026-11-25
 
 ### Added
 
-- **A Wallets tab** with an Addresses list: the wallets you trade from, each under a name and on a chain (Ethereum, Base, Arbitrum or Optimism, picked when it is added), with Copy and a link to that chain's explorer. An address is checked against its checksum, so a mistyped capital is refused; typed in one case, it is saved checksummed. Rename keeps the address; to change it, delete and add again. Simulation is a placeholder for now.
-- **A trade can name its wallet.** A new trade picks it after the platform ("borrow on Morpho from Frullino"), the Borrowed editor has a Wallet picker for older trades, and the Borrowed card shows it. It is optional; a wallet that trades use cannot be deleted until they name another, or none, and the Wallets tab counts each wallet's trades.
-- **Wallets > Simulation lists every trade under its wallet,** in the Trades table's columns and order, read-only, with each wallet's realized net gain, closed and open counts and open estimate; trades with none are under No wallet, so the groups add up to the header. Each group's trades fold under its heading, closed when the page opens, with a dotted line between wallets.
-- **A trade in Simulation opens into its four stages,** open, holding or closed: each recorded one with a magnifier that finds its transaction on Etherscan and links it. Matched by the stablecoin's contract (not its name, so look-alike tokens are ignored), direction, amount and, for a swap, the asset received or sent; found once and kept. A hash can be forgotten (the × asks first) or pasted by hand; editing what a found one was matched on forgets it. The four cards line up, heading, figures and transaction alike. Needs `ETHERSCAN_API_KEY` in config.env.
-- **Each wallet is searched on its own chain,** with that chain's token contracts, and its hashes open on that chain's explorer (Etherscan, Basescan, Arbiscan, OP Etherscan). Ethereum and Arbitrum are searched on Etherscan; Optimism, which Etherscan's free plan refuses, on its own public node, no key needed; Base on a node named in `BASE_RPC_URL` (no free keyless one serves its history). Without one, a Base card asks for the hash to be pasted, and Get onchain data counts those stages as not searched.
-- **`scripts/audit-hashes.mjs` checks every stored hash against its trade** on its chain: that the transaction succeeded, moves the coin the right way for about the amount, is no swap within the coin, and is dated near the stage. It reports OK, CHECK or WRONG, and with `--apply` forgets the wrong ones a search found so they can be searched again; pasted ones are only reported.
-- **Get onchain data** on the Simulation title searches every recorded stage of every trade that has no hash yet, one at a time, with a progress bar along the divider and a report at the end (found, to check, not found, skipped for no wallet). It stays within Etherscan's free tier: when Etherscan is busy it waits and tries again, and stops if that does not clear it; Stop ends it early, and running it again carries on.
-- **SOL and PSOL to buy and sell, on Jupiter and Kamino.** SOL is valued at its own price and PSOL (Phantom Staked SOL) at its own; both are in the asset picker, the cards, Stats' By asset and the Statement, and Jupiter and Kamino are platforms with their own Performance cards and By Platform rows.
-- **SOL in the header,** which now shows BTC, ETH and SOL, a row each, as do `/price` and `/watch`.
-- **Solana wallets.** A wallet can be on Solana, its base58 address kept exactly as pasted; each stage's signature is found on a Solana node (`HELIUS_API_KEY`, or `SOLANA_RPC_URL`) by its USDC and its SOL or PSOL, pasted by hand otherwise, and opens on Solscan. The audit checks Solana's too.
-- **No gas fees on Jupiter and Kamino.** A Solana transaction costs a fraction of a cent, so a trade there asks for no gas fee, swap cost, or fee to lend or unstake; its cards show none, and its figures and Stats count none and flag none as not recorded. Picking either platform hides the field there and then; a fee stored before is kept and counts again if the platform changes back.
-- **The landing page and social card** list Jupiter and Kamino, and SOL and PSOL; the card is `og7.png`.
-
-### Fixed
-
-- **Addresses' Copy and explorer links line up:** a Solana address pushed them right of the rows above, and OP Etherscan's row wrapped them under its address while the others did not.
-- **Wallets tab:** a refused paste's reason vanished at the next redraw (a scan step, a price); a long wallet name ran past its Borrowed card again; Get onchain data counted a coin with no contract on its chain as searched and not found, and its wait read "Etherscan busy" whoever was not answering. Each now holds.
-- **Simulation, smaller ones:** during Get onchain data, focus jumped from a hash link to its ×, or from a magnifier to the top of the page; a scan finishing while Forget or Delete was being asked cancelled the question, and now its report waits for the answer; Ethereum's logo was faint in the chain and wallet pickers on the dark theme; a long wallet name with no spaces ran past its group's heading on a phone.
-- **Alerts audit:** Delete all counted the list before asking but deleted up to whatever it held after, so a goal set elsewhere while the confirmation was open was deleted unseen. Telegram's "have no rights to send a message" and "need administrator rights in the channel chat" were taken as a refusal of the message, using a reached goal up for good; they now wait for the fix like any setup error. A goal replaced while its send was in flight stayed FIRED for a message that never went; it is now FAILED, as when replaced a moment later. The alert window now says when its goal was already reached but not sent, and that saving gives that message up; says the direction comes from the purchase price when there is no recent price, not only an old one; and the save names which way the goal waits. A tab left open now re-reads the alerts on its price poll, so a fired goal stops showing ARMED.
-- **Stats audit:** the Statement and the CSV were built from the ledger as last reloaded, which a background rate pick-up could change without redrawing the tab, so a Statement read +$402.10 under cards still saying "no rate"; both now export exactly what the cards show. A card of Jupiter or Kamino trades alone read "Total fees paid -", where it carries no fees: it now reads $0.00.
-- **Trades audit:** a cbBTC or WBTC quantity left after switching a trade to ETH was kept as ETH at $97,000 (ETH's range ran to $100,000, overlapping bitcoin's; it now ends at $10,000). An open position's estimate took the purchase as stored rather than as its card prints it, a cent off on a partial sale or a euro trade awaiting its rate. A sold trade could not change asset: Bought refused for the sale and Sold for the old asset; the Bought form now carries the sale's quantity too. A gas fee hidden by picking Jupiter or Kamino kept its error, and Create trade silently did nothing. An "old price" chip hid the warning that a euro estimate used today's rate.
-- **Wallets tab, fifth hunt:** a chain with no key or node (Solana without `HELIUS_API_KEY`) ended Get onchain data, leaving every other wallet unsearched; that chain is now skipped and named in the report. A Solana wallet with more history than is read stalled the scan as "busy"; it is now not found. The Add form kept the last chain after a save, and a chain picked left the address's error for the old one on screen.
-- **A held quantity is worth what it prints as.** /holding, the alert and the estimate took the worth from the quantity as stored: 3.33334999 ETH printed 3.3333, worth $11,666.55 on /holding and $11,666.72 in the alert, with the gain built from the second.
-- **Wallets and alerts, after the Solana hunt:** the Address tip promised every address a checksum, which a Solana one has none of; the Chain tip and an empty list named only Ethereum's chains; the Goal tip named no SOL or PSOL market; and a 44-character non-address was told it was the wrong length. Each now says what is so.
-- **Simulation, fourth hunt:** a loan searched while its purchase was being pasted was stored from the purchase the search had guessed, beside the pasted one (the other loop's loan, two loops one evening); it is now searched again against the pasted purchase, as a repayment is against its sale. A wallet's Est. gain lost its "no rate" chip whenever a price was old, though it left a position out. A "not found" stayed on a card after its amount, date or wallet was corrected. A hash pasted, or being typed, during Get onchain data's wait for an answer was searched for anyway, the field giving way to "Searching…". A magnifier's search landing pulled focus back to its card from wherever you had moved on to; and when the wallets could not be read, Simulation said "Loading" for good instead of why.
-- **The hash audit and the search agreed on less than they should.** A loan was found up to its purchase's day rather than its own, and the audit then called it wrong; a hash two trades held was marked wrong on both, so `--apply` forgot it from the trade it fits too; a pasted hash outlived its stage being undone; and a coin with no contract on a chain read as wrong rather than unchecked. Each now holds, and a sale settled by an intent order is named as such.
-- **A Base node's read lost the end of each day, and took 118 calls to find a day's blocks.** Base's 0.2 s blocks share their seconds, and a day ended at the first block of its last second, so the rest fell between two days; ranges now run block to block. Its history changed pace (2 s, then 0.2 s), so the block search now halves between guesses: about 20 calls a day.
-- **Etherscan matches that could link the wrong transaction.** Another trade's purchase was offered as a repayment, and a USDC to USDC.e swap as a loan or repayment; a hash any trade holds is now never offered again, and a swap within the coin never counts. A pasted hash goes when the trade's wallet moves to another chain, whose explorer had no such transaction.
-- **The Wallets tab's figures and layout.** Simulation kept the price it was first drawn at while the header moved on, and a visit left the header on the old ledger; a wallet's estimate is marked when a rate or price is missing; the Addresses table and a long wallet name no longer push the page sideways; a hash being pasted keeps its focus while Simulation redraws; a double click on Get onchain data no longer starts two scans.
-- **A loan or repayment found on Etherscan follows its purchase or sale.** One found while the purchase's quantity was mistyped stayed linked to the other loop's loan; it is now forgotten when the purchase is corrected, pasted or forgotten, settled against a pasted purchase, flagged when the purchase was itself a guess, and two searches run together no longer link one transfer to two trades.
+- **A Wallets tab:** your addresses on Ethereum, Base, Arbitrum, Optimism or Solana, each named, checked (an EVM checksum) and linked to its explorer. A trade can name its wallet; a wallet in use cannot be deleted.
+- **Onchain Data** (first called Simulation) lists every trade under its wallet and finds each stage's transaction by the coin's contract, direction and amount, on the wallet's own chain: Etherscan (`ETHERSCAN_API_KEY`), an Optimism or Base node (`BASE_RPC_URL`), a Solana node (`HELIUS_API_KEY`). Found once and kept, or pasted by hand; **Get onchain data** searches them all within Etherscan's free tier.
+- **`scripts/audit-hashes.mjs`** checks every stored hash against its trade; `--apply` forgets the wrong searched ones.
+- **SOL and PSOL, on Jupiter and Kamino,** each at its own price; SOL joins the header, `/price` and `/watch`. Solana trades ask for no gas.
+- **The landing page and social card (`og7.png`)** list them.
 
 ### Changed
 
-- **Wallets > Simulation is now Onchain Data,** the name of what it does: each wallet's trades with the transactions found on chain.
-- **Addresses folds,** closed until opened and then remembered, with the count on its head; its note names Solana too.
-- **Fields have a stronger edge,** darker in the light theme and brighter in the dark one, so an idle field is easy to find on its card.
+- **Addresses folds,** and fields have a stronger edge in both themes.
+
+### Fixed
+
+- **Onchain Data could link the wrong transaction:** another trade's purchase as a repayment, a USDC to USDC.e swap as a loan, a loan found from a purchase later corrected or pasted. A transaction is now one stage of one trade, and a found loan or repayment follows its purchase or sale.
+- **A Base node's read lost the end of each day** and took 118 calls to find one; ranges run block to block, in about 20.
+- **The hash audit and the search agree** on dates, shared hashes and coins a chain lacks.
+- **Get onchain data skips a chain with no key or no answer** instead of ending, and keeps focus and pasted text steady while it runs.
+- **Alerts:** Delete all removed goals set meanwhile; two Telegram rights errors spent a goal for good; a goal replaced mid-send stayed FIRED. Each now holds.
+- **The Statement and CSV export exactly what the cards show,** and a card of Jupiter or Kamino trades reads $0.00 fees.
+- **A quantity typed for one asset is refused on another** (ETH's range ends at $10,000), and a held quantity is worth what it prints as.
+- **Smaller fixes:** the Addresses table and long names on phones, tips and messages naming Solana, Ethereum's logo on the dark theme.
 
 ## [2.2.0] - 2026-11-24
 
@@ -155,139 +111,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **A loop can buy cbBTC as well as ETH.** The Bought card has an asset picker in its heading, starting on ETH; the form's labels, unit and hints follow it, and Bought and Sold show the asset's logo and ticker once saved. Every existing trade is ETH.
-- **cbBTC is valued at BTC's price**, fetched with ETH's in one CoinGecko request. Estimates, Open positions and the table's Net gain mark each trade at its own market.
-- **The header shows BTC under ETH**, each with its 1h, 24h and 7d change.
-- **Price alerts on cbBTC trades**, set and judged in BTC: "BTC reached your $100,000.00 goal". Changing a trade's asset closes its armed alert.
-- **Telegram covers BTC:** `/price` and `/watch` send both prices, `/holding` lists cbBTC rows with a total per asset, and `/summary` says what is held of each. Paste the new command list from the README into BotFather.
-- **Stats has a By asset table**, beside By Platform; its rows add up to the totals.
-- **Morpho is a platform,** beside Aave and Ether.fi: in the New trade and Borrowed pickers, with its logo, and on Stats as Performance (Morpho) and a row in By Platform.
-- **/holding gives a line per platform** under its totals, with the trades, what each holds and its share of Unrealised; the lines add up to it. Shown when the holdings span two platforms or more.
-- **Back and Forward move between Trades, Stats and Alerts,** with a half-typed form kept; Back used to leave the app.
-- **The Statement has a By asset section**, ETH and cbBTC rows under By currency, adding up to the totals; By month now runs in two columns to make room on the one page.
-- **The ledger and the landing page follow the system theme live** while no theme has been picked: an open page goes dark with the Mac. The landing toggle script changed again, so nginx's CSP needs its newest hash.
+- **A loop can buy cbBTC as well as ETH,** valued at BTC's price: an asset picker on the Bought card, BTC in the header, alerts in BTC, and BTC in `/price`, `/watch`, `/holding` and `/summary`.
+- **Morpho is a platform,** with its own Performance card and By Platform row.
+- **Stats and the Statement break results down by asset;** `/holding` adds a line per platform when holdings span two.
+- **Back and Forward move between views,** keeping a half-typed form.
+- **Both pages follow the system theme live** while none is picked.
 
 ### Changed
 
-- **The trades table's ETH column is Amount**, each quantity with its asset's logo: ETH to four places, cbBTC to eight.
-- **The CSV has an `asset` column after `platform`,** and `buy_eth` / `sell_eth` are now `buy_qty` / `sell_qty`.
-- **`/api/eth` is now `/api/prices`**, answering `{ pollMs, prices: { ETH, BTC } }`. `MYAAVE_BTC_PRICE` fixes BTC as `MYAAVE_ETH_PRICE` fixes ETH.
-- **The landing page names Aave, Ether.fi and Morpho and ETH and cbBTC**, with their logos, and says cbBTC is valued at BTC's price; each platform's logo opens its home page in a new tab.
-- **Ether.fi has a new logo, `etherfi.png`**, replacing `etherfi.jpg` in the app, the landing page and the social card. Platform logos sit on a white disc, so its transparent outline reads in the dark theme.
-- **The social card is redrawn as `landing/og5.png`**, naming the three platforms, ETH and cbBTC; a new filename because scrapers cache by URL. Its source is `scripts/og.html`, rendered with headless Chrome.
-- **The launcher is `runETHRoundTrip.sh`** (was `run_myAave.sh`), and says ETH Roundtrip throughout; the logo files are `ETHRoundtrip_logo*.png` (were `AaveLoop_logo*`).
-- **Settings are `ETHROUNDTRIP_*`, browser storage `ethroundtrip-*` and the package `eth-roundtrip`**, the last of the myAave name. The old `MYAAVE_*` settings and `myaave-*` keys still work, and the startup log lists old settings in use. The ledger stays at `data/myaave.db`. Both landing scripts changed, so nginx's CSP needs two new hashes.
+- **The table's ETH column is Amount,** with each asset's logo and decimals. The CSV gains `asset` and renames `buy_eth`/`sell_eth` to `buy_qty`/`sell_qty` and the swap costs to `*_swap_cost_usd`.
+- **`/api/eth` is now `/api/prices`,** with every market.
+- **The app is ETH Roundtrip throughout:** `runETHRoundTrip.sh`, `ETHROUNDTRIP_*` settings, `ethroundtrip-*` storage, the `eth-roundtrip` package. The old `MYAAVE_*` names still work, and the ledger stays at `data/myaave.db`.
+- **The landing page and social card (`og5.png`) name the three platforms and both assets;** Ether.fi has a new logo. The landing scripts changed, so nginx's CSP needs their new hashes.
 
 ### Fixed
 
-Stats exports:
-
-- **The CSV's swap columns are `buy_swap_cost_usd` / `sell_swap_cost_usd`:** headed `*_swap_gas_usd`, they held gas plus the DEX fee.
-- **A Statement tile never ends a line on its "·"**, which had wrapped onto a line of its own above the figure.
-
-Alerts:
-
-- **The alert window no longer calls an old price "now":** past the age a save accepts, it gives the price's age and says the direction comes from the purchase price, as the save takes it.
-- **A price of unknown age (stamped ahead of the clock) no longer fires a goal**, nor reads as fresh in /price or /holding.
-- **An alert caught sending while its trade changed asset is closed**, not left armed in the other market for good.
-- **Shutdown no longer claims alerts it cannot finish;** a euro alert's rate is looked up before the claim, so a FIRED alert is one that went.
-- **A Telegram 200 that is not its answer** (a portal's page, a cut-off reply) is retried, not taken as a refusal.
-- **An owed alert resent without a fresh price** is written at the price its goal was reached at, not "now" at an old one.
-
-Telegram:
-
-- **/unwatch past ten commands in one batch** still stops the reports.
-- **A restart while Telegram is slow no longer loses commands:** the unanswered ones are handed out again.
-- **/summary says when its held values use an old price**, as /holding does.
-- **/holding names both absences** when one row lacks a rate and another a BTC price, rather than blaming the price for both.
-
-Trades:
-
-- **A flagged field's neighbours drop the hints worked out from it**, on blur, on Save and on a failed save.
-- **A redraw keeps a field's error,** rather than bringing back its rejected value unflagged.
-- **Switching a purchase to cbBTC keeps the error, reworded**, and a cleared purchase date stays cleared.
-- **A cbBTC trade's goal error says "BTC goal price"** on blur as on Save.
-
-Price banner:
-
-- **A cached price stamped ahead of the clock no longer freezes the banner** and every estimate for the life of the tab.
-- **A coin missing from CoinGecko's answer is asked for once per window,** not by every caller.
-- **Coming back to the tab asks for the price when it is due**, not a full interval later.
-- **The banner's tooltip gives the price's age when you hover it**, not the age at the last poll.
-
-Across pages:
-
-- **A failed Remove alert says so in the alert window,** where a toast underneath went unseen and unheard.
-- **Coming back to a tab on Alerts draws new rows in full and keeps focus** on the button it was on.
-- **The pager's current page and the ticker's labels and figures read at AA contrast** in both themes.
-- **"no rate" tooltips stay on a phone screen** in a trade's date cell and under By month closed.
-- **Cmd, Ctrl and Shift clicks on the nav** open a new tab again.
-- **The "no rate" and "est" chips explain themselves to the keyboard and screen readers.**
-- **The active view's underline sits on the header's edge**, not below it over the page.
-
-Landing page:
-
-- **The phone header keeps its 16px gutters**, and the header button fits beside the logo again.
-- **"What it does" and "How it works" land below the phone's sticky header**, not under it.
-- **Keyboard focus on a button shows a solid ring**; the soft one was 1.16:1 against white.
-- **The author link in the footer reads as a link.**
-- **Grey text on the lavender band reaches AA** (4.46:1 before).
-- **The 404 page has no empty band on a phone** and no empty navigation landmark, and its disclaimer names every platform.
-- **With browser storage blocked, a dark system gets the dark theme** on both pages, not light after showing dark. The toggle script changed, so nginx's CSP needs its new hash.
-
-API and forms:
-
-- **A figure past a trillion is refused:** one swap cost of 1e307 turned every total in the ledger null.
-- **An amount that prints as 0.00 is refused,** and the implied price is worked out from the amount as printed: 0.004 USDC for 0.000002 ETH saved as ETH bought at $0.00.
-- **Notes are cut at 2000 characters, never inside one;** an emoji split at the cut read back as three replacement marks.
-- **An unreadable config.env is reported with its error code,** not its full path on disk.
-- **An unreadable config file is reported even with one Telegram value exported,** not as "TELEGRAM_CHAT_ID is missing"; the messages name the file `MYAAVE_CONFIG` points at.
-- **A sale that keeps less than its asset prints is a full exit:** 0.29996 of 0.3 ETH read "Still held 0.0000 ETH".
-- **A sale is judged on Bought and Sold as printed, and Still held is their printed difference:** at half a unit the raw difference was float noise, and 0.09995 of 0.1 ETH read Sold 0.1000, Still held 0.0001.
-- **The CSV writes every number in digits:** 0.00000015 cbBTC went out as "1.5e-7", text to a spreadsheet.
-
-Exchange rates:
-
-- **A stand-in rate is replaced once the real one can be had,** however long that takes; after four days without a refresh it stayed for good, unmarked.
-- **A rate more than six days older than its day is not used:** a lagging mirror's two-week-old rate was stored as final, for every day in between.
-- **A rate service answering with a web page is reported in words,** not with the start of the page.
-- **Rates are read from Frankfurter's current address,** api.frankfurter.dev/v1; the old one redirected every lookup, a second connection inside the 2.5 s timeout.
-
-cbBTC:
-
-- **An alert window opened before its trade switched asset cannot save in the other market:** a $3,500 goal typed as ETH's was stored as BTC's, and fired at once.
-- **Editing a purchase re-checks the sale's price only when the asset changes,** not on every save of the Bought card.
-
-Scripts:
-
-- **Relaunching waits up to 14 s for the old copy to stop**, not 3 s: killed mid-send, an alert stayed FIRED though Telegram never had it.
-- **The launcher's "native binding did not load" check works:** it imported the package without loading the addon, so a Node upgrade crashed the server after "Dependencies present".
-- **A relaunch replaces an earlier copy on the port it moved to**, and one started through a symlinked path such as /tmp; each had started one more copy beside it.
-- **`resetDatabase.sh` asks `fuser` when `lsof` is missing, and refuses with neither:** it deleted the ledger under a running server.
-- **`resetDatabase.sh` keeps its backup and the new ledger private** (600 in a 700 folder), as `backupDatabase.sh` does; they were readable by any account.
-
-Phones:
-
-- **The Sort by picker shows its whole choice at 320px;** "Trade date" read "Trade".
-- **A closed trade's dates wrap inside their card** instead of pushing the page sideways at 320px.
-
-Navigation, theme and settings:
-
-- **Back or Forward while typing leaves focus on the nav**, not on the page, so the next Tab does not start from the top.
-- **A theme chosen in another tab is shown when the system theme changes**; the open page kept the theme it was drawn with, matching neither. The landing toggle script changed again: nginx's CSP needs its newest hash.
-- **The startup note says when an old `MYAAVE_*` setting is ignored** because its new name is set, instead of calling it "still read".
-- **A price update no longer drops keyboard focus** from a "no rate" or "est" chip in the header tiles or the Net gain column, and Enter on such a chip no longer opens its row.
-- **On a phone, a field flagged by Save and the Edit button after it are focused below the sticky header,** not under it.
-- **The alert window reloads the trade before drawing,** so one switched to the other asset elsewhere is drawn in its new market; reopening it used to draw the old one, and every save was refused.
-- **/price, /holding and /summary say a price's age from the age the alert window calls stale** (ten minutes by default, was fifteen), say "less than a minute" rather than "0 minutes", and write "an ETH price".
-- **An alert goal is judged to the cent in the form as on the server:** 0.999 is a $1.00 goal, previewed and saved, and the form no longer refuses it.
-- **A quantity that prints as 0.0000 is refused,** as an amount that prints as 0.00 is; and notes are cut by visible character, so a flag emoji is never split.
-- **The alert window names the config file `ETHROUNDTRIP_CONFIG` points at**, not always config.env.
-- **Rates more than six days older than their day, cached before the limit existed, are asked about again** instead of being served for good.
-- **`set-platform.mjs` refuses a ledger path that does not exist** instead of creating an empty ledger there and reporting "Nothing to change".
-- **A new ledger is created private**, its folder 700 and its file 600; it was readable by every account on the host.
-- **A relaunch stops an earlier copy on a fallback port even once the port it wanted is free**, instead of starting beside it.
-- **The price banner keeps to one row per coin at 320px**, a six-figure BTC with two-digit moves included, and a page turn lands below the header however tall it is: a wrapped row hid the table's first lines.
+- **Alerts:** an old price is no longer called "now", nor one of unknown age taken as fresh; an alert caught by an asset change or a shutdown mid-send is closed or retried, not lost; a window opened before an asset change cannot save a goal in the old market.
+- **Telegram:** commands survive a slow restart, `/unwatch` works past ten in a batch, and `/summary` and `/holding` say when a price is old or missing.
+- **Forms:** a field's error survives a redraw and an asset switch, and no hint is worked out from a rejected figure.
+- **The price banner** no longer freezes on a price stamped ahead of the clock, asks for a missing coin once per window, and keeps one row per coin at 320px.
+- **Figures:** a figure past a trillion, an amount printing 0.00 and a quantity printing 0.0000 are refused; a sale keeping less than its asset prints is a full exit; the CSV writes plain digits.
+- **Exchange rates:** a stand-in is replaced once the real rate exists, a rate over six days older than its day is refused, and lookups use Frankfurter's current address.
+- **Scripts:** a relaunch waits for the old copy and replaces it on any port; `resetDatabase.sh` never deletes the ledger under a running server; new ledgers and backups are private (600 in 700).
+- **Accessibility and layout:** AA contrast on the pager, ticker and landing page; focus kept through redraws, Back and Forward, and the sticky header on phones; chips explain themselves to screen readers; no sideways scroll at 320px.
+- **Landing page:** phone gutters, anchors below the sticky header, a solid focus ring, a dark system theme with storage blocked, and a 404 page without an empty band.
 
 ## [2.1.7] - 2026-11-13
 
@@ -421,106 +268,35 @@ Trades:
 
 ### Added
 
-- **A Statement button on Stats** downloads the year's closing statement as a one-page PDF: logo linked to aaveloop.com, the period, then the overview, Performance, By currency and By month closed for the trades closed that year. Not offered on All or on a year with nothing closed.
-- **Export CSV has a tooltip** saying what it downloads.
-- **`npm run check` runs a fourth suite**, 13 checks of the statement, and the other suites gain thirty more.
+- **A Statement button on Stats** downloads the year's closing statement as a one-page PDF; not offered on All or a year with nothing closed.
+- **`npm run check` runs a fourth suite,** for the statement, and the others gain thirty checks.
 
 ### Fixed
 
-Audits of every tab, script and document, each finding reproduced before its fix and re-run after.
-
-Statement:
-
-- **Open trades were on it**, in a tile, a column and Total borrowed ($67,000.00 for $47,000.00 closed). It is closed trades only.
-- **It named no period**, a past year reading "As of 7 Oct 2026", and a year with nothing closed gave a page of dashes.
-- **The app's version and the open-trades note** are gone from it.
-
-Figures:
-
-- **Totals and cards did not add up from their lines**, missing by a cent: By month closed came to $8,156.72 under $8,156.71, and so did about one euro trade card in four, Telegram's `/holding` and two fees of 1.005. Every figure is now built from amounts as printed.
-- **The CSV's gas columns did not add up to its fees_usd** when a fee had three decimals. Amounts and fees are written as printed.
-
-Interface:
-
-- **On a touch screen the Statement and Export CSV tooltips stayed up after the tap.**
-- **Alerts showed no firing on a reached goal waiting to be sent.** Fired at now shows its time and price.
-- **`/help` called `/holding` the open positions**, though a trade sold and not repaid is not in it. It says "trades still holding ETH".
-- **The landing and 404 pages ignored a dark system until their last script ran**, or for good without JavaScript: `<html>` was hard-coded to light. They follow the system from the first paint.
-- **White on the landing page's violet buttons was 2.58:1**, under the 4.5:1 it needs. A darker violet gives 5.71:1.
-- **The ledger set real information in its faintest grey**, 2.4 to 2.6:1 in the light theme: the rate under a converted figure, the "of which" labels, a field's unit, the `?` hint and "Not yet.". They use the muted grey, 4.2:1 and up; the faint one is for decoration.
-- **The nav told a screen reader nothing about which view was showing**: only the underline marked it. The current tab carries `aria-current="page"`, as the pager's current page already did.
-
-API:
-
-- **An id that was not plain digits reached a real row**: `/api/trades/0x1`, `1e0` or `1.0` edited, armed or deleted trade 1. It now finds nothing.
-- **The alert window previewed a message for a trade no longer holding ETH**, one the save then refused. It previews none.
-
-Tooling:
-
-- **`run_myAave.sh` reinstalled everything after each release**, because a version bump made the lockfile look changed; offline that could leave nothing to start. It compares the installed packages with the lockfile instead.
-- **`make-logo.mjs` did nothing, silently, from a path with a space in it.**
-- **Four behaviours had no check**, so breaking them passed `npm run check`: the blended rate's weighting, a partial sale's cost in the coin, the CSV's formula defusing and a Telegram 429 being retried.
-- **Four form rules had no check either**: an amount of 0, and editing an earlier stage past a later one (the borrow date after the purchase, the ETH below what was sold, the loan below what was repaid).
-- **Nine of the CSV's rules had no check**: empty cells for unknown figures, quoting, CRLF, the byte order mark, oldest first, unreached stages, the rate's rounding, estimates kept apart, and the year a trade is filed under.
-- **Eighteen of `lib/calc.js`'s edge-case rules had no check**, among them impossible dates, backwards spans, unrecorded fees, the year tabs' order, open trades in Total borrowed and the loan cost's two rows adding up.
-
-Documents:
-
-- **The landing page** said the net gain was after interest alone, that a partial sale is never a loss, and that euro rates are each day's own; it is after fees too, only a profitable one, and a weekend takes the business day before.
-- **The README is 44% shorter** and corrected in nine places, among them four check suites, ten alerts to a page and 7.2% (not 7%) over three days reading 876%.
-- **`config.env.example`** called `TELEGRAM_CHAT_ID` the only chat the bot answers and a private chat the only way to the Menu button; `TELEGRAM_OWNER_ID` gives both.
-- **`run_myAave.sh`'s help, the README and CLAUDE.md** said an earlier Aave Loop on the port is moved past; it is replaced, and only another program is.
+- **The Statement held open trades and named no period;** it is closed trades only, for a stated period.
+- **Totals and cards missed their lines by a cent** (By month closed $8,156.72 under $8,156.71); every figure, the CSV's too, is now built from amounts as printed.
+- **Contrast and screen readers:** white on the landing page's violet buttons, the ledger's faintest grey text, and the nav's current tab (`aria-current`) now pass.
+- **The landing and 404 pages follow a dark system from the first paint.**
+- **An id that was not plain digits** (`/api/trades/0x1`) reached trade 1; it now finds nothing.
+- **The launcher reinstalled everything after each release;** it compares the packages with the lockfile.
+- **Smaller fixes:** tooltips stuck after a tap, Fired at for a goal waiting to be sent, `/help`'s wording, and the landing page, README and config example corrected where they misdescribed the app.
 
 ## [1.5.0] - 2026-10-07
 
 ### Changed
 
-- **Currency is a picker with each coin's icon and name**, alphabetical (DAI, EURC, GHO as Aave GHO, USDC, USDT), before Amount borrowed, by mouse, touch or keyboard. A new trade starts on DAI.
-- **Gas on the borrow and the repayment is optional.** Blank is saved as not recorded; 0 is still none paid.
-- **The swap fee is now Costs & Fees (swap)**: gas plus the DEX or aggregator fee, one dollar figure, still required.
-- **The Telegram alert reads more clearly**: "ETH reached your goal" either way, the value lines set apart, and **Gain (%)** over what the ETH cost beside **Gain ($)**. Telegram says "fees", not "gas".
-- **`npm run check` runs three suites**: 38 checks of `lib/calc.js`, 18 of the form input rules (moved to `lib/input.js` so the page and the checks run one file), and 20 of the server, the alert sweep and the bot against a throwaway database with Telegram and prices mocked. Run against the code before these fixes, 15 of them fail.
+- **Currency is a picker with each coin's icon and name,** a new trade starting on DAI.
+- **Gas on the borrow and the repayment is optional;** the swap fee becomes Costs & Fees (swap), gas plus the DEX fee.
+- **The Telegram alert reads more clearly,** with Gain ($) and Gain (%).
+- **`npm run check` runs three suites:** calc, the form's input rules (now `lib/input.js`), and the server with Telegram and prices mocked.
 
 ### Fixed
 
-Three audits, every finding reproduced before its fix and re-run after.
-
-Input:
-
-- **A typed decimal comma was dropped**: "3,20" saved a $320 fee, "32.000,00" a loan of 32. The form keeps the separators and the server's parser reads them.
-- **A paste or exponent was turned into another number**: "1.5 ETH ($5175)" saved 1.55175 ETH, "1e5" saved 15. Both are refused, as the server does.
-- **Nothing checked the ETH price a purchase or sale implies**, so 80,773 ETH for 25,000 stored ETH at $0.31. Outside $1 to $1,000,000 is refused, and the form's lower bound for an alert goal now matches the server's.
-- **Selling ETH withdrawn from Aave with its interest was refused** past 0.01% over the purchase. A sale may run 10% over.
-- **Leaving a field checked it against the saved trade**, not what was typed, so a warning Save would not give appeared mid-edit.
-
-Interface:
-
-- **A slow save closed whichever stage editor was open** and lost what was typed there, and a failed one showed nowhere. It closes only its own and shows its error.
-- **Escape anywhere threw away the stage editor**, from Stats, the new trade form, or the currency list in Safari and Firefox.
-- **Save on one form did nothing while another was saving.** Each form has its own lock, and a late reply no longer rolls a row back.
-- **Keyboard focus fell to the top of the page** after Save, Cancel, Escape or a delete. It returns to the stage's Edit button or the next row.
-- **Deleting a trade another tab had deleted left it on screen**, and the Alerts view drew a bare "Trade #23" for one added there.
-- **The currency list ran off a short window and swallowed Cmd and Ctrl shortcuts.** It fits and scrolls, and leaves modifiers to the browser.
-- **Three tooltips misdescribed their figures**: Total fees paid (gas only), and the Alerts Trade and Status columns.
-- **By month closed drew every bar short** when no month reached a dollar.
-
-Math:
-
-- **A sale within 0.01% of the purchase showed a full exit with a partial cost**, +$3,001.50 under a card adding to +$3,000.00.
-- **The repayment preview counted to today** with the amount blank, not to the date in the form.
-- **`/holding` gave the euro move for some trades under the total of all.**
-
-Telegram and alerts:
-
-- **A failed send was retried only if ETH was still past the goal**, so the message could be lost. It retries every check, up to three times, keeping the triggering price.
-- **A wrong Telegram setup used up a reached alert**: a revoked or malformed token, a bot removed from the group or not allowed to post. It waits, armed, and goes once fixed. A refusal of the message itself is still final.
-- **`/watch` timing**: the interval was rounded in `/help`, a one-minute report came every 100 seconds, and a bad timing setting made the bot poll every millisecond. Intervals are bounded, at least a minute, and kept.
-- **The bot's plain-text fallback showed `&lt;` and `&amp;`.**
-
-Server and database:
-
-- **`DELETE /api/alerts/` with a trailing slash deleted every alert**, and an unknown `/API/...` path got the HTML 404 page.
-- **With two copies of the app on one file**, Fetch rates failed at once, an edit could land on a row the other had changed, and an alert's failed sends could be miscounted. The backfill waits for the lock, an edit is written only to the row it was worked out from, and failures are counted in SQL.
+- **Input:** a decimal comma was dropped ("3,20" saved a $320 fee) and a pasted figure misread; an implied price outside $1 to $1M is refused; a sale may run 10% over its purchase.
+- **Editors:** a slow save or Escape elsewhere threw away the open stage editor, one form's save blocked another, and focus fell to the top of the page.
+- **Math:** a near-full sale showed a partial cost, the repayment preview counted to today, and `/holding`'s euro move covered only some trades.
+- **Alerts and Telegram:** a failed send could be lost, a setup error used up a reached alert, `/watch` timings drifted, and the plain-text fallback showed `&lt;`.
+- **Server:** `DELETE /api/alerts/` deleted every alert, and two copies on one file could overwrite each other's edits.
 
 ## [1.4.2] - 2026-10-03
 
@@ -533,38 +309,16 @@ Server and database:
 
 ### Added
 
-- **Exchange rates fill themselves in.** The server re-asks every hour for a rate still missing or standing in for one the ECB has not published yet, and an open page picks the new figures up. The Stats banner and its **Fetch rates** button now appear only while a trade has no rate at all. `MYAAVE_FX_REFRESH_MS` sets the interval.
+- **Exchange rates fill themselves in:** the server re-asks hourly for a missing or stand-in rate (`MYAAVE_FX_REFRESH_MS`), and Fetch rates shows only while a trade has none.
 
 ### Fixed
 
-Four audits, of everything added this session and of `server.js`, `eth.js` and `telegram.js`, each finding reproduced or traced before its fix and re-run after. `telegram.js` came back clean. `npm run check` is at 32.
-
-Added this session:
-
-- **A ledger that failed to load stayed failed.** A trade created afterwards was saved and toasted, and never drawn. A load that works now clears it, and a failed boot shows the view the address names.
-- **Rates arriving on their own redrew under the reader's hands**, moving an expanded row to another page and taking focus off a control. They wait for no row open, no form, no dialog and no focus on the page.
-- **On a phone, `est` sat apart from its figure** at the far edge of the Net gain cell. They stay together.
-- **Pressing on the alert window's backdrop and letting go inside it closed the window**, losing the goal. Both ends of the click must be on the backdrop.
-- **The Fired at tooltip said "blank while armed"** though a closed alert shows a dash too.
-- **A goal saved while the trade was sold was armed on a sold trade**, a delete in that moment answered 500, and a failed send could re-arm on a trade sold during it. The save checks again after its wait, and a failed send on a sold trade closes.
-- **The CSV still rounded some half-cents differently from the page.** Gas of 1.005 read $1.01 on the page and 1,00 in the file. It now rounds with the page's own call.
-- **An out-of-range interval in the environment made a timer fire every millisecond.** `MYAAVE_FX_REFRESH_MS=99999999999` sent 1,052 rate requests in three seconds. Intervals are now bounded, the alert and ticker ones too.
-- **A euro trade's Gain line in alerts and `/holding` did not add up** from the lines above it, which price the purchase at its own rate. It now names the euro's move since: `bought at 1.0500: -$3,600.00`.
-
-`eth.js`:
-
-- **A price fetched while the cache refused the write was lost**, and the alert window fell back to one from days before, previewing "hit" for a goal the save filed as "fell to". The last price is kept in memory and the window uses the fetch's own answer.
-- **A Retry-After given as a date was ignored.** Asked for 55 minutes, the app waited 10. Dates and seconds are both honoured.
-- **A cached price stamped ahead of the clock read as fresh** until the clock caught up. It is stale.
-- **Stepping the clock back stretched the rate-limit pause** past its one hour cap. The pause runs on the monotonic clock.
-- **`MYAAVE_ETH_PRICE` was not checked.** -3450 was served as the price, and "3,450" silently went to the live network. It is read like a typed amount, and a value that is not a usable price is ignored with a warning.
-
-`server.js`:
-
-- **A stand-in rate cached on its own morning became final four days later** without anyone asking again, so a trade dated that day and entered later kept the day before's rate. A stand-in fetched while it could still change is asked about once more.
-- **The rate lookup accepted any date.** 1990 put every rate lookup, saves included, to sleep for a minute, and a future date cached a stand-in. It takes a trade's own date bounds.
-- **Fields sent as objects were coerced.** Notes `{"a":1}` stored "[object Object]", and a `toString` key answered 500. Dates, currency and notes must be text.
-- **An alert goal under a dollar was saved**, reading "fell to your $0.00 goal", and the preview showed goals the save refused. Both take $1 to $1,000,000.
+- **A failed load stayed failed,** hiding trades created afterwards.
+- **Background rate updates no longer redraw under the reader's hands** (an open row, a form, focus).
+- **Alerts:** a goal could be armed on a sold trade, a drag from the backdrop closed the window, and a goal under a dollar was saved.
+- **A euro alert's Gain line adds up,** naming the euro's move since the purchase.
+- **Prices:** a price whose cache write failed was lost, a Retry-After date was ignored, and a price stamped ahead of the clock, or a fixed price of -3450, was used as is.
+- **Rates and input:** a stand-in became final unasked, any date was accepted for a lookup, fields sent as objects were coerced, and an out-of-range interval fired a timer every millisecond.
 
 ## [1.4.0] - 2026-10-03
 
@@ -724,57 +478,26 @@ A bug hunt over the new fields and over the fee and net gain figures in History 
 
 ## [1.2.0] - 2026-10-03
 
-Gas fees. Every stage is an on-chain transaction, and the ledger treated them as free, so every net gain was overstated.
+Gas fees: every stage is an on-chain transaction, and the ledger treated them as free, so every net gain was overstated.
 
 ### Added
 
-- **A gas fee on every stage, in dollars.** Borrow, Buy ETH, Sell ETH and Repay each ask for a required *Gas fee*, typed in dollars whatever was borrowed (0 is accepted). Four nullable columns, `borrow_gas_usd` to `repay_gas_usd`, were added to the `CREATE TABLE` and the migration list.
-- **Net gain is after fees, everywhere.** `derive` takes the fees off `netGainUsd`, so the table, the annualized rate, the hero, the Stats tiles and Telegram's `/summary` all follow. A sold trade's estimate and a held trade's unrealised gain take off the gas paid so far. Example: a USDT trade that made +$2,531.00 reads +$2,519.00 with $3, $5, $4 and $0 of gas.
-- **Total fees paid on the Repaid card**, just above Net gain, and a *Gas fee* row at the foot of every stage card.
-- **Total fees paid on Stats**, after Average hold, for the year on the tab or for All.
+- **A gas fee on every stage, in dollars,** and **net gain after fees everywhere:** the table, the annualized rate, the header, Stats and Telegram. A USDT trade at +$2,531.00 reads +$2,519.00 with $12 of gas.
+- **Total fees paid** on the Repaid card and on Stats.
 
 ### Changed
 
-- **A euro trade's Gross gain and Net gain lead with dollars**, with the EURC figure underneath, because every total adds up the dollar figure. The EURC net gain is after fees too: each dollar fee is converted at the rate of the stage it was paid on, the one place `lib/calc.js` divides by a rate.
-- **A trade recorded before fees existed keeps its figures.** Its stages say *not recorded* rather than $0.00, and the Repaid card and the Stats tile count them. Editing a stage asks for that stage's fee only.
-- **`isRealized` gates on the gross gain** rather than the native net gain. Otherwise a closed EURC trade still waiting on a rate would have been filed as open.
-- **Opening a trade in History no longer closes the one already open.** `state.openId` is now a set, so two trades can be read side by side. The editor closes only when its own row is collapsed or its trade deleted, so a half typed sale is not thrown away.
-- **Every tooltip is at least 30% shorter, and none uses a dash.** All 29 in `TIPS` were rewritten in short sentences and still say which trades they count. Total fees paid had run to eleven lines on a phone.
+- **A euro trade's gains lead with dollars,** the EURC figure underneath.
+- **A trade from before fees keeps its figures,** its fees "not recorded", not $0.00.
+- **Several trades can be open side by side,** and every tooltip is shorter.
 
 ### Fixed
 
-Two bug hunts over the new code before release found twenty bugs, each reproduced on a scratch ledger or against `lib/calc.js` before the fix and re-run after. The arithmetic came back clean. The second hunt also found security clean: column names in an UPDATE come only from the server's own list, `__proto__` keys are ignored, rates in a request are refused, and the Host allow-list holds.
-
-- **The Telegram holding report said "after interest" under a figure that was also after gas.** It says "after interest and gas" whenever a held trade has a fee recorded. The price alert names both amounts.
-- **Total fees paid counted only closed trades with a dollar result.** It left out gas on open trades and on rateless EURC trades, so $27.00 of fees read $12.00. It counts every trade on the tab now.
-- **The tile's tooltip claimed every fee was already taken off the figures above it.** That stopped being true once open and rateless trades were counted. It now says the total can exceed the gas inside the realized figures.
-- **The sale form previewed a euro gain beside a dollar price.** The preview now follows the card: dollars once both rates are known.
-- **With only one rate known, the preview gave no sign of it.** The "(converted on save)" marker now follows either figure falling back to the coin.
-
-History and storage:
-
-- **Another website could press two of the app's buttons.** Behind basic auth, a form posted from another site carried your credentials and could send a Telegram test or start a rate lookup. Every write to `/api` must now arrive as JSON, so such a form gets 415.
-- **A pasted decimal comma with four or more decimals lost the comma.** "8,0773" was stored as 80,773 ETH. A comma followed by four or more digits is now a decimal point, while "12,000" still reads as thousands.
-- **The server refused today's date from a reader ahead of its timezone.** A reader in Rome was refused every night from midnight to two on a UTC server. The server now allows its own tomorrow.
-- **Net gain said "no rate" on trades that have no gain yet.** The chip now appears only once the ETH is sold.
-- **"of which currency" was coloured backwards.** A positive figure is extra cost, so a loan that cost $500.00 more showed green. It is now coloured by what it did to you.
-
-Stats:
-
-- **The best trade on a ledger of losses was called the biggest gain.** The first tile now reads "Smallest loss" when its figure is a loss.
-- **Realized net gain put "no rate" on the wrong condition.** It followed any missing rate, open trades included. It now follows closed trades without a dollar result, and Telegram's `/summary` got the same fix.
-- **Open positions printed "$0.00" for capital of unknown size.** It reads "1 no rate" now, and `summarize` answers null for the dollar figure.
-- **Total borrowed was short without saying so.** It skipped trades with no borrow rate. It now carries the "no rate" chip when it is missing any.
-- **Two tooltips described more trades than their figures count.** Average hold and the by-month Trades column say closed trades with a dollar result.
-
-Alerts and Telegram:
-
-- **A delivered alert was shown as "not sent".** The claim never cleared an earlier error, so a 500 then a 200 left a fired alert showing an error. The claim clears it.
-- **A goal reached before Telegram was set up was used up.** The sweep claimed the alert and the failed send left it fired for good. The sweep now waits until there is somewhere to send it.
-- **An alert could fire on a trade sold while the sweep ran.** Whether the trade still held ETH was checked before slow lookups. The claim now asks again in the same statement.
-- **`/holding` blamed the exchange rate when the ETH price was missing.** It now says the ETH price is missing.
-- **The bot answered commands addressed to another bot.** `/holding@SomeOtherBot` posted the position. The bot now asks Telegram its own name once and ignores commands naming another.
-- **"not watched" said the ETH was sold when the purchase had been undone.** The tooltip now names both.
+- **Another website could press two of the app's buttons** behind basic auth; every write to `/api` must now be JSON, so a form gets 415.
+- **"8,0773" was stored as 80,773 ETH;** a comma before four or more digits is a decimal point.
+- **The server refused today's date from a reader ahead of its timezone.**
+- **Stats:** Total fees paid left out open trades, the best of a ledger of losses was called the biggest gain, and "no rate" chips sat on the wrong figures.
+- **Alerts and Telegram:** a delivered alert showed "not sent", a goal reached before Telegram was set up was used up, an alert could fire on a trade sold mid-sweep, and the bot answered commands meant for another bot.
 
 ## [1.1.1] - 2026-09-27
 
