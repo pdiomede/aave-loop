@@ -414,7 +414,7 @@ await check('a new trade must say whether it was opened long or short, by id in 
   await api('DELETE', `/api/trades/${upper.data.id}`);
 });
 
-await check('/api/year-end answers only a year that is over, with fixed prices, nulls offline and the year-end rate', async () => {
+await check('/api/year-end answers only a year that is over, nulls offline whatever is fixed, and the year-end rate', async () => {
   const current = new Date().getFullYear();
   const last = current - 1;
   for (const year of [String(current), String(current + 1), 'abc', '2014', '']) {
@@ -431,21 +431,22 @@ await check('/api/year-end answers only a year that is over, with fixed prices, 
   const r = await api('GET', `/api/year-end?year=${last}`);
   assert.equal(r.status, 200);
   assert.equal(r.data.day, `${last}-12-31`);
-  // This server's ETH, BTC and WBTC are fixed, and it is offline: the others are unknown, not guessed.
-  assert.deepEqual(r.data.prices, { ETH: 3000, BTC: 90000, WBTC: 89000, SOL: null, PSOL: null });
-  assert.match(r.data.problems.SOL, /switched off/);
+  // This server is offline: every close is unknown, not guessed. ETH, BTC and
+  // WBTC are fixed here, but that is today's price, not 31 Dec's.
+  assert.deepEqual(r.data.prices, { ETH: null, BTC: null, WBTC: null, SOL: null, PSOL: null });
+  assert.match(r.data.problems.ETH, /switched off/);
   assert.equal(r.data.fx.EURC, 1.04);
   assert.equal(mock.historyCalls, before, 'offline asks nothing');
 });
 
 await check('closingPrices: 31 Dec from CoinGecko\'s 1 Jan history, kept for good, a coin it lacks null and not asked again at once', async () => {
   const file = path.join(tmp, 'close.db');
-  const run = (code) =>
+  const run = (code, extra = {}) =>
     new Promise((resolve, reject) => {
       const child = spawn(process.execPath, ['--input-type=module', '-e', `
         const { closingPrices } = await import('./prices.js');
         ${code}
-      `], { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file, ETHROUNDTRIP_CLOSE_SPACING_MS: '1000' }, stdio: ['ignore', 'pipe', 'pipe'] });
+      `], { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file, ETHROUNDTRIP_CLOSE_SPACING_MS: '1000', ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
       let err = '';
       child.stdout.on('data', (c) => (out += c));
@@ -487,6 +488,9 @@ await check('closingPrices: 31 Dec from CoinGecko\'s 1 Jan history, kept for goo
   assert.match(limited.r.problems.BTC, /rate limiting/);
   assert.equal(limited.sleeping, false, 'the ticker and the alert sweep are not put to sleep');
   assert.equal(limited.error, null);
+  // A fixed price is today's: a past 31 Dec is still looked up.
+  const fixed = await run(`console.log(JSON.stringify(await closingPrices('2023-12-31')));`, { ETHROUNDTRIP_ETH_PRICE: '1234' });
+  assert.equal(fixed.prices.ETH, 3330.5);
 });
 
 await check('a platform can be changed but not cleared, and a trade without one still edits', async () => {

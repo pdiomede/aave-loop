@@ -4095,7 +4095,35 @@ function renderTradesYears() {
   bar.hidden = !show;
   if (!show) return;
   tradesView();
+  // Redrawn on every price, so the row's scroll goes back where it was.
+  const scrolled = mount.querySelector('.years--folders')?.scrollLeft ?? 0;
   setKeepingFocus(mount, yearTabs(tradeYears(state.trades, todayISO()), state.tradesYear, 'trades-year', 'folders'));
+  const row = mount.querySelector('.years--folders');
+  if (row) row.scrollLeft = scrolled;
+  syncYearsOverflow({ reveal: true });
+}
+
+/**
+ * The folder tabs scroll sideways when the years outgrow the width, with no
+ * scrollbar: it would sit under the tabs, off the divider they stand on. So the
+ * row fades out at an edge that has more beyond it (`fade-left`,
+ * `fade-right`), a mouse wheel scrolls it, and the open year is kept in view.
+ */
+function syncYearsOverflow({ reveal = false } = {}) {
+  const row = document.querySelector('#trades-years .years--folders');
+  if (!row || row.closest('[hidden]')) return;
+  const over = row.scrollWidth > row.clientWidth + 1;
+  const open = row.querySelector('.is-active');
+  if (over && reveal && open) {
+    // Measured on screen: `offsetLeft` counts from the page, not the row.
+    const box = row.getBoundingClientRect();
+    const tab = open.getBoundingClientRect();
+    if (tab.left < box.left) row.scrollLeft -= box.left - tab.left;
+    else if (tab.right > box.right) row.scrollLeft += tab.right - box.right;
+  }
+  row.classList.toggle('is-overflowing', over);
+  row.classList.toggle('fade-left', over && row.scrollLeft > 1);
+  row.classList.toggle('fade-right', over && row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
 }
 
 /** Which year the hero's tiles are for, said on the views without the year bar. */
@@ -6581,6 +6609,28 @@ function wire() {
     else coinOpen = null;
   };
   document.addEventListener('scroll', dropCoinList, true);
+  // The folder tabs' fades follow their own scroll, and the window's width.
+  document.addEventListener(
+    'scroll',
+    (e) => {
+      if (e.target?.classList?.contains('years--folders')) syncYearsOverflow();
+    },
+    true,
+  );
+  window.addEventListener('resize', () => syncYearsOverflow({ reveal: true }));
+  // A plain mouse wheel scrolls the tab row sideways while it overflows: with
+  // no scrollbar, a mouse without a sideways wheel had no way to the years
+  // past the edge.
+  document.addEventListener(
+    'wheel',
+    (e) => {
+      const row = e.target.closest?.('.years--folders.is-overflowing');
+      if (!row || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+      row.scrollLeft += e.deltaY;
+    },
+    { passive: false },
+  );
   window.addEventListener('resize', dropCoinList);
 
   document.body.addEventListener('click', (e) => {

@@ -66,7 +66,7 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | --- | --- |
 | `ETHROUNDTRIP_DB` | database file. Always set it when testing. |
 | `ETHROUNDTRIP_FX_OFFLINE=1` / `ETHROUNDTRIP_ETH_OFFLINE=1` | no network lookups at all |
-| `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` / `ETHROUNDTRIP_WBTC_PRICE=96500` / `ETHROUNDTRIP_SOL_PRICE` / `ETHROUNDTRIP_PSOL_PRICE` | a fixed price per market (`<MARKET>_PRICE`), so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market is never fetched |
+| `ETHROUNDTRIP_ETH_PRICE=3450` / `ETHROUNDTRIP_BTC_PRICE=97000` / `ETHROUNDTRIP_WBTC_PRICE=96500` / `ETHROUNDTRIP_SOL_PRICE` / `ETHROUNDTRIP_PSOL_PRICE` | a fixed price per market (`<MARKET>_PRICE`), so alerts can be driven deterministically; read like a typed amount, and a value that is not a usable price is ignored with a warning. A fixed market's live price is never fetched; its year-end close (`/api/year-end`) still is, since the setting fixes today's price only |
 | `ETHROUNDTRIP_BOT_OFF=1` | no Telegram long-poll |
 | `ETHROUNDTRIP_FX_URL` / `ETHROUNDTRIP_ETH_URL` / `ETHROUNDTRIP_TELEGRAM_URL` / `ETHROUNDTRIP_ETHERSCAN_URL` / `ETHROUNDTRIP_SOLANA_URL` | point at a mock |
 | `ETHROUNDTRIP_ALLOWED_HOSTS` | extra Host values, for running behind a proxy |

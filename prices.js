@@ -494,9 +494,10 @@ function historyDate(iso) {
  * `MARKETS`, null where it is not known, with what went wrong per market in
  * `problems`. From `market_close` once fetched, otherwise one CoinGecko
  * history call per market, one after another, through the same base URL, the
- * same offline switch and the same rate-limit sleep as the live prices - one
- * limit is shared by both. A fixed market (`ETHROUNDTRIP_<MARKET>_PRICE`)
- * answers its fixed price, as it does live. Never throws.
+ * same offline switch as the live prices. A fixed market
+ * (`ETHROUNDTRIP_<MARKET>_PRICE`) is looked up like any other: the setting
+ * fixes today's price, and answering it for a past 31 Dec valued that year's
+ * positions at a figure from no day at all. Never throws.
  */
 export async function closingPrices(day) {
   if (!closeInFlight[day]) {
@@ -512,10 +513,6 @@ async function fetchClosing(day) {
   const problems = {};
   let asked = 0;
   for (const market of MARKETS) {
-    if (FIXED[market] !== null) {
-      prices[market] = FIXED[market];
-      continue;
-    }
     let cached = null;
     try {
       if (db.open) cached = selectClose().get(market, day)?.price ?? null;

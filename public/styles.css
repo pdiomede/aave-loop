@@ -513,6 +513,9 @@ a.brand {
 /* Two classes: the pill box's own `.years` rule comes later in the file. */
 .years.years--folders {
   display: flex;
+  /* One line, scrolled: wrapped, as the pills do, a second row of tabs stood
+     on nothing above the first. */
+  flex-wrap: nowrap;
   align-items: flex-end;
   gap: 4px;
   padding: 0;
@@ -526,6 +529,7 @@ a.brand {
 }
 
 .years--folders .years__tab {
+  flex: none;
   min-width: 76px;
   padding: 8px 18px;
   border: 1px solid var(--hairline-strong);
@@ -544,6 +548,20 @@ a.brand {
   background: var(--surface);
   color: var(--text);
   box-shadow: none;
+}
+
+/* More years than the width holds: the row fades out at an edge with more
+   beyond it, so the scroll that has no scrollbar still shows. */
+.years.years--folders.fade-right {
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+}
+
+.years.years--folders.fade-left {
+  mask-image: linear-gradient(to right, transparent, #000 48px);
+}
+
+.years.years--folders.fade-left.fade-right {
+  mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent);
 }
 
 /* Inside the tab, not around it: the tab row scrolls, and a ring drawn outside
