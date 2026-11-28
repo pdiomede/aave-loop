@@ -43,7 +43,7 @@ Fees are in dollars, and swap costs are required. A blank optional fee reads *no
 - **Stats:** performance overall and per platform, split by platform, asset, wallet, currency, month and long or short, with a tab per year. **Export CSV** and a one-page **Statement** PDF of the year's closed trades.
 - **Alerts:** every price alert and when it fired.
 - **Wallets:** your addresses on Ethereum, Base, Arbitrum, Optimism or Solana. **Onchain Data** groups trades by wallet and finds each stage's transaction (see below).
-- **The header's four tiles** follow the Trades year on every view: a past year as it stood on 31 Dec, its gains counted in the year they were repaid and its open positions valued at that day's prices. **Open positions** is what open trades would make if closed today (or on 31 Dec, for a past year). The table shows the same figure tagged `est`.
+- **The header's four tiles** follow the Trades year on Trades, Alerts and Wallets (Stats has its own overview, with the same Est. gain): a past year as it stood on 31 Dec, its gains counted in the year they were repaid and its open positions valued at that day's prices. **Open positions** is what open trades would make if closed today (or on 31 Dec, for a past year). The table shows the same figure tagged `est`.
 
 ## The math
 

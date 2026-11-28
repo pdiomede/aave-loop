@@ -23,6 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The header's prices line up in columns:** each market's price, 1h, 24h and 7d stand under the others'; SOL's shorter price pushed its badges out of line.
 - **The Trades page opens on its figures:** the "Leverage trades" heading and its description are gone.
 - **Stats' All tab opens on an overview, "Overview (All years combined)",** as each year's tab does: Realized net gain, Blended annualized, Closed trades and Open positions.
+- **Stats no longer shows the header's tiles:** they follow the Trades year, and put a second year's figures above Stats' own. Its overview's Open positions carries the Est. gain line instead, kept current as prices and rates arrive.
 - **The landing page's step 2 reads "Buy ETH, BTC or SOL",** not "Buy ETH or cbBTC", and its four cards sit one, two or four across, never three with one left over.
 
 ### Fixed

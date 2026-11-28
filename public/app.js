@@ -1181,6 +1181,7 @@ function adoptQuotes(quotes) {
   // Only once the tiles are up: a quote landing before the trades would
   // otherwise draw a ledger of zeros that the trades then replace.
   if (document.getElementById('hero-stats')?.childElementCount) renderHeroStats();
+  refreshStatsOverview();
   refreshEstimateCells();
 }
 
@@ -1343,6 +1344,7 @@ async function loadFxNow() {
   if (seq !== fxNowSeq) return;
   for (const [c, rate] of got) if (isNum(rate) && rate > 0) state.fxNow[c] = rate;
   if (document.getElementById('hero-stats')?.childElementCount) renderHeroStats();
+  refreshStatsOverview();
   refreshEstimateCells();
 }
 
@@ -3843,14 +3845,20 @@ function renderStatsView() {
         }</p>`;
 
   // The year's own realized gain and blended rate. The Performance card leaves
-  // those two out because the hero has them, so without this a year tab stated
-  // neither: the one figure a year view is for, computed in `summaryReport`
-  // and then drawn nowhere. All has one too, by the user's choice, though it
-  // repeats the hero: every tab opens on its overview. Open positions show on
-  // All, which holds them, as on the current year's tab.
+  // those two out, so without this a year tab stated neither: the one figure a
+  // year view is for, computed in `summaryReport` and then drawn nowhere. Every
+  // tab opens on its overview, All too, by the user's choice. Open positions
+  // show on All, which holds them, as on the current year's tab.
+  //
+  // With its Est. gain under Open positions, the header's own line: the header
+  // is not drawn on Stats, so this tile is the one place that estimate shows.
+  // Over the tab's trades, at today's prices: open trades are filed under the
+  // current year (and All), the only tabs with the tile.
+  const openTab = year === current || year === 'all';
+  statsOverview = { r, open: openTab, view: { snapshot: trades, end: asOf, past: false } };
   const overview = summaryCard(
     year === 'all' ? 'Overview (All years combined)' : `${year} overview`,
-    `<div class="stats stats--year">${statTiles(r, { open: year === current || year === 'all' })}</div>`,
+    `<div class="stats stats--year" id="stats-overview-tiles">${statsOverviewTiles()}</div>`,
   );
 
   // "This year" only on the current year's tab: on 2025 it would read as the
@@ -3941,7 +3949,7 @@ function renderStatsView() {
  * tile on a past year, where it could only ever read 0: open trades are filed
  * under the current year.
  */
-function statTiles(s, { open = true, estimate = false } = {}) {
+function statTiles(s, { open = true, estimate = false, view } = {}) {
   const tiles = [
     {
       // Not "$0" when no closed trade has a rate yet. Those trades made a real
@@ -3969,10 +3977,11 @@ function statTiles(s, { open = true, estimate = false } = {}) {
       value: s.openCount
         ? `${s.openCount}${isNum(s.deployed) ? ` (${usd(s.deployed)})` : ''}${s.deployedMissingFx ? ` ${RATE_MISSING}` : ''}`
         : '0',
-      // The hero only. It is redrawn on every ETH quote and the Stats view is
-      // not, so the year tile drew the estimate once and then sat on it - a dash
-      // for good when it was drawn before the first price arrived.
-      sub: estimate && s.openCount ? openGainLines() : [],
+      // The header's and Stats' overview, each redrawn on every quote and rate
+      // (`renderHeroStats`, `refreshStatsOverview`): drawn once with the rest of
+      // Stats, the tile sat on its first estimate - a dash for good when it was
+      // drawn before the first price arrived.
+      sub: estimate && s.openCount ? openGainLines(view) : [],
     },
   ];
   return tiles
@@ -4002,12 +4011,11 @@ function statTiles(s, { open = true, estimate = false } = {}) {
  * Without its market's price a held trade is unknown, a dollar loan included,
  * and blaming the exchange rate would name the wrong absence.
  */
-function openGainLines() {
+function openGainLines(v = tradesView(), year = state.tradesYear) {
   // The year's open positions as they stood at its end: a past year's at the
   // prices and rates of its 31 Dec (`state.yearEnd`), the current year and
-  // All at today's.
-  const v = tradesView();
-  const year = state.tradesYear;
+  // All at today's. `v` is the Trades year's view for the header, or Stats'
+  // tab as one of the same shape (`statsOverview`).
   const ye = v.past ? state.yearEnd[year] : null;
   const prices = v.past ? (ye?.prices ?? {}) : priceMap();
   const fx = v.past ? (ye?.fx ?? {}) : state.fxNow;
@@ -4164,6 +4172,24 @@ function renderHeroScope(v = tradesView()) {
       : v.past
         ? `${state.tradesYear}, as of 31 Dec ${state.tradesYear}`
         : `${state.tradesYear} to date`;
+}
+
+/** What Stats' overview tiles were last drawn from, for redrawing their estimate. */
+let statsOverview = null;
+
+const statsOverviewTiles = () =>
+  statTiles(statsOverview.r, { open: statsOverview.open, estimate: statsOverview.open, view: statsOverview.view });
+
+/**
+ * Redraw Stats' overview tiles alone when a price or a rate lands, as the
+ * header's are: their Est. gain is the only figure on Stats that moves with
+ * the market, and redrawing the whole view on every quote would be heavier
+ * for nothing.
+ */
+function refreshStatsOverview() {
+  const el = document.getElementById('stats-overview-tiles');
+  if (!el || !statsOverview || state.view !== 'stats') return;
+  setKeepingFocus(el, statsOverviewTiles());
 }
 
 /**
@@ -5508,6 +5534,9 @@ function render() {
   // view, so its wallet picker follows the list from here.
   syncNewTradeWallet();
   renderTradesYears();
+  // Not on Stats: its folder has its own year and its own overview, and the
+  // header above it, on the Trades year, put two years' figures on one page.
+  document.querySelector('.hero').hidden = state.view === 'stats';
   if (state.loadFailed) {
     renderHeroScope();
     document.getElementById('hero-stats').innerHTML = '';
