@@ -331,6 +331,7 @@ const borrow = (over = {}) => ({
   borrow_currency: 'USDC',
   borrow_apr: '4',
   platform: 'aave',
+  side: 'long',
   ...over,
 });
 const buy = { buy_date: '2026-09-01', buy_amount: '30000', buy_eth: '10', buy_gas_usd: '3' };
@@ -367,6 +368,28 @@ await check('a new trade must say where it was run, Aave, Ether.fi or Morpho, by
   await api('DELETE', `/api/trades/${morpho.data.id}`);
 });
 
+await check('a new trade must say whether it was opened long or short, by id in any case', async () => {
+  const { side, ...none } = borrow();
+  const missing = await api('POST', '/api/trades', none);
+  assert.equal(missing.status, 400);
+  assert.equal(missing.data.field, 'side');
+  const other = await api('POST', '/api/trades', borrow({ side: 'sideways' }));
+  assert.equal(other.status, 400);
+  assert.equal(other.data.field, 'side');
+  assert.equal(other.data.error, 'Pick long or short.');
+  const upper = await api('POST', '/api/trades', borrow({ side: ' SHORT ' }));
+  assert.equal(upper.status, 201);
+  assert.equal(upper.data.side, 'short');
+  // Changed, but never cleared.
+  const cleared = await api('PATCH', `/api/trades/${upper.data.id}`, { side: '' });
+  assert.equal(cleared.status, 400);
+  assert.equal(cleared.data.field, 'side');
+  const moved = await api('PATCH', `/api/trades/${upper.data.id}`, { side: 'long' });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.data.side, 'long');
+  await api('DELETE', `/api/trades/${upper.data.id}`);
+});
+
 await check('a platform can be changed but not cleared, and a trade without one still edits', async () => {
   const cleared = await api('PATCH', `/api/trades/${t1.id}`, { platform: '' });
   assert.equal(cleared.status, 400);
@@ -400,7 +423,7 @@ await check('a purchase must say what its swap cost, and 0 is a cost', async () 
 await check('a Jupiter or Kamino trade saves its swaps with no cost: Solana records no gas', async () => {
   const sol = (
     await api('POST', '/api/trades', {
-      borrow_date: '2026-09-01', borrow_amount: '15000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter',
+      borrow_date: '2026-09-01', borrow_amount: '15000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter', side: 'long',
     })
   ).data;
   const bought = await api('PATCH', `/api/trades/${sol.id}`, { buy_date: '2026-09-01', buy_amount: '15000', buy_eth: '100', asset: 'sol' });
@@ -423,7 +446,7 @@ await check('a Jupiter or Kamino trade saves its swaps with no cost: Solana reco
 await check("a cbBTC quantity left after switching to ETH is refused, not kept as ETH at $97,000", async () => {
   const t = (
     await api('POST', '/api/trades', {
-      borrow_date: '2026-09-01', borrow_amount: '9700', borrow_currency: 'USDC', borrow_apr: '4', platform: 'aave',
+      borrow_date: '2026-09-01', borrow_amount: '9700', borrow_currency: 'USDC', borrow_apr: '4', platform: 'aave', side: 'long',
       buy_date: '2026-09-01', buy_amount: '9700', buy_eth: '0.1', buy_gas_usd: '1', asset: 'cbbtc',
     })
   ).data;
@@ -1777,7 +1800,7 @@ await check('a Solana loop is found by its mints and its SOL, and each signature
   ];
   const t = (
     await api('POST', '/api/trades', {
-      borrow_date: day, borrow_amount: '20000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter', wallet_id: wallet.id,
+      borrow_date: day, borrow_amount: '20000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter', side: 'long', wallet_id: wallet.id,
       buy_date: day, buy_amount: '20000', buy_eth: '133.3333', buy_gas_usd: '0.01', asset: 'sol',
       sell_date: next, sell_amount: '21000', sell_eth: '133.3333', sell_gas_usd: '0.01',
       repay_date: next, repay_amount: '20005',
@@ -1811,7 +1834,7 @@ await check("Solana's node refusing the key, or a rate limit, is said in words, 
   mock.sol_rpc.txs = [];
   const t = (
     await api('POST', '/api/trades', {
-      borrow_date: day, borrow_amount: '20000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'kamino', wallet_id: wallet.id,
+      borrow_date: day, borrow_amount: '20000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'kamino', side: 'long', wallet_id: wallet.id,
     })
   ).data;
   mock.sol_rpc.status = 401;
@@ -1854,7 +1877,7 @@ await check('the audit reads a Solana signature from its node and judges it as a
   ];
   const t = (
     await api('POST', '/api/trades', {
-      borrow_date: day, borrow_amount: '15000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter', wallet_id: wallet.id,
+      borrow_date: day, borrow_amount: '15000', borrow_currency: 'USDC', borrow_apr: '6', platform: 'jupiter', side: 'long', wallet_id: wallet.id,
       buy_date: day, buy_amount: '15000', buy_eth: '100', buy_gas_usd: '0.01', asset: 'sol',
     })
   ).data;
@@ -2775,6 +2798,46 @@ await check('set-platform: a dry run writes nothing, --apply sets Aave on the re
   runIt('--etherfi', String(b), '--apply');
   assert.deepEqual(platforms(), ['aave', 'etherfi', 'etherfi'], `#${a} Aave, #${b} and #${c} Ether.fi`);
   assert.match(runIt('--apply'), /Nothing to change/);
+  db.close();
+});
+
+await check('set-side: a dry run writes nothing, --apply marks every trade without a side Long and keeps a set one', async () => {
+  const file = path.join(tmp, 'side.db');
+  const runIt = (...args) =>
+    execFileSync(process.execPath, ['scripts/set-side.mjs', ...args], {
+      cwd: root,
+      env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file },
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  // A missing ledger is refused, and none is made.
+  assert.throws(() => runIt(), /No database at .*side\.db/);
+  assert.equal(fs.existsSync(file), false);
+  execFileSync(process.execPath, ['--input-type=module', '-e', "const { closeDb } = await import('./db.js'); closeDb();"], {
+    cwd: root,
+    env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file },
+    stdio: 'ignore',
+  });
+  // Three trades: an open one and a repaid one with no side, and a short.
+  const db = new Database(file);
+  const now = new Date().toISOString();
+  const add = db.prepare(`INSERT INTO trades (borrow_date, borrow_amount, borrow_currency, borrow_apr,
+    platform, side, repay_date, repay_amount, created_at, updated_at) VALUES ('2026-08-01', 1000, 'USDC', 4, 'aave', ?, ?, ?, ?, ?)`);
+  add.run(null, null, null, now, now);
+  add.run(null, '2026-08-03', 1000, now, now);
+  add.run('short', null, null, now, now);
+  const sides = () => db.prepare('SELECT side FROM trades ORDER BY id').all().map((r) => r.side);
+
+  assert.throws(() => runIt('--force'), /Unknown argument/);
+  assert.match(runIt(), /Dry run: 2 trades would change/);
+  assert.deepEqual(sides(), [null, null, 'short']);
+  assert.match(runIt('--apply'), /Marked 2 trades as Long/);
+  assert.deepEqual(sides(), ['long', 'long', 'short'], 'open and repaid alike, the short kept');
+  assert.match(runIt('--apply'), /Nothing to change/);
+  // A side that is neither is refused, not overwritten with Long.
+  db.prepare("UPDATE trades SET side = 'Shrot' WHERE id = 3").run();
+  assert.throws(() => runIt('--apply'), /#3 has side "Shrot".*Nothing was written/s);
+  assert.deepEqual(sides(), ['long', 'long', 'Shrot']);
   db.close();
 });
 

@@ -223,6 +223,13 @@ check('a repayment is judged against the loan as printed, to the cent', () => {
   assert.notEqual(validateField('borrow_amount', '10000.005', { repay_amount: 10000 }), null);
 });
 
+check('the side is required, long or short in any case', () => {
+  assert.equal(validateField('side', ''), 'Long or short is required.');
+  assert.equal(validateField('side', 'sideways'), 'Pick long or short.');
+  assert.equal(validateField('side', 'long'), null);
+  assert.equal(validateField('side', 'Short'), null);
+});
+
 check('the platform is required, one of Aave, Ether.fi, Morpho, Jupiter or Kamino, and kept as a word', () => {
   assert.equal(validateField('platform', ''), 'Platform is required.');
   assert.equal(validateField('platform', 'uniswap'), 'Pick a platform.');

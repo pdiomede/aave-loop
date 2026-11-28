@@ -3,6 +3,29 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **A trade says whether it was opened Long or Short:** a third picker in the new trade's heading, "open as", starts empty and is required, as the platform is; the Borrowed card shows it and its editor changes it. A label only for now: every figure is still worked out as a long.
+- **The Trades table and Onchain Data mark each trade's side** with a green up or red down arrow before its coin, named on hover.
+- **Stats has a By Long/Short card,** laid out like By month closed: closed trades and net gain per side, with a Not recorded row for trades from before the side was asked for.
+- **`scripts/set-side.mjs` marks every trade with no side as Long** (dry run unless `--apply`); a side already set is kept, and one that is neither refuses the run.
+- **The landing page and the social card (`og8.png`) say trades are tracked long or short;** the card's ECB rates pill made room for it.
+- **The Statement PDF links the European Central Bank reference rate** in its note to the ECB's rate tables, as the Stats page does.
+
+### Changed
+
+- **The header's prices line up in columns:** each market's price, 1h, 24h and 7d stand under the others'; SOL's shorter price pushed its badges out of line.
+- **The Trades page opens on its figures:** the "Leverage trades" heading and its description are gone.
+- **Stats' All tab opens on an overview, "Overview (All years combined)",** as each year's tab does: Realized net gain, Blended annualized, Closed trades and Open positions.
+- **The landing page's step 2 reads "Buy ETH, BTC or SOL",** not "Buy ETH or cbBTC", and its four cards sit one, two or four across, never three with one left over.
+
+### Fixed
+
+- **The ruled line above Stats' Total rows is drawn, and thicker:** a later rule for a table's last row took it away, so only the row hairline showed.
+- **The new trade's heading wraps a word with its picker:** "from" and "open as" no longer end one line with their picker on the next.
+
 ## [2.3.0] - 2026-11-27
 
 ### Added

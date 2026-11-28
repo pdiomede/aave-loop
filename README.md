@@ -4,6 +4,7 @@ Track leveraged trade cycles: borrow a stablecoin, buy an asset, sell it, repay 
 
 - **Platforms:** Aave, Ether.fi, Morpho; on Solana, Jupiter and Kamino.
 - **Assets:** ETH, cbBTC (valued at BTC's price), WBTC, SOL, PSOL.
+- **Sides:** each trade is marked Long or Short (a label for now: every figure is worked out as a long).
 - **Borrowed in:** USDC, USDT, DAI, GHO or EURC. Every total is in US dollars, to the cent.
 
 A local web app on SQLite: no account, no wallet connection. Release notes in [CHANGELOG.md](CHANGELOG.md), licence [MIT](LICENSE.md).
@@ -21,6 +22,7 @@ Opens on http://localhost:3000 (Node 18+). If the port is taken it moves to the 
 | `./resetDatabase.sh` | empties the ledger, after a backup to `data/backups` |
 | `./backupDatabase.sh` | backs up while the server runs (`--help` for the cron line) |
 | `node scripts/set-platform.mjs --etherfi <id> --apply` | fills in the platform on old trades (dry run without `--apply`) |
+| `node scripts/set-side.mjs --apply` | marks every trade with no side as Long (dry run without `--apply`) |
 | `node scripts/audit-hashes.mjs` | checks stored transaction hashes against their trades |
 | `npm run check` | runs the offline test suites |
 
@@ -28,7 +30,7 @@ Opens on http://localhost:3000 (Node 18+). If the port is taken it moves to the 
 
 | Stage | You enter | Status |
 | --- | --- | --- |
-| Borrow | platform, date, coin, amount, APR, gas (optional) | `OPEN` |
+| Borrow | platform, long or short, date, coin, amount, APR, gas (optional) | `OPEN` |
 | Buy | asset, date, amount spent and received, swap costs | `HOLDING` |
 | Sell | date, amount sold and received, swap costs | `SOLD` |
 | Repay | date, amount repaid, gas (optional) | `CLOSED` |
@@ -37,8 +39,8 @@ Fees are in dollars, and swap costs are required. A blank optional fee reads *no
 
 ## The views
 
-- **Trades:** the history table. Expand a row to edit its stages. The chips beside History (All, Closed, Open, Holding) filter it; Open includes trades sold but not yet repaid.
-- **Stats:** performance overall and per platform, split by platform, asset, wallet, currency and month, with a tab per year. **Export CSV** and a one-page **Statement** PDF of the year's closed trades.
+- **Trades:** the history table, each trade's side marked by a green up (Long) or red down (Short) arrow before its coin. Expand a row to edit its stages. The chips beside History (All, Closed, Open, Holding) filter it; Open includes trades sold but not yet repaid.
+- **Stats:** performance overall and per platform, split by platform, asset, wallet, currency, month and long or short, with a tab per year. **Export CSV** and a one-page **Statement** PDF of the year's closed trades.
 - **Alerts:** every price alert and when it fired.
 - **Wallets:** your addresses on Ethereum, Base, Arbitrum, Optimism or Solana. **Onchain Data** groups trades by wallet and finds each stage's transaction (see below).
 - **Open positions** (header): what open trades would make if closed today. The table shows the same figure tagged `est`.

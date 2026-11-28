@@ -111,7 +111,9 @@ check('a well-formed PDF: offsets, stream length, trailer, one page', () => {
   assert.ok(pdf.startsWith('xref\n', startxref), 'startxref points at the table');
   const table = pdf.slice(startxref).split('\n');
   const [, count] = table[1].split(' ').map(Number);
-  assert.equal(count, 10, 'eight fixed objects and the site link');
+  const links = (pdf.match(/\/Subtype \/Link /g) ?? []).length;
+  assert.ok(links >= 2, 'the site and the ECB');
+  assert.equal(count, 9 + links, 'eight fixed objects and the links');
   for (let n = 1; n < count; n += 1) {
     const offset = Number(table[2 + n].slice(0, 10));
     assert.ok(pdf.startsWith(`${n} 0 obj\n`, offset), `object ${n} at ${offset}`);
@@ -180,8 +182,18 @@ check('the period: the year to date, or the whole of a past year', () => {
 check('the header names the site and links to it', () => {
   const pdf = build(sample);
   assert.ok(shows(pdf, 'ETH Roundtrip') && shows(pdf, ' :: ethroundtrip.com'));
-  assert.match(pdf, /\/Annots \[9 0 R\]/);
+  assert.match(pdf, /\/Annots \[9 0 R[\d R]*\]/);
   assert.match(pdf, /\/Subtype \/Link \/Rect \[[\d. ]+\] \/Border \[0 0 0\] \/A << \/S \/URI \/URI \(https:\/\/ethroundtrip\.com\) >>/);
+});
+
+check('the note links the European Central Bank reference rate to its tables, as Stats does', () => {
+  const pdf = build(sample);
+  const ecb = 'https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html';
+  const hits = pdf.split(`/URI ${pdfString(ecb)}`).length - 1;
+  assert.ok(hits >= 1 && hits <= 2, `one link, or two when the name wraps: ${hits}`);
+  // Every word of the name is drawn in the accent colour, whichever line it is on.
+  const accent = [...pdf.matchAll(/0\.420 0\.400 1\.000 rg [\d. ]+ Td \(([^)]*)\) Tj/g)].map((m) => m[1]).join(' ');
+  assert.ok(accent.includes('European') && accent.includes('reference rate'), accent);
 });
 
 check('a figure that prints as zero carries no minus, and is not called a loss', () => {

@@ -14,6 +14,7 @@ npm start                    # node server.js, no port hunting
 npm run check                # scripts/check-calc.mjs, check-input.mjs, check-statement.mjs, then check-server.mjs
 node scripts/check-server.mjs  # one suite on its own; there is no per-check filter
 node scripts/set-platform.mjs --etherfi <id> [--apply]  # fill in old trades' platform; dry run without --apply
+node scripts/set-side.mjs [--apply]  # mark every trade with no side Long; dry run without --apply
 node scripts/audit-hashes.mjs [--apply]  # check every stored hash against its trade; --apply forgets wrong searched ones
 ```
 
@@ -35,7 +36,7 @@ when you change what the statement prints.
 database in a temp directory with Telegram, the price service and the rate service
 mocked on loopback, and checks the API's write rules, the alert message (its lines
 must add up to its Gain), every way the alert sweep handles a failed send, the bot's
-reports and where `/watch` sends them, `scripts/set-platform.mjs`, `scripts/audit-hashes.mjs`, and `fx.js`'s
+reports and where `/watch` sends them, `scripts/set-platform.mjs`, `scripts/set-side.mjs`, `scripts/audit-hashes.mjs`, and `fx.js`'s
 stand-ins and refusals (`fxChild` runs it in a child against a database of its own);
 add a case there when you change any of those. It never touches the network or `data/myaave.db`, and takes about ten
 seconds. A check is only worth adding if it fails on the old code: revert the fix
@@ -528,6 +529,22 @@ ledger read-only; `--apply` forgets the WRONG *searched* hashes in a conditional
 and reports pasted ones only. A PATCH that undoes a stage deletes its hash, pasted too. It exists because hashes stored before
 a matching rule was tightened are never looked at again. `scripts/check-server.mjs` mocks Etherscan on loopback.
 
+### Long or short
+
+`SIDES` / `SIDE_META` in `lib/calc.js` are the side a trade was opened as (`long`,
+`short`), stored lowercase in `trades.side`. **A label only for now:** `derive` and
+every figure still work a trade out as a long (borrow the coin, buy the asset), so a
+short reads its result as a long would; the real logic comes later. Like the
+platform it is required on a new trade (the "open as" picker in the heading,
+`sideHeadPicker`, starts empty), refused blank by a PATCH, and nullable: a trade from
+before it was asked for has none until `scripts/set-side.mjs` marks it Long (dry run
+unless `--apply`; a side that is neither refuses the run). `tradeRow` draws its arrow
+before the coin (`sideMark`, a CSS tip, not a tab stop), so the Trades table and
+Onchain Data both show it; the Borrowed card shows it and its editor changes it.
+Stats' By Long/Short is `summaryReport().bySide`, built like `byMonth` over closed
+trades with a dollar result, so its rows add up to Realized net gain, with a
+not-recorded row. The CSV, the Statement PDF and Telegram do not name it yet.
+
 ### Platforms
 
 `PLATFORMS` / `PLATFORM_META` in `lib/calc.js` are where a trade ran (`aave`,
@@ -702,7 +719,7 @@ Two rules the production nginx imposes on the pages, both enforced by `npm run c
   the coin, platform (`aave.png`, `etherfi.png`, `morpho.jpg`, `jupiter.jpg`, `kamino.jpg`)
   and asset (`eth.png`, `cbbtc.png`, `wbtc.png`, `sol.jpg`, `psol.png`) marks are all
   copies, so a new platform or asset needs its logo copied there and named on the landing
-  page. Opaque square art is drawn to fill its disc (`ASSET_META.fill`, SOL's). The social card (`og7.png`, drawn
+  page. Opaque square art is drawn to fill its disc (`ASSET_META.fill`, SOL's). The social card (`og8.png`, drawn
   from `scripts/og.html` with headless Chrome) names the assets too; redraw it under
   a new name once production has served the old one, since scrapers cache by URL. `scripts/check-calc.mjs` reads every `src`,
   `srcset`, loading `<link>`, `og:image`/`twitter:image` and CSS `url()` of the public

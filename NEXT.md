@@ -46,6 +46,24 @@ Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
 `/home/paolo/backup/aaveloop` holds one `myaave-...db` from 03:00 every night, 11 to
 24 Nov, fourteen in all as `--keep 14` asks.
 
+## Unreleased (28 Nov): Long or short on a trade
+
+Not released or deployed yet. The `side` column is added by itself on the first
+start (nullable, so an older copy on the same database simply never names it, though
+its page cannot set one, and a new trade it creates has none). No new setting and
+no inline script changed, so nginx's CSP is untouched. After the pull and restart:
+
+- **Back up, then mark the existing trades Long:**
+  `cd /var/www/aave && ./backupDatabase.sh`, then
+  `sudo -u myaave node scripts/set-side.mjs` (a dry run listing every trade), then
+  the same with `--apply`. Run it again: it should answer "Nothing to change."
+- **The social card is now `og8.png`; `og7.png` is gone.** Ask @WebpageBot (Telegram)
+  and LinkedIn's Post Inspector to fetch `https://ethroundtrip.com/` again;
+  `curl -sI https://ethroundtrip.com/landing/og8.png | head -1` should answer 200.
+- **Check:** the Trades rows show a green up arrow before the coin; New trade asks
+  "open as"; Stats has By Long/Short; the landing page has the "Long or short, kept
+  apart" card.
+
 ## 2.3.0 (27 Nov): History filters by status
 
 Not deployed yet. Nothing on the VPS beyond the usual pull and restart: no

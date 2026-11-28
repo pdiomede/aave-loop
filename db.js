@@ -87,6 +87,7 @@ db.exec(`
     platform        TEXT,
     asset           TEXT    NOT NULL DEFAULT 'eth',
     wallet_id       INTEGER REFERENCES wallets(id),
+    side            TEXT,
     created_at      TEXT    NOT NULL,
     updated_at      TEXT    NOT NULL
   );
@@ -442,6 +443,12 @@ const ASSET_COLUMNS = [['asset', "TEXT NOT NULL DEFAULT 'eth'"]];
 // is NULL. Same pairing again - the DDL and this list both carry it.
 const WALLET_COLUMNS = [['wallet_id', 'INTEGER REFERENCES wallets(id)']];
 
+// The side a trade was opened as, one of SIDES in lib/calc.js. Nullable, as
+// the platform is: a trade from before it was asked for has none until
+// scripts/set-side.mjs marks it, and a default would state something nobody
+// recorded. Same pairing again - the DDL and this list both carry it.
+const SIDE_COLUMNS = [['side', 'TEXT']];
+
 // The market an alert's goal is a price of, 'ETH', 'BTC' or 'WBTC', written when it
 // is saved. The trade's asset can change after an alert has fired, and a
 // fired ETH goal read back off what is now a cbBTC trade would be listed as a
@@ -473,6 +480,7 @@ db.transaction(() => {
   addMissingColumns('trades', PLATFORM_COLUMNS);
   addMissingColumns('trades', ASSET_COLUMNS);
   addMissingColumns('trades', WALLET_COLUMNS);
+  addMissingColumns('trades', SIDE_COLUMNS);
   // After the column, which an existing ledger has only from the line above.
   // Deleting a wallet looks its trades up by it, and so does the foreign key.
   db.exec('CREATE INDEX IF NOT EXISTS idx_trades_wallet ON trades (wallet_id)');
@@ -514,6 +522,7 @@ export const FIELDS = [
   'platform',
   'asset',
   'wallet_id',
+  'side',
   'notes',
 ];
 

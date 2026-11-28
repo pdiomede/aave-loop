@@ -6,7 +6,7 @@
     <title>ETH Roundtrip</title>
     <meta
       name="description"
-      content="Track leveraged trade cycles on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan, and see what the round trip actually earned."
+      content="Track leveraged trade cycles, long or short, on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan, and see what the round trip actually earned."
     />
     <meta name="color-scheme" content="light dark" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -28,8 +28,8 @@
     <meta property="og:site_name" content="ETH Roundtrip" />
     <meta property="og:url" content="https://ethroundtrip.com/" />
     <meta property="og:title" content="ETH Roundtrip - every loop, measured" />
-    <meta property="og:description" content="Track leveraged trade cycles on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
-    <meta property="og:image" content="https://ethroundtrip.com/landing/og7.png" />
+    <meta property="og:description" content="Track leveraged trade cycles, long or short, on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
+    <meta property="og:image" content="https://ethroundtrip.com/landing/og8.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -38,8 +38,8 @@
     <!-- X reads its own namespace and falls back to og: for anything missing. -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="ETH Roundtrip - every loop, measured" />
-    <meta name="twitter:description" content="Track leveraged trade cycles on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
-    <meta name="twitter:image" content="https://ethroundtrip.com/landing/og7.png" />
+    <meta name="twitter:description" content="Track leveraged trade cycles, long or short, on Aave, Ether.fi, Morpho, Jupiter and Kamino: borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan, and see what the round trip actually earned after its interest and fees." />
+    <meta name="twitter:image" content="https://ethroundtrip.com/landing/og8.png" />
     <meta name="twitter:image:alt" content="ETH Roundtrip: every loop, measured." />
     <script>
       // Applied before first paint so a dark session never flashes white. Same
@@ -79,8 +79,8 @@
         <h1 class="hero__title">Every loop, measured.</h1>
         <p class="hero__sub">
           Borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan.<br />
-          This keeps every cycle in one place and tells you what the round trip actually
-          earned, after its interest and&nbsp;fees.
+          This keeps every cycle in one place, long or short, and tells you what the
+          round trip actually earned, after its interest and&nbsp;fees.
         </p>
 
         <div class="hero__actions">
@@ -147,6 +147,20 @@
               </p>
             </article>
 
+            <article class="card">
+              <span class="card__glyph">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M8 19V5M3.5 9.5 8 5l4.5 4.5" />
+                  <path d="M16 5v14M11.5 14.5 16 19l4.5-4.5" />
+                </svg>
+              </span>
+              <h3 class="card__title">Long or short, kept apart</h3>
+              <p class="card__body">
+                Each trade says which side it was opened on, marked with an arrow in the
+                history, and Stats adds up the closed results of each side on its&nbsp;own.
+              </p>
+            </article>
+
           </div>
 
           <div class="coins">
@@ -199,14 +213,15 @@
               <span class="step__n">1</span>
               <h3 class="step__title">Borrow</h3>
               <p class="step__body">
-                Where it runs, the amount, the coin and the rate you are paying for it.
+                Where it runs, long or short, the amount, the coin and the rate you are
+                paying for it.
               </p>
               <span class="status">OPEN</span>
             </article>
 
             <article class="step">
               <span class="step__n">2</span>
-              <h3 class="step__title">Buy ETH or cbBTC</h3>
+              <h3 class="step__title">Buy ETH, BTC or SOL</h3>
               <p class="step__body">
                 What you spent and how much it bought, which gives your entry price.
               </p>

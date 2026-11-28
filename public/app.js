@@ -13,6 +13,8 @@ import {
   CURRENCY_META,
   PLATFORMS,
   PLATFORM_META,
+  SIDES,
+  SIDE_META,
   ASSETS,
   ASSET_META,
   MARKETS,
@@ -311,6 +313,12 @@ const TIPS = {
     netGain: 'Dollar result this month, after gas.',
     share: "This month's result compared with the largest month in the table.",
   },
+  side: {
+    side: 'The side the trade was opened as. A trade from before it was asked for has none, and its own row.',
+    trades: 'Closed trades opened on this side with a dollar result.',
+    netGain: 'Dollar result of closed trades opened on this side, after gas.',
+    share: "This row's result compared with the largest in the table.",
+  },
   noRate: 'No rate yet. Use Fetch rates on Stats.',
   estToday: "Estimated at today's exchange rate. This trade's own rate is not fetched yet; it is looked up every hour.",
   alerts: {
@@ -515,7 +523,7 @@ function loadSort() {
 // Every card that folds: on Stats one Performance card per platform and the
 // breakdown tables, and on Wallets the Addresses card. A key no longer
 // here is dropped on load.
-const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-wallet', 'by-asset', 'by-currency', 'by-month', 'addresses'];
+const FOLDING_CARDS = [...PLATFORMS, 'by-platform', 'by-wallet', 'by-asset', 'by-currency', 'by-month', 'by-side', 'addresses'];
 
 function loadStatsOpen() {
   try {
@@ -1504,8 +1512,38 @@ const networkPickFace = (n) =>
     ? `${chainMark(n)}<span class="coin-select__ticker">${esc(NETWORK_META[n].label)}</span>`
     : '<span class="coin-select__placeholder">Pick a chain</span>';
 
+/**
+ * The side a trade was opened as: an arrow, green and up for a long, red and
+ * down for a short. Drawn in the picker, before the coin on the Trades table,
+ * and in Stats' By Long/Short.
+ */
+function sideArrow(side) {
+  if (!SIDES.includes(side)) return '';
+  const path = side === 'long' ? 'M12 19V5M5.5 11.5L12 5l6.5 6.5' : 'M12 5v14M5.5 12.5L12 19l6.5-6.5';
+  return `<svg class="side-arrow side-arrow--${side}" width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}" /></svg>`;
+}
+
+// Long or Short in the picker, or its prompt: a new trade's starts empty, so
+// Create trade cannot guess one, as it cannot a platform.
+const sideFace = (s) =>
+  SIDE_META[s]
+    ? `${sideArrow(s)}<span class="coin-select__ticker">${esc(SIDE_META[s].label)}</span>`
+    : '<span class="coin-select__placeholder">Pick a side</span>';
+
+/**
+ * The Trades table's mark of a trade's side, with its name as a tip on hover
+ * and for a screen reader; nothing when none is recorded. Not a tab stop: one
+ * on every row doubled the Tabs it takes to cross the table, and the arrow's
+ * direction and colour already say it.
+ */
+const sideMark = (t) =>
+  SIDE_META[t.side]
+    ? `<span class="side-mark side-mark--${t.side}" data-tip="${esc(SIDE_META[t.side].label)}">${sideArrow(t.side)}<span class="sr-only">${esc(SIDE_META[t.side].label)}</span></span>`
+    : '';
+
 // What each kind of picker draws on its button and in its list.
-const FACES = { coin: coinFace, platform: platformFace, asset: assetFace, wallet: walletFace, network: networkPickFace };
+const FACES = { coin: coinFace, platform: platformFace, asset: assetFace, wallet: walletFace, network: networkPickFace, side: sideFace };
 const faceOf = (box) => FACES[box.dataset.kind] ?? coinFace;
 
 const CHECK_SVG = `<svg class="coin-select__check" width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -1687,6 +1725,8 @@ function field({
     control = coinSelect({ id, name, value, options, req, kind: 'platform' });
   } else if (options && name === 'wallet_id') {
     control = coinSelect({ id, name, value, options, req, kind: 'wallet' });
+  } else if (options && name === 'side') {
+    control = coinSelect({ id, name, value, options, req, kind: 'side' });
   } else if (options && name === 'wallet_network') {
     control = coinSelect({ id, name, value, options, req, kind: 'network' });
   } else if (options) {
@@ -1789,6 +1829,17 @@ function platformHeadPicker() {
   </div>`;
 }
 
+/**
+ * The new trade's side, last in the card's heading ("open as"), tied to the
+ * borrow form by `form=` as the platform is. Starts empty and is required.
+ */
+function sideHeadPicker() {
+  return `<span class="new-trade__on" aria-hidden="true">open as</span>
+    <div class="field new-trade__platform new-trade__side" data-field="side" data-field-of="borrow-form">
+    ${coinSelect({ id: 'f-side-new', name: 'side', value: '', options: SIDES, req: ' aria-required="true"', kind: 'side', form: 'borrow-form', label: 'Open as' })}
+  </div>`;
+}
+
 /** The saved wallet with this id, or undefined. Ids arrive as text from a form. */
 const walletById = (id) => (state.wallets ?? []).find((w) => String(w.id) === String(id));
 
@@ -1874,6 +1925,10 @@ function borrowFields(t = {}, { platform = false } = {}) {
   }${
     wallets.length > 1
       ? field({ name: 'wallet_id', label: 'Wallet', tip: 'The wallet the loop was run from, one of those on the Wallets tab. Optional.', value: t.wallet_id == null ? '' : String(t.wallet_id), options: wallets, required: false })
+      : ''
+  }${
+    platform
+      ? field({ name: 'side', label: 'Open as', tip: 'The side the trade was opened as: long or short.', value: t.side ?? '', options: SIDES })
       : ''
   }
     ${field({ name: 'borrow_date', label: 'Borrow date', tip: 'Day the loan was opened.', type: 'date', value: t.borrow_date || todayISO(), autofocus: true })}
@@ -2297,6 +2352,10 @@ function stageSummary(stage, t, d) {
       return (
         row('Platform', PLATFORM_META[t.platform]
           ? `<span class="platform-name">${platformMark(t.platform)}${esc(PLATFORM_META[t.platform].label)}</span>`
+          : '<span class="muted">-</span>') +
+        // What its editor holds, so the side can be read without opening it.
+        row('Open as', SIDE_META[t.side]
+          ? `<span class="platform-name">${sideArrow(t.side)}${esc(SIDE_META[t.side].label)}</span>`
           : '<span class="muted">-</span>') +
         row('Wallet', walletCell(t.wallet_id)) +
         row('Date', fmtDate(t.borrow_date)) +
@@ -2771,7 +2830,7 @@ function tradeRow(t, index, total, { readOnly = false } = {}) {
     <td data-label="Trade date">
       <div class="row__asset">
         ${readOnly && !simToggle ? '' : '<span class="caret"></span>'}
-        ${coin(t.borrow_currency)}
+        ${sideMark(t)}${coin(t.borrow_currency)}
         <span class="row__stack">
           <span>${isNum(d.borrowUsd) ? usd(d.borrowUsd) : RATE_MISSING}</span>
           ${
@@ -3344,6 +3403,57 @@ function monthTable(rows, { closed = 0, valued = 0 } = {}) {
 }
 
 /**
+ * Stats' By Long/Short: closed trades by the side they were opened as, laid
+ * out as By month closed is, over the same trades, so its rows add up to the
+ * same Realized net gain. A trade with no side recorded is a row of its own.
+ */
+function sideTable(rows, { closed = 0, valued = 0 } = {}) {
+  const short = closed - valued;
+  if (rows.length === 0) {
+    return short > 0
+      ? `<p class="muted">${short} closed trade${short === 1 ? '' : 's'}, none with an exchange rate yet. ${RATE_MISSING}</p>`
+      : `<p class="muted">No trades have been closed yet.</p>`;
+  }
+  const gap =
+    short > 0
+      ? `<p class="muted month-gap">${short} closed trade${short === 1 ? ' has' : 's have'} no exchange rate yet and ${
+          short === 1 ? 'is' : 'are'
+        } not in these rows. ${RATE_MISSING}</p>`
+      : '';
+  // As in `monthTable`: the larger side fills its bar, and one that prints as
+  // $0.00 does not set the scale.
+  const peak =
+    Math.max(...rows.map((r) => (printsZero(r.netGain, USD_DP) ? 0 : Math.abs(r.netGain)))) || 1;
+  const name = (side) =>
+    SIDE_META[side]
+      ? `<span class="row__asset">${sideArrow(side)}<span>${esc(SIDE_META[side].label)}</span></span>`
+      : '<span class="row__asset"><span class="side-arrow side-arrow--none" aria-hidden="true"></span><span class="muted">Not recorded</span></span>';
+  return `<table class="table table--flush">
+    <thead>
+      <tr>
+        ${hintHead('Side', TIPS.side.side)}${hintHead('Trades', TIPS.side.trades)}
+        ${hintHead('Net gain', TIPS.side.netGain)}${hintHead('Share', TIPS.side.share, 'bar-col')}
+      </tr>
+    </thead>
+    <tbody>
+      ${rows
+        .map(
+          (r) => `<tr>
+        <td data-label="Side">${name(r.side)}</td>
+        <td data-label="Trades" class="num">${r.trades}</td>
+        <td data-label="Net gain" class="num ${gainClass(r.netGain)}">${signedUsd(r.netGain)}</td>
+        <td data-label="Share" class="bar-col">
+          <span class="bar"><span class="bar__fill bar__fill--${gainClass(r.netGain)}"
+            style="width:${Math.max((Math.abs(r.netGain) / peak) * 100, 2)}%"></span></span>
+        </td>
+      </tr>`,
+        )
+        .join('')}
+    </tbody>
+  </table>${gap}`;
+}
+
+/**
  * Says so out loud when some trades have no exchange rate yet, rather than
  * quietly leaving them out of the totals. The server looks missing rates up by
  * itself every hour (`startFxRefresher` in fx.js); the button asks now, for
@@ -3675,18 +3785,16 @@ function renderStatsView() {
           year === current ? ' Trades still open count here, in the current year.' : ''
         }</p>`;
 
-  // The year's own realized gain and blended rate. The hero above is all-time
-  // and the Performance card leaves those two out because the hero has them,
-  // so without this a year tab stated neither: the one figure a year view is
-  // for, computed in `summaryReport` and then drawn nowhere. Not on All, where
-  // it would repeat the hero tile for tile.
-  const overview =
-    year === 'all'
-      ? ''
-      : summaryCard(
-          `${year} overview`,
-          `<div class="stats stats--year">${statTiles(r, { open: year === current })}</div>`,
-        );
+  // The year's own realized gain and blended rate. The Performance card leaves
+  // those two out because the hero has them, so without this a year tab stated
+  // neither: the one figure a year view is for, computed in `summaryReport`
+  // and then drawn nowhere. All has one too, by the user's choice, though it
+  // repeats the hero: every tab opens on its overview. Open positions show on
+  // All, which holds them, as on the current year's tab.
+  const overview = summaryCard(
+    year === 'all' ? 'Overview (All years combined)' : `${year} overview`,
+    `<div class="stats stats--year">${statTiles(r, { open: year === current || year === 'all' })}</div>`,
+  );
 
   // "This year" only on the current year's tab: on 2025 it would read as the
   // year on the calendar, not the one being looked at. A description rather
@@ -3732,6 +3840,7 @@ function renderStatsView() {
     ['by-asset', 'By asset (All Platforms)', assetTable(r.byAsset, total)],
     ['by-currency', 'By currency (All Platforms)', currencyTable(r.byCurrency, total)],
     ['by-month', 'By month closed (All Platforms)', monthTable(r.byMonth, { closed: r.closedCount, valued: r.valuedCount })],
+    ['by-side', 'By Long/Short (All Platforms)', sideTable(r.bySide, { closed: r.closedCount, valued: r.valuedCount })],
   ]
     .filter(Boolean)
     .map(([key, title, body]) => collapsibleCard({ key, title, body, open: state.statsOpen.has(key) }))
@@ -6287,6 +6396,7 @@ function wire() {
     if (state.creating) {
       document.getElementById('new-trade-platform').innerHTML = platformHeadPicker();
       syncNewTradeWallet({ fresh: true });
+      document.getElementById('new-trade-side').innerHTML = sideHeadPicker();
       borrowForm.innerHTML = borrowFields() + actions('Create trade', 'data-close-new');
       refreshHints(borrowForm, {}, 'borrow');
       borrowForm.querySelector('input')?.focus();

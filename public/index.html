@@ -51,13 +51,9 @@
 
     <section class="hero">
       <div class="shell hero__inner">
-        <div>
-          <h1 class="hero__title">Leverage trades</h1>
-          <p class="hero__sub">
-            Borrow a stablecoin, buy ETH, BTC or SOL, sell it, repay the loan.<br />
-            Every cycle and its return, kept in one place.
-          </p>
-        </div>
+        <!-- The page's heading, for a screen reader's outline: the visible
+             title and its description went, the figures speak for it. -->
+        <h1 class="sr-only">ETH Roundtrip</h1>
         <div class="stats" id="hero-stats"></div>
       </div>
     </section>
@@ -82,6 +78,7 @@
             <span class="new-trade__on" aria-hidden="true">on</span>
             <div id="new-trade-platform"></div>
             <div id="new-trade-wallet" class="new-trade__wallet-mount"></div>
+            <div id="new-trade-side" class="new-trade__wallet-mount"></div>
           </div>
           <div class="card__body">
             <form id="borrow-form" novalidate></form>

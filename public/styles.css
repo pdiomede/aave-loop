@@ -326,11 +326,17 @@ a.brand {
  * 58px header; at the two rows' 21px and 4px, SOL's took it to 72px and ETH's
  * was cut off at the top of the window.
  */
+/* One grid for every market, a column per figure - the price, then 1h, 24h
+   and 7d - so they line up from row to row. Each row laid out on its own put
+   SOL's badges a price's width to the right of BTC's and ETH's above them.
+   A row is `display: contents` and each badge names its column, so one a
+   market lacks (CoinGecko's null) leaves its cell empty, not the next one
+   moved into it. */
 .ticker {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  align-items: center;
+  gap: 2px 6px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -340,15 +346,27 @@ a.brand {
 }
 
 .ticker__row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: contents;
 }
 
 .ticker__price {
+  grid-column: 1;
+  justify-self: end;
   font-weight: 600;
   line-height: 16px;
   white-space: nowrap;
+}
+
+.ticker__chip[data-window="1h"] {
+  grid-column: 2;
+}
+
+.ticker__chip[data-window="24h"] {
+  grid-column: 3;
+}
+
+.ticker__chip[data-window="7d"] {
+  grid-column: 4;
 }
 
 /*
@@ -357,6 +375,10 @@ a.brand {
  */
 .ticker__chip {
   display: inline-flex;
+  /* As wide as its column, the label at the left and the figure at the right,
+     so the figures' last digits line up down the column too. */
+  justify-self: stretch;
+  justify-content: space-between;
   align-items: baseline;
   gap: 5px;
   padding: 1px 8px;
@@ -488,21 +510,11 @@ a.brand {
   flex-wrap: wrap;
 }
 
-.hero__title {
-  font-size: 30px;
-  font-weight: 700;
-}
-
-.hero__sub {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-  max-width: 56ch;
-}
-
+/* The hero's only content since its title and description went, so it starts
+   at the left edge, in line with History under it, rather than pushed right. */
 .stats {
   display: flex;
   gap: 34px;
-  margin-left: auto;
   flex-wrap: wrap;
 }
 
@@ -1096,14 +1108,69 @@ html {
   padding-bottom: 7px;
 }
 
-/* "from" and the wallet picker sit in the heading's own row of items, so an
-   empty mount - no wallet saved - takes no gap. */
+/* "from" and the wallet picker, and "open as" and the side picker, each wrap
+   as one item, so a narrow heading never leaves the word at the end of one
+   line and its picker on the next. An empty mount - no wallet saved - is not
+   drawn, so it takes no gap. */
 .new-trade__wallet-mount {
-  display: contents;
+  display: flex;
+  align-items: center;
+  gap: 8px 10px;
+  max-width: 100%;
+}
+
+.new-trade__wallet-mount:empty {
+  display: none;
 }
 
 .new-trade__wallet {
   width: 230px;
+}
+
+.new-trade__side {
+  width: 170px;
+}
+
+/* A trade's side: a green arrow up for a long, a red one down for a short,
+   in the picker, before the coin on the Trades table and in By Long/Short. */
+.side-arrow {
+  flex: none;
+}
+
+.side-arrow--long {
+  color: var(--positive);
+}
+
+.side-arrow--short {
+  color: var(--negative);
+}
+
+/* Holds the arrow's place on By Long/Short's Not recorded row, so its name
+   lines up with Long and Short above it. */
+.side-arrow--none {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+}
+
+/* On the Trades table: its name as a tip, on hover or keyboard focus. */
+.side-mark {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  cursor: help;
+}
+
+.side-mark[data-tip]::after {
+  left: 0;
+  width: max-content;
+  /* The base rule caps a bubble at its anchor's width, and this anchor is the
+     16px arrow: "Short" was squeezed into a sliver. */
+  max-width: none;
+  white-space: nowrap;
 }
 
 /* A rollup's mark, where Ethereum has its logo: a letter on the chain's own
@@ -1753,10 +1820,15 @@ html {
 }
 
 /* The Total line closing Stats' breakdown tables: set off by a ruled line
-   above it, as a sum is on paper, and in the weight of a heading. */
-.table tbody tr.table__total td {
+   above it, as a sum is on paper, and in the weight of a heading. Two pixels,
+   so it reads apart from the hairlines between the rows above it. The Total
+   is the last row, and `.table--flush tbody tr:last-child td` further down
+   ties this rule's specificity and took its shadow away, so the rule was
+   never drawn: the line above Total was only the last row's hairline. */
+.table tbody tr.table__total td,
+.table--flush tbody tr.table__total:last-child td {
   font-weight: 600;
-  box-shadow: inset 0 1px 0 var(--text-faint);
+  box-shadow: inset 0 2px 0 var(--text-faint);
 }
 
 .row {
@@ -3361,6 +3433,15 @@ th[aria-sort="ascending"] .th-sort__caret {
     display: none;
   }
 
+  /* Two columns, so the hidden ones leave no gaps behind. */
+  .ticker {
+    grid-template-columns: repeat(2, auto);
+  }
+
+  .ticker__chip[data-window="24h"] {
+    grid-column: 2;
+  }
+
   .ticker__price {
     font-size: 12.5px;
   }
@@ -3441,17 +3522,18 @@ th[aria-sort="ascending"] .th-sort__caret {
     padding: 8px 10px;
   }
 
-  /* A row of its own, under the nav that already took one. It has the full
-     width here, so every window is worth drawing again.
-     It wraps, and that is load bearing rather than tidiness: the price and the
-     three badges come to 344px and a 375px phone leaves 343px between the
-     gutters, so a nowrap row cannot shrink to fit and pushed itself out past
-     both of them, clipping the E off ETH. Wrapping drops the min-content width
-     to that of the widest single badge. */
+  /* A row of its own, under the nav that already took one. 7d comes back
+     here, 1h stays off: the price and all three badges came to 344px on a
+     375px phone's 343 between the gutters, and pushed the row past both of
+     them, clipping the E off ETH. */
   .ticker {
     order: 4;
     width: 100%;
-    align-items: stretch;
+    /* Price, 24h and 7d, each as wide as its widest and packed to the left,
+       under the hero title. About 270px on a 375px phone's 343. */
+    grid-template-columns: repeat(3, max-content);
+    justify-content: start;
+    column-gap: 8px;
     row-gap: 6px;
     /* The header goes full bleed at this width - `.header__inner`'s padding
        shorthand drops the 16px `.shell` gives every other block - and a logo or
@@ -3461,11 +3543,12 @@ th[aria-sort="ascending"] .th-sort__caret {
     padding: 0 16px;
   }
 
-  /* Each market's row wraps, for the reason given above. */
-  .ticker__row {
-    flex-wrap: wrap;
-    column-gap: 8px;
-    row-gap: 6px;
+  .ticker__price {
+    justify-self: start;
+  }
+
+  .ticker__chip[data-window="7d"] {
+    grid-column: 3;
   }
 
   /* 7d comes back, 1h stays off. With all three, each of the two rows wrapped
@@ -3483,10 +3566,6 @@ th[aria-sort="ascending"] .th-sort__caret {
 
   .nav__link.is-active::after {
     content: none;
-  }
-
-  .hero__title {
-    font-size: 24px;
   }
 
   .table thead {
@@ -3583,10 +3662,11 @@ th[aria-sort="ascending"] .th-sort__caret {
 
   /* Stacked, the Total line's rule goes on the row, not on each of its cells. */
   .table--flush tbody tr.table__total {
-    box-shadow: inset 0 1px 0 var(--text-faint);
+    box-shadow: inset 0 2px 0 var(--text-faint);
   }
 
-  .table--flush tbody tr.table__total td {
+  .table--flush tbody tr.table__total td,
+  .table--flush tbody tr.table__total:last-child td {
     box-shadow: none;
   }
 

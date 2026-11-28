@@ -809,6 +809,25 @@ check('Stats: By Platform splits the tab by platform, unrecorded last, and its r
   assert.ok(!('borrowedNative' in aave), 'no native sum across coins');
 });
 
+check('Stats: By Long/Short splits closed trades by side, Long, Short, unrecorded last, and adds up', () => {
+  // Closed 1,000 loans at 0% on 1 ETH: two longs +50 and +30, a short -20,
+  // one recorded nowhere +10 and one naming a side this ledger does not know,
+  // +5, counted as not recorded; plus a long still open, in no row.
+  const open = { id: 9, borrow_currency: 'USDC', borrow_date: '2026-09-01', borrow_amount: 2000, borrow_apr: 0, side: 'long' };
+  const r = summaryReport([
+    shut(4, '2026-03-11', 10),
+    shut(3, '2026-03-11', -20, { side: 'short' }),
+    open,
+    shut(1, '2026-03-11', 50, { side: 'long' }),
+    shut(2, '2026-03-21', 30, { side: 'long' }),
+    shut(5, '2026-03-11', 5, { side: 'sideways' }),
+  ], AS_OF);
+  assert.deepEqual(r.bySide.map((b) => b.side), ['long', 'short', null]);
+  assert.deepEqual(r.bySide.map((b) => [b.trades, b.netGain, b.borrowed]), [[2, 80, 2000], [1, -20, 1000], [2, 15, 2000]]);
+  assert.equal(r.bySide.reduce((s, b) => s + b.netGain, 0), r.netGain);
+  assert.equal(r.bySide.reduce((s, b) => s + b.trades, 0), r.valuedCount);
+});
+
 check('Stats: the coin total under Borrowed adds the loans as printed', () => {
   // Two EURC loans of 10,000.005 at 1.1 each print 10,000.01 and $11,000.01;
   // the coin line must read 20,000.02 beside $22,000.02, not 20,000.01.

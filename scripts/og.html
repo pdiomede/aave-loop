@@ -1,14 +1,14 @@
 <!doctype html>
 <!--
-  The landing page's social preview, landing/og7.png (1200x630), drawn from this
+  The landing page's social preview, landing/og8.png (1200x630), drawn from this
   file. It is the source, not a page: nothing serves it. Render it with
   headless Chrome from the repository root:
 
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
       --hide-scrollbars --force-device-scale-factor=1 --window-size=1200,630 \
-      --virtual-time-budget=8000 --screenshot=landing/og8.png "file://$PWD/scripts/og.html"
+      --virtual-time-budget=8000 --screenshot=landing/og9.png "file://$PWD/scripts/og.html"
 
-  Give the result a new name (og8.png, og9.png...) and point both og:image and
+  Give the result a new name (og9.png, og10.png...) and point both og:image and
   twitter:image in landing/index.html at it: X, LinkedIn and Telegram cache a
   preview by its URL, so an image changed in place keeps showing the old one.
   The logos are the copies in landing/, and Inter comes from Google Fonts, so
@@ -48,6 +48,12 @@
     padding: 11px 20px; border-radius: 999px; background: #edecfe;
     color: #584fe6; font-size: 20px; font-weight: 700;
   }
+  /* Long and Short, each with the arrow the app marks a trade with. */
+  .pill--sides { display: flex; align-items: center; gap: 6px; }
+  .pill--sides svg { flex: none; }
+  .pill--sides .up { color: #1c7c54; }
+  .pill--sides .down { color: #c0362c; }
+  .pill--sides .and { margin: 0 2px; }
 
   /* The right-hand card: where the loop runs, what it buys, what it borrows. */
   .card {
@@ -93,7 +99,11 @@
     </p>
     <div class="pills">
       <span class="pill">Net of interest &amp; fees</span>
-      <span class="pill">ECB rates</span>
+      <span class="pill pill--sides">
+        <svg class="up" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" /></svg>Long
+        <span class="and">&amp;</span>
+        <svg class="down" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5.5 12.5L12 19l6.5-6.5" /></svg>Short
+      </span>
     </div>
   </div>
 

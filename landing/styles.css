@@ -390,10 +390,24 @@ p {
 
 /* --------------------------------------------------------------- features */
 
+/* One, two or four across, never three: with four cards, auto-fit's three
+   columns between about 850px and 1100px left the fourth alone on a row. */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
+  grid-template-columns: 1fr;
   gap: 18px;
+}
+
+@media (min-width: 600px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1040px) {
+  .cards {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 .card {

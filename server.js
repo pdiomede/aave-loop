@@ -25,6 +25,7 @@ import {
   asPrinted,
   CURRENCIES,
   PLATFORMS,
+  SIDES,
   ASSETS,
   ASSET_META,
   MARKETS,
@@ -282,6 +283,7 @@ const REQUIRED_BORROW = [
   ['borrow_currency', 'Currency'],
   ['borrow_apr', 'Borrow APR'],
   ['platform', 'Platform'],
+  ['side', 'Long or short'],
 ];
 
 function toNumber(value, field, label, { allowZero = false, money = false } = {}) {
@@ -378,6 +380,17 @@ function normalise(body, { requireBorrow, asset = null }) {
       const p = typeof body.platform === 'string' ? body.platform.trim().toLowerCase() : '';
       if (!PLATFORMS.includes(p)) throw new BadRequest('Pick a platform.', 'platform');
       out.platform = p;
+    }
+  }
+
+  // Long or short, by id in any case; blank falls through to the required
+  // check below, as the platform does.
+  if (has('side')) {
+    if (isBlank(body.side)) out.side = null;
+    else {
+      const side = typeof body.side === 'string' ? body.side.trim().toLowerCase() : '';
+      if (!SIDES.includes(side)) throw new BadRequest('Pick long or short.', 'side');
+      out.side = side;
     }
   }
 
