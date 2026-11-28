@@ -2839,6 +2839,14 @@ await check('set-side: a dry run writes nothing, --apply marks every trade witho
   assert.throws(() => runIt('--apply'), /#3 has side "Shrot".*Nothing was written/s);
   assert.deepEqual(sides(), ['long', 'long', 'Shrot']);
   db.close();
+  // A ledger this user cannot write (the service's, run as someone else) is
+  // said in a sentence, not SQLite's stack trace.
+  fs.chmodSync(file, 0o444);
+  try {
+    assert.throws(() => runIt(), (err) => /Cannot write .*side\.db as this user/.test(String(err.stderr)) && !/at Database/.test(String(err.stderr)));
+  } finally {
+    fs.chmodSync(file, 0o600);
+  }
 });
 
 await check('a new goal keeps a reached, unsent alert in the log as failed, not deleted', async () => {

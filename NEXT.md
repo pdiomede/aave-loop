@@ -46,9 +46,9 @@ Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
 `/home/paolo/backup/aaveloop` holds one `myaave-...db` from 03:00 every night, 11 to
 24 Nov, fourteen in all as `--keep 14` asks.
 
-## Unreleased (28 Nov): Long or short on a trade
+## 3.0.0 (28 Nov): Long or short on a trade
 
-Not released or deployed yet. The `side` column is added by itself on the first
+Not deployed yet. The `side` column is added by itself on the first
 start (nullable, so an older copy on the same database simply never names it, though
 its page cannot set one, and a new trade it creates has none). No new setting and
 no inline script changed, so nginx's CSP is untouched. After the pull and restart:

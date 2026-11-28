@@ -3,14 +3,14 @@
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [3.0.0] - 2026-11-28
 
 ### Added
 
 - **A trade says whether it was opened Long or Short:** a third picker in the new trade's heading, "open as", starts empty and is required, as the platform is; the Borrowed card shows it and its editor changes it. A label only for now: every figure is still worked out as a long.
 - **The Trades table and Onchain Data mark each trade's side** with a green up or red down arrow before its coin, named on hover.
 - **Stats has a By Long/Short card,** laid out like By month closed: closed trades and net gain per side, with a Not recorded row for trades from before the side was asked for.
-- **`scripts/set-side.mjs` marks every trade with no side as Long** (dry run unless `--apply`); a side already set is kept, and one that is neither refuses the run.
+- **`scripts/set-side.mjs` marks every trade with no side as Long** (dry run unless `--apply`); a side already set is kept, one that is neither refuses the run, and a user who cannot write the ledger is told to run it as the service's user.
 - **The landing page and the social card (`og8.png`) say trades are tracked long or short;** the card's ECB rates pill made room for it.
 - **The Statement PDF links the European Central Bank reference rate** in its note to the ECB's rate tables, as the Stats page does.
 

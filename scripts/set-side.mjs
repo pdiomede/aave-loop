@@ -43,7 +43,21 @@ function fail(message) {
 // there and answered "Nothing to change.".
 const dbFile = setting('DB') || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'myaave.db');
 if (!fs.existsSync(dbFile)) fail(`No database at ${dbFile}. Set ETHROUNDTRIP_DB to the ledger's path.`);
-const { db } = await import('../db.js');
+// db.js writes on opening (its column check takes the write lock), so a user
+// who can read the ledger but not write it - anyone but the service's own -
+// was answered with SQLite's stack trace. Nothing has been written by then.
+let db;
+try {
+  ({ db } = await import('../db.js'));
+} catch (err) {
+  if (err?.code === 'SQLITE_READONLY' || err?.code === 'SQLITE_CANTOPEN') {
+    fail(
+      `Cannot write ${dbFile} as this user. Run it as the user the service runs as, ` +
+        'for example: sudo -u <that user> node scripts/set-side.mjs. Nothing was written.',
+    );
+  }
+  throw err;
+}
 
 const label = (s) => (SIDES.includes(s) ? SIDE_META[s].label : '-');
 
