@@ -46,34 +46,23 @@ Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
 `/home/paolo/backup/aaveloop` holds one `myaave-...db` from 03:00 every night, 11 to
 24 Nov, fourteen in all as `--keep 14` asks.
 
-## Unreleased (28 Nov): Year tabs on Trades
+## 3.0.0 (28 Nov): Long or short on a trade, year tabs on Trades
 
-Not released or deployed yet. The new `market_close` table is created by itself on
-the first start (no migration). The first time a past year's tab is opened, the
-server asks CoinGecko for that year's 31 Dec close once per market (five requests)
-and keeps them; a coin CoinGecko has no history for then (PSOL may not) reads
-"No PSOL price for 31 Dec" under the estimate. No new setting, no inline script,
-so nginx is untouched. Check after the deploy: Trades opens on 2026 with 2025 and
-All beside it; 2025 shows its closed trades and the loans still open on 31 Dec;
-All matches what the header showed before.
+Deployed on 28 Nov at 11:24 for Long/Short: every existing trade marked Long
+(`set-side.mjs --apply`, after a backup), checked from outside (footer v3.0.0,
+`og8.png` 200, `og7.png` 404). Still to do for Long/Short: ask @WebpageBot
+(Telegram) and LinkedIn's Post Inspector to fetch `https://ethroundtrip.com/` again.
 
-## 3.0.0 (28 Nov): Long or short on a trade
-
-Not deployed yet. The `side` column is added by itself on the first
-start (nullable, so an older copy on the same database simply never names it, though
-its page cannot set one, and a new trade it creates has none). No new setting and
-no inline script changed, so nginx's CSP is untouched. After the pull and restart:
-
-- **Back up, then mark the existing trades Long:**
-  `cd /var/www/aave && ./backupDatabase.sh`, then
-  `sudo -u myaave node scripts/set-side.mjs` (a dry run listing every trade), then
-  the same with `--apply`. Run it again: it should answer "Nothing to change."
-- **The social card is now `og8.png`; `og7.png` is gone.** Ask @WebpageBot (Telegram)
-  and LinkedIn's Post Inspector to fetch `https://ethroundtrip.com/` again;
-  `curl -sI https://ethroundtrip.com/landing/og8.png | head -1` should answer 200.
-- **Check:** the Trades rows show a green up arrow before the coin; New trade asks
-  "open as"; Stats has By Long/Short; the landing page has the "Long or short, kept
-  apart" card.
+**The year tabs went into 3.0.0 later the same day** (one release a day), so the
+footer still reads v3.0.0 after they are deployed. Pull and restart as usual;
+nothing to run. The new `market_close` table is created by itself on the first
+start (no migration). The first time a past year's tab is opened, the server asks
+CoinGecko for that year's 31 Dec close once per market (five requests) and keeps
+them; a coin CoinGecko has no history for then (PSOL may not) reads "No PSOL price
+for 31 Dec" under the estimate. No new setting, no inline script, so nginx is
+untouched. Check after the deploy: Trades opens on 2026 with 2025 and All beside
+it; 2025 shows its closed trades and the loans still open on 31 Dec; All matches
+what the header showed before.
 
 ## 2.3.0 (27 Nov): History filters by status
 
