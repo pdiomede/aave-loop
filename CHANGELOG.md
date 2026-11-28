@@ -18,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The header's tiles show on Trades only,** above its year; Stats' overview carries their Est. gain instead, and the "Leverage trades" heading is gone.
 - **Stats' All tab opens on an overview,** as each year's tab does.
 - **The header's prices line up in columns:** SOL's shorter price pushed its badges out of line.
+- **The trades table's Amount shows four decimals for cbBTC and WBTC too,** so it no longer runs into the dates; the exact quantity is on hover and on the cards.
 
 ### Fixed
 

@@ -69,7 +69,9 @@ const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // Money is always shown to the cent and a quantity always to its asset's own
 // places - four for ETH, eight for cbBTC (`ASSET_META.dp`) - so that columns
-// line up and a rounded figure never hides a real difference.
+// line up and a rounded figure never hides a real difference. The one exception
+// is the trades table's Amount cell (`tableQty`), cut to four for width, with
+// the exact figure in its title and on the cards.
 const USD_DP = 2;
 
 function amount(v, dp) {
@@ -118,6 +120,15 @@ function signedMoney(v, currency) {
 /** A quantity of `t`'s asset, to its own decimals, without the ticker. */
 function assetQty(v, t) {
   return isNum(v) ? amount(v, ASSET_META[assetOf(t)].dp) : '';
+}
+
+/**
+ * A quantity for the trades table's Amount cell: at most four places. Eight
+ * for cbBTC and WBTC (0.16590800) made the cell wide enough to run into the
+ * Trade date column's dates; the exact figure is in the cell's title.
+ */
+function tableQty(v, t) {
+  return isNum(v) ? amount(v, Math.min(4, ASSET_META[assetOf(t)].dp)) : '';
 }
 
 /** The same with the ticker: "0.01234567 cbBTC". */
@@ -2892,9 +2903,10 @@ function tradeRow(t, index, total, { readOnly = false } = {}) {
     </td>
     <td data-label="Amount" class="num">${
       // The logo says which asset; the ticker is there for a screen reader
-      // and on hover, since 0.10000000 and 8.0773 are not one scale.
+      // and on hover, since 0.1000 cbBTC and 8.0773 ETH are not one scale.
+      // Four places here (`tableQty`); the hover carries the asset's own.
       isNum(t.buy_eth)
-        ? `<span class="asset-cell" title="${esc(tickerOf(t))}">${assetMark(t)}${assetQty(t.buy_eth, t)}<span class="sr-only"> ${esc(tickerOf(t))}</span></span>`
+        ? `<span class="asset-cell" title="${esc(assetAmount(t.buy_eth, t))}">${assetMark(t)}${tableQty(t.buy_eth, t)}<span class="sr-only"> ${esc(tickerOf(t))}</span></span>`
         : '<span class="muted">-</span>'
     }</td>
     <td data-label="Buy price" class="num">${isNum(d.buyPriceUsd) ? usd(d.buyPriceUsd) : '<span class="muted">-</span>'}</td>
