@@ -2154,6 +2154,12 @@ html {
   color: var(--text-faint);
 }
 
+/* A date stays whole, so a narrow cell breaks the range at its arrow: on a
+   phone, inside the Trades folder, it read "12 Apr / 2026 -> 15 Apr / 2026". */
+.row__date {
+  white-space: nowrap;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -3619,6 +3625,17 @@ th[aria-sort="ascending"] .th-sort__caret {
     overflow-x: auto;
     /* The table rounds its own bottom corners, and a scroll container with a
        square edge would show through them. */
+    border-radius: 0 0 var(--radius-card) var(--radius-card);
+  }
+}
+
+/* Inside the Trades folder the table has its padding less room than it had
+   on the page, and from 1081px to about 1135px it ran past the folder's
+   border, the Status column outside it. The same scroll, up to where the
+   page stops growing (the shell's 1180px plus its gutters). */
+@media (min-width: 1081px) and (max-width: 1240px) {
+  .trades-folder .table-scroll {
+    overflow-x: auto;
     border-radius: 0 0 var(--radius-card) var(--radius-card);
   }
 }

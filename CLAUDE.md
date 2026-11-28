@@ -420,7 +420,9 @@ Trades tab. Every trade's row there - open, holding or closed - opens by its own
 `data-sim-trade` and `state.simOpenIds` into slim cards (`simStageCards`): a recorded
 stage (`STAGE_DONE`, read off `derive(t).stages`) with a magnifier that finds its
 transaction, one still to come as "Not yet." Get onchain data searches the same
-recorded stages of every trade with a wallet.
+recorded stages of every trade with a wallet. A search redraws only its own stage card
+(`renderTxCard`), never the whole list: redrawn twice per stage, every logo on it was
+made anew and blinked through a scan.
 
 ### Transactions on Etherscan
 

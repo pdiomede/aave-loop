@@ -2853,9 +2853,10 @@ function tradeRow(t, index, total, { readOnly = false } = {}) {
   //
   // fmtDate escapes its own output, so nothing here is escaped a second time.
   const dates = d.stages.repaid
-    ? `${fmtDate(t.borrow_date)}<span class="row__arrow" aria-hidden="true">&rarr;</span>` +
-      `<span class="sr-only"> to </span>${fmtDate(t.repay_date)}`
-    : fmtDate(t.borrow_date);
+    ? `<span class="row__date">${fmtDate(t.borrow_date)}</span><span class="row__arrow" aria-hidden="true">&rarr;</span>` +
+      // <wbr>: with each date kept whole, the range had no place left to break.
+      `<span class="sr-only"> to </span><wbr><span class="row__date">${fmtDate(t.repay_date)}</span>`
+    : `<span class="row__date">${fmtDate(t.borrow_date)}</span>`;
 
   const gainCell = gainCellHtml(t, d);
 
@@ -4127,9 +4128,19 @@ function syncYearsOverflow({ reveal = false } = {}) {
   }
 }
 
+// The year each row last brought into view, by the attribute its tabs carry.
+const yearsRevealed = {};
+
 function syncYearsRow(row, reveal) {
   const over = row.scrollWidth > row.clientWidth + 1;
   const open = row.querySelector('.is-active');
+  // Only for a year newly chosen (or a resize): every redraw - each price,
+  // each rate - scrolled a row someone had moved back to its open tab.
+  const attr = open && [...open.attributes].find((a) => a.name.endsWith('-year'));
+  const which = attr ? `${attr.name}=${attr.value}` : '';
+  const kind = attr?.name ?? '';
+  if (reveal !== 'force' && yearsRevealed[kind] === which) reveal = false;
+  if (open) yearsRevealed[kind] = which;
   if (over && reveal && open) {
     // Measured on screen: `offsetLeft` counts from the page, not the row.
     const box = row.getBoundingClientRect();
@@ -4574,7 +4585,7 @@ function txLine(t, stage) {
  * transaction. The figures are the stage cards' own, drawn by the same
  * formatters, so the two views read alike.
  */
-function simStageCards(t, d) {
+function simStageCards(t, d, only = null) {
   const c = unitOf(t);
   const row = (label, value) => `<div class="stage__row"><dt>${label}</dt><dd>${value}</dd></div>`;
   const row2 = (label, value, sub) =>
@@ -4596,6 +4607,7 @@ function simStageCards(t, d) {
   ];
   const noWallet = t.wallet_id == null;
   return cards
+    .filter(([stage]) => only === null || stage === only)
     .map(([stage, name, rows]) => {
       // A stage not yet recorded has nothing to show nor any transaction to
       // find: its card says so, as the Trades tab's does.
@@ -4650,7 +4662,7 @@ async function searchStage(key) {
   delete state.txNote[key];
   // The trade as it is asked about: the note stands for these figures only.
   const basis = txBasisOf(state.trades.find((x) => String(x.id) === id), stage);
-  renderOnchainData();
+  renderTxCard(key);
   let r;
   try {
     r = await api(`/api/trades/${id}/tx/${stage}/find`, { method: 'POST', body: '{}' });
@@ -4673,8 +4685,35 @@ async function searchStage(key) {
   } finally {
     state.txBusy.delete(key);
   }
-  renderOnchainData();
+  renderTxCard(key);
   return r;
+}
+
+/**
+ * Redraw the one stage card a search changed, not the whole of Onchain Data.
+ * Get onchain data searched a stage at a time and redrew every wallet group
+ * twice for each - every row's coin, asset and chain logo made again as new
+ * images - and the logos blinked as the scan ran (an image element that is
+ * new can paint a frame before it is decoded, cached or not). A search
+ * changes only its own card: the magnifier, the hash, the note. A card not
+ * drawn (its row folded, another view) has nothing to redraw; focus on the
+ * card goes back where it was (`keepingFocus`), as `setKeepingFocus` does.
+ */
+function renderTxCard(key) {
+  const card = document.querySelector(`#onchain-mount [data-tx-card="${CSS.escape(key)}"]`);
+  if (!card) return;
+  const [id, stage] = key.split(':');
+  const t = state.trades.find((x) => String(x.id) === id);
+  if (!t) {
+    renderOnchainData();
+    return;
+  }
+  const holder = card.parentElement;
+  const back = keepingFocus(holder);
+  const next = document.createElement('div');
+  next.innerHTML = simStageCards(t, t.derived || derive(t), stage);
+  card.replaceWith(...next.childNodes);
+  back();
 }
 
 /** The magnifier: search Etherscan for one stage, and keep what it finds. */
@@ -4806,7 +4845,12 @@ async function scanOnchain() {
   };
   state.simScan = scan;
   renderScanHead();
+  // Once, and only if the reread found a hash another tab stored: each search
+  // below redraws its own card alone (`renderTxCard`), so a card the scan
+  // skips as already found would otherwise keep offering its magnifier.
+  const before = JSON.stringify(state.stageTxs);
   await loadStageTxs();
+  if (JSON.stringify(state.stageTxs) !== before) renderOnchainData();
   const rank = new Map([...state.wallets].sort(byWalletName).map((w, i) => [w.id, i]));
   // Every trade, open, holding or closed: each stage it has recorded.
   const trades = sortedTrades().sort(
@@ -6633,7 +6677,7 @@ function wire() {
     },
     true,
   );
-  window.addEventListener('resize', () => syncYearsOverflow({ reveal: true }));
+  window.addEventListener('resize', () => syncYearsOverflow({ reveal: 'force' }));
   // A plain mouse wheel scrolls the tab row sideways while it overflows: with
   // no scrollbar, a mouse without a sideways wheel had no way to the years
   // past the edge.
@@ -6642,6 +6686,10 @@ function wire() {
     (e) => {
       const row = e.target.closest?.('.years--folders.is-overflowing');
       if (!row || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      // At the end it is scrolling towards, the wheel is the page's again: kept
+      // here, it stopped the page scrolling while the pointer was over the tabs.
+      const end = row.scrollWidth - row.clientWidth;
+      if ((e.deltaY > 0 && row.scrollLeft >= end - 1) || (e.deltaY < 0 && row.scrollLeft <= 0)) return;
       e.preventDefault();
       row.scrollLeft += e.deltaY;
     },
