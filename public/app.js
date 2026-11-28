@@ -3904,23 +3904,31 @@ function renderStatsView() {
 
   // Through `setKeepingFocus`: a redraw from new rates lands while a year tab
   // or a fold button has focus.
+  // The year as a folder, as on Trades: its tabs on the divider, Statement and
+  // Export CSV at the right of it, and every card for the year inside.
+  const scrolled = mount.querySelector('.years--folders')?.scrollLeft ?? 0;
   setKeepingFocus(mount, `
     ${fxBanner(whole.missingFx, year === 'all' ? null : { year, count: r.missingFx })}
-    <div class="years-bar">
-      ${yearTabs(years, year)}
+    <div class="years-bar years-bar--folders">
+      ${yearTabs(years, year, 'stats-year', 'folders')}
       <div class="years-bar__actions">
         ${statement}
         <button class="btn btn--sm" type="button" data-export-csv data-tip="${esc(csvTip)}"
           aria-description="${esc(csvTip)}">${DOWNLOAD_SVG} Export CSV</button>
       </div>
     </div>
-    ${scope}
-    ${overview}
-    ${summaryCard('Performance (All Platforms)', perfGrid(r), perfNote(r))}
-    ${platformCards}
-    ${breakdownCards}
-    ${SUMMARY_FOOT}
+    <div class="folder">
+      ${scope}
+      ${overview}
+      ${summaryCard('Performance (All Platforms)', perfGrid(r), perfNote(r))}
+      ${platformCards}
+      ${breakdownCards}
+      ${SUMMARY_FOOT}
+    </div>
   `);
+  const row = mount.querySelector('.years--folders');
+  if (row) row.scrollLeft = scrolled;
+  syncYearsOverflow({ reveal: true });
 }
 
 /**
@@ -4093,6 +4101,9 @@ function renderTradesYears() {
   if (!bar || !mount) return;
   const show = state.view === 'trades' && state.loaded && !state.loadFailed;
   bar.hidden = !show;
+  // The folder around the tiles and History is drawn from this one class, so
+  // its two halves come and go together (styles.css, `.trades-folder`).
+  document.body.classList.toggle('trades-folder', show);
   if (!show) return;
   tradesView();
   // Redrawn on every price, so the row's scroll goes back where it was.
@@ -4110,8 +4121,13 @@ function renderTradesYears() {
  * `fade-right`), a mouse wheel scrolls it, and the open year is kept in view.
  */
 function syncYearsOverflow({ reveal = false } = {}) {
-  const row = document.querySelector('#trades-years .years--folders');
-  if (!row || row.closest('[hidden]')) return;
+  // Trades' and Stats' rows alike; one on a hidden view is left for its turn.
+  for (const row of document.querySelectorAll('.years--folders')) {
+    if (!row.closest('[hidden]')) syncYearsRow(row, reveal);
+  }
+}
+
+function syncYearsRow(row, reveal) {
   const over = row.scrollWidth > row.clientWidth + 1;
   const open = row.querySelector('.is-active');
   if (over && reveal && open) {

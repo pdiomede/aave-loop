@@ -573,20 +573,51 @@ a.brand {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-/* The panel: the hero's tiles inside the open folder, while the year bar
-   shows. Its top is the divider, so it has no top border of its own. */
-.trades-years:not([hidden]) + .hero {
-  padding: 0 0 32px;
-  background: none;
-  box-shadow: none;
-}
-
-.trades-years:not([hidden]) + .hero .hero__inner {
-  padding: 26px 28px 28px;
+/* The open folder. Its top is the tab row's divider, so it has no top border
+   of its own. Stats draws its year in one (`.folder`); Trades in two halves
+   below, because its tiles sit in the hero and its History in `<main>`. */
+.folder {
+  padding: 24px 28px 28px;
   border: 1px solid var(--hairline-strong);
   border-top: 0;
   border-radius: 0 0 var(--radius-card) var(--radius-card);
   background: var(--surface);
+}
+
+/* Trades' folder, while its year bar shows (`body.trades-folder`, set by
+   renderTradesYears): one border from the tabs down to under the table, drawn
+   as two flush halves of the same width - the tiles in the hero, History in
+   `<main>` - so no element moves. The year scopes both, and the folder says so. */
+.trades-folder .hero {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.trades-folder .hero .hero__inner {
+  padding: 26px 28px 22px;
+  border: 1px solid var(--hairline-strong);
+  border-top: 0;
+  border-bottom: 0;
+  background: var(--surface);
+}
+
+.trades-folder .main {
+  padding-top: 0;
+}
+
+.trades-folder #view-trades {
+  padding: 0 28px 28px;
+  border: 1px solid var(--hairline-strong);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+  background: var(--surface);
+}
+
+/* The divider between the tiles and History, inside the folder's padding. */
+.trades-folder #view-trades > .toolbar {
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
 }
 
 /* A phone: smaller tabs and a tighter folder, the rest as it is. */
@@ -605,8 +636,20 @@ a.brand {
     padding-top: 9px;
   }
 
-  .trades-years:not([hidden]) + .hero .hero__inner {
+  .folder {
     padding: 18px 16px 20px;
+  }
+
+  .trades-folder .hero .hero__inner {
+    padding: 18px 16px 16px;
+  }
+
+  .trades-folder #view-trades {
+    padding: 0 16px 20px;
+  }
+
+  .trades-folder #view-trades > .toolbar {
+    padding-top: 16px;
   }
 }
 
@@ -2525,6 +2568,47 @@ th[aria-sort="ascending"] .th-sort__caret {
 .years__note {
   margin: 10px 2px 0;
   font-size: 12.5px;
+}
+
+/* Stats' folder tabs: the divider runs under the tabs and the two buttons, the
+   tabs standing on it and the buttons just above it; the tab row gives way and
+   scrolls before the buttons do. */
+.years-bar.years-bar--folders {
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  box-shadow: inset 0 -1px 0 var(--hairline-strong);
+}
+
+.years-bar--folders .years--folders {
+  flex: 0 1 auto;
+  min-width: 0;
+  box-shadow: none;
+}
+
+.years-bar--folders .years-bar__actions {
+  flex: none;
+  margin-bottom: 8px;
+}
+
+/* Inside a folder, its first line starts at the folder's padding. */
+.folder > :first-child {
+  margin-top: 0;
+}
+
+/* A phone: the buttons take a line of their own above the tabs, so the tabs
+   still stand on the divider. */
+@media (max-width: 760px) {
+  .years-bar.years-bar--folders {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+
+  .years-bar--folders .years-bar__actions {
+    order: -1;
+    width: 100%;
+    justify-content: flex-end;
+    margin-bottom: 0;
+  }
 }
 
 /* Whatever follows the tabs - the note or the first card - sits the same

@@ -542,7 +542,12 @@ today for the current year) through `tradeAt`, which blanks every stage dated
 after that day. The hero's tiles are `summarize(snapshot, end)`, so a gain
 counts once, in its repayment's year, and a Dec->Jan loan is open on 31 Dec;
 they follow the year on every view, with a scope line (`renderHeroScope`) where
-the year bar is not shown. A past year's open positions are valued at the close
+the year bar is not shown. The year is drawn as a folder (`yearTabs(..., 'folders')`,
+`.folder`): on Trades one border runs from the tabs to under the table in two
+flush halves, the hero's `.hero__inner` and `#view-trades`, both keyed on
+`body.trades-folder` (set by `renderTradesYears`), so nothing moves between
+`<main>` and the hero; Stats wraps its cards in one `.folder` under its own
+folder tabs. A past year's open positions are valued at the close
 of 31 Dec: `GET /api/year-end` (prices from CoinGecko's history of 1 Jan 00:00
 UTC, kept for good in `market_close`; rates through `resolveRate`), fetched once
 per year by `loadYearEnd`. A missing price is said ("No ETH price for 31 Dec
