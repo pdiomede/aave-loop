@@ -3695,11 +3695,13 @@ function downloadBlob(blob, name) {
  * promises arrow-key navigation between tabs, and a row of toggle buttons
  * promises only what a button does, which is all this is.
  */
-function yearTabs(years, selected, attr = 'stats-year') {
+// `variant` names a look of its own: 'folders' is the Trades tab's file-folder
+// tabs, where Stats keeps its pills. The same buttons and attributes either way.
+function yearTabs(years, selected, attr = 'stats-year', variant = '') {
   const tab = (value, label) => `<button class="years__tab${
     value === selected ? ' is-active' : ''
   }" type="button" data-${attr}="${value}" aria-pressed="${value === selected}">${label}</button>`;
-  return `<div class="years" role="group" aria-label="Year">
+  return `<div class="years${variant ? ` years--${variant}` : ''}" role="group" aria-label="Year">
     ${years.map((y) => tab(y, y)).join('')}${tab('all', 'All')}
   </div>`;
 }
@@ -4093,7 +4095,7 @@ function renderTradesYears() {
   bar.hidden = !show;
   if (!show) return;
   tradesView();
-  setKeepingFocus(mount, yearTabs(tradeYears(state.trades, todayISO()), state.tradesYear, 'trades-year'));
+  setKeepingFocus(mount, yearTabs(tradeYears(state.trades, todayISO()), state.tradesYear, 'trades-year', 'folders'));
 }
 
 /** Which year the hero's tiles are for, said on the views without the year bar. */

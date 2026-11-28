@@ -55,12 +55,17 @@
     </nav>
 
     <section class="hero">
-      <div class="shell hero__inner">
-        <!-- The page's heading, for a screen reader's outline: the visible
-             title and its description went, the figures speak for it. -->
-        <h1 class="sr-only">ETH Roundtrip</h1>
-        <p class="hero__scope" id="hero-scope" hidden></p>
-        <div class="stats" id="hero-stats"></div>
+      <div class="shell">
+        <!-- Its own element inside the shell, not the shell itself: on Trades it
+             is the folder under the year tabs, and its border lines up with
+             theirs only inside the shell's gutter. -->
+        <div class="hero__inner">
+          <!-- The page's heading, for a screen reader's outline: the visible
+               title and its description went, the figures speak for it. -->
+          <h1 class="sr-only">ETH Roundtrip</h1>
+          <p class="hero__scope" id="hero-scope" hidden></p>
+          <div class="stats" id="hero-stats"></div>
+        </div>
       </div>
     </section>
 

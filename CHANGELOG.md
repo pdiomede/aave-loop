@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 ### Added
 
 - **Trades has year tabs** under the header - every year a trade was active in, newest first, the current one selected on each load, then All. The four tiles above every view and the History table, its chips and pager follow the year picked.
+- **The years are file-folder tabs:** square tabs with rounded tops on a thin divider, the chosen one opening into a bordered panel that holds its year's tiles, in both themes; Stats keeps its year pills.
 - **A year's tiles read it as it stood at its end:** a gain counts once, in the year the loan was repaid, and a loan still open on 31 Dec is one of that year's open positions, its Est. gain valued at 31 Dec's prices and exchange rate. The table lists every trade active in the year, as it is today.
 - **`GET /api/year-end?year=2025`** answers each market's price at the close of 31 Dec and each non-dollar coin's rate for that day; prices are fetched from CoinGecko once and kept for good in `market_close`.
 - **A trade says whether it was opened Long or Short:** a third picker in the new trade's heading, "open as", starts empty and is required, as the platform is; the Borrowed card shows it and its editor changes it. A label only for now: every figure is still worked out as a long.
