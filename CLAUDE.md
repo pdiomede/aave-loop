@@ -543,10 +543,9 @@ the trades active in the year as they are now (the table, chips, pager,
 today for the current year) through `tradeAt`, which blanks every stage dated
 after that day. The hero's tiles are `summarize(snapshot, end)`, so a gain
 counts once, in its repayment's year, and a Dec->Jan loan is open on 31 Dec;
-they follow the year on Trades, Alerts and Wallets, with a scope line
-(`renderHeroScope`) where the year bar is not shown. On Stats the hero is hidden
-(`render` sets `.hero[hidden]`): its own overview, on its own year, carries the
-Open positions estimate instead (`openGainLines(view)` over the tab's trades,
+the hero shows on Trades only (`render` sets `.hero[hidden]` elsewhere; the
+page's sr-only `h1` sits outside it so every view keeps it). Stats' own
+overview, on its own year, carries the Open positions estimate instead (`openGainLines(view)` over the tab's trades,
 `statsOverview`), redrawn alone on each quote and rate by `refreshStatsOverview`. The year is drawn as a folder (`yearTabs(..., 'folders')`,
 `.folder`): on Trades one border runs from the tabs to under the table in two
 flush halves, the hero's `.hero__inner` and `#view-trades`, both keyed on

@@ -4100,9 +4100,8 @@ function loadYearEnd(year) {
 
 /**
  * The Trades tab's year bar, under the header: every year a trade was active
- * in, newest first, the current one always, then All. Shown on Trades only;
- * the hero below follows it on every view and says which year it is showing
- * there (`renderHeroScope`).
+ * in, newest first, the current one always, then All. Shown on Trades only,
+ * as is the hero below, which follows it.
  */
 function renderTradesYears() {
   const bar = document.getElementById('trades-years');
@@ -4161,19 +4160,6 @@ function syncYearsRow(row, reveal) {
   row.classList.toggle('fade-right', over && row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
 }
 
-/** Which year the hero's tiles are for, said on the views without the year bar. */
-function renderHeroScope(v = tradesView()) {
-  const el = document.getElementById('hero-scope');
-  if (!el) return;
-  el.hidden = state.view === 'trades' || !state.loaded || state.loadFailed;
-  el.textContent =
-    state.tradesYear === 'all'
-      ? 'All years'
-      : v.past
-        ? `${state.tradesYear}, as of 31 Dec ${state.tradesYear}`
-        : `${state.tradesYear} to date`;
-}
-
 /** What Stats' overview tiles were last drawn from, for redrawing their estimate. */
 let statsOverview = null;
 
@@ -4203,7 +4189,6 @@ function renderHeroStats() {
   const v = tradesView();
   if (v.past) loadYearEnd(state.tradesYear);
   setKeepingFocus(document.getElementById('hero-stats'), statTiles(summarize(v.snapshot, v.end), { estimate: true }));
-  renderHeroScope(v);
 }
 
 /* ------------------------------------------------------------ alerts view */
@@ -5534,11 +5519,11 @@ function render() {
   // view, so its wallet picker follows the list from here.
   syncNewTradeWallet();
   renderTradesYears();
-  // Not on Stats: its folder has its own year and its own overview, and the
-  // header above it, on the Trades year, put two years' figures on one page.
-  document.querySelector('.hero').hidden = state.view === 'stats';
+  // On Trades only, under its year bar, by the user's choice. On Stats it put
+  // the Trades year's figures above Stats' own folder and year; on Alerts and
+  // Wallets it was not needed, and needed a line to say which year it showed.
+  document.querySelector('.hero').hidden = state.view !== 'trades';
   if (state.loadFailed) {
-    renderHeroScope();
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
     else if (state.view === 'wallets') renderWalletsView();
@@ -5546,7 +5531,6 @@ function render() {
     return;
   }
   if (!state.loaded) {
-    renderHeroScope();
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
     else if (state.view === 'wallets') renderWalletsView();

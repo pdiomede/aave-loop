@@ -7,7 +7,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
-- **Trades has year tabs** under the header - every year a trade was active in, newest first, the current one selected on each load, then All. The four tiles above every view and the History table, its chips and pager follow the year picked.
+- **Trades has year tabs** under the header - every year a trade was active in, newest first, the current one selected on each load, then All. The four tiles above it and the History table, its chips and pager follow the year picked.
 - **The years are file-folder tabs:** square tabs with rounded tops on a thin divider, the chosen one opening into a bordered panel that holds its year's tiles, in both themes, with the keyboard focus ring drawn inside each tab. More years than fit stay on one line that scrolls, fading out at an edge with more beyond it, a mouse wheel scrolling it, the chosen year kept in view. One folder holds the whole year: the tiles, a divider, then History with its chips, New trade and the table, inside a single border. Stats' years are the same folder tabs, Statement and Export CSV at the right of them, every card for the year inside one folder. Where the folder leaves the table too little room (to about 1240px wide) it scrolls inside it, and a trade's dates break only at their arrow on a phone.
 - **A year's tiles read it as it stood at its end:** a gain counts once, in the year the loan was repaid, and a loan still open on 31 Dec is one of that year's open positions, its Est. gain valued at 31 Dec's prices and exchange rate. The current year is read live, a trade dated after today's date (saved from a clock ahead) included. The table lists every trade active in the year, as it is today.
 - **`GET /api/year-end?year=2025`** answers each market's price at the close of 31 Dec and each non-dollar coin's rate for that day; prices are fetched from CoinGecko once, 1.5 s apart, and kept for good in `market_close`; a rate limit on that history never pauses the live prices or the alerts, and a coin CoinGecko refuses is not asked for again for a day. A price fixed for testing (`ETHROUNDTRIP_ETH_PRICE`) is today's only: the close is still looked up.
@@ -23,7 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 - **The header's prices line up in columns:** each market's price, 1h, 24h and 7d stand under the others'; SOL's shorter price pushed its badges out of line.
 - **The Trades page opens on its figures:** the "Leverage trades" heading and its description are gone.
 - **Stats' All tab opens on an overview, "Overview (All years combined)",** as each year's tab does: Realized net gain, Blended annualized, Closed trades and Open positions.
-- **Stats no longer shows the header's tiles:** they follow the Trades year, and put a second year's figures above Stats' own. Its overview's Open positions carries the Est. gain line instead, kept current as prices and rates arrive.
+- **The header's tiles show on Trades only:** on Stats they put the Trades year's figures above Stats' own, and Alerts and Wallets did not need them. Stats' overview carries the Est. gain line under Open positions instead, kept current as prices and rates arrive.
 - **The landing page's step 2 reads "Buy ETH, BTC or SOL",** not "Buy ETH or cbBTC", and its four cards sit one, two or four across, never three with one left over.
 
 ### Fixed

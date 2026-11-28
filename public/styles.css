@@ -653,14 +653,6 @@ a.brand {
   }
 }
 
-/* Which year the tiles are for, on the views without the year bar. */
-.hero__scope {
-  flex-basis: 100%;
-  margin: 0 0 -14px;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
 .hero__inner {
   display: flex;
   align-items: flex-end;
