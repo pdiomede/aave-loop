@@ -55,6 +55,8 @@ const mock = { price: 3000, btc: 90000, wbtc: 89900, sol: 150, psol: 165, asked:
 mock.history = { ethereum: 3330.5, bitcoin: 93500, 'wrapped-bitcoin': 93400, solana: 124.2 };
 mock.historyCalls = 0;
 mock.historyDates = [];
+mock.historyTimes = [];
+mock.historyStatus = {};
 // Etherscan's V2 API: a block per twelve seconds, the transfers in `rows`,
 // or `error` as its refusal. `calls` counts every request, `keys` every key.
 mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
@@ -170,6 +172,11 @@ const mockServer = http.createServer((req, res) => {
       const id = req.url.split('/')[2];
       mock.historyCalls += 1;
       mock.historyDates.push(new URL(req.url, MOCK).searchParams.get('date'));
+      mock.historyTimes.push(Date.now());
+      if (mock.historyStatus[id]) {
+        res.statusCode = mock.historyStatus[id];
+        return res.end('{"error":"stand-in"}');
+      }
       const usd = mock.history[id];
       if (usd == null) {
         res.statusCode = 404;
@@ -438,7 +445,7 @@ await check('closingPrices: 31 Dec from CoinGecko\'s 1 Jan history, kept for goo
       const child = spawn(process.execPath, ['--input-type=module', '-e', `
         const { closingPrices } = await import('./prices.js');
         ${code}
-      `], { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file }, stdio: ['ignore', 'pipe', 'pipe'] });
+      `], { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file, ETHROUNDTRIP_CLOSE_SPACING_MS: '1000' }, stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
       let err = '';
       child.stdout.on('data', (c) => (out += c));
@@ -462,6 +469,24 @@ await check('closingPrices: 31 Dec from CoinGecko\'s 1 Jan history, kept for goo
   assert.equal(again.prices.ETH, 3330.5, 'a closed day is kept, not fetched again');
   assert.equal(mock.historyCalls - before, 6);
   mock.history.ethereum = 3330.5;
+  // Spaced, not a burst: the five went out within 14 ms, against a limit of a
+  // handful a minute.
+  const times = mock.historyTimes.slice(-6, -1);
+  for (let i = 1; i < times.length; i += 1) assert.ok(times[i] - times[i - 1] >= 950, `${times[i] - times[i - 1]} ms apart`);
+  // A 429 on one coin's history leaves the live prices awake, and the rest
+  // of that day is not asked for while it lasts.
+  mock.historyStatus.ethereum = 429;
+  const limited = await run(`
+    const { priceStatus } = await import('./prices.js');
+    const r = await closingPrices('2024-12-31');
+    console.log(JSON.stringify({ r, sleeping: priceStatus().sleeping, error: priceStatus().lastError }));
+  `);
+  delete mock.historyStatus.ethereum;
+  assert.equal(limited.r.prices.ETH, null);
+  assert.match(limited.r.problems.ETH, /rate limiting/);
+  assert.match(limited.r.problems.BTC, /rate limiting/);
+  assert.equal(limited.sleeping, false, 'the ticker and the alert sweep are not put to sleep');
+  assert.equal(limited.error, null);
 });
 
 await check('a platform can be changed but not cleared, and a trade without one still edits', async () => {

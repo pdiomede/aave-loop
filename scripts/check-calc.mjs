@@ -840,6 +840,18 @@ check('Trades years: a trade is in every year it was active in, and the current 
   assert.equal(activeInYear({ ...in2024, repay_amount: null }, '2026', AS_OF), true);
 });
 
+check('Trades years: the current year holds a trade dated after today, read as it is', () => {
+  // The server takes its own tomorrow from a reader ahead of it: a loan dated
+  // tomorrow, and a trade repaid tomorrow, seen by a reader still on today.
+  const next = '2026-10-02';
+  const loan = { id: 7, borrow_currency: 'USDC', borrow_date: next, borrow_amount: 5000, borrow_apr: 0 };
+  const repaid = { ...decJan, id: 8, borrow_date: '2026-09-20', buy_date: '2026-09-20', sell_date: next, repay_date: next };
+  const v = yearView([loan, repaid], '2026', AS_OF);
+  assert.deepEqual(v.rows.map((t) => t.id), [7, 8]);
+  const s = summarize(v.snapshot, v.end);
+  assert.deepEqual([s.closedCount, s.netGain, s.openCount], [1, 500, 1]);
+});
+
 check('Trades years: tradeAt blanks the stages after its day, and only those', () => {
   const at = tradeAt({ ...decJan, derived: { stale: true } }, '2025-12-31');
   for (const f of ['sell_date', 'sell_amount', 'sell_eth', 'sell_gas_usd', 'repay_date', 'repay_amount', 'repay_gas_usd']) {

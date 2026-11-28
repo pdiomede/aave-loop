@@ -73,7 +73,7 @@ Every non-GET `/api` request must send `Content-Type: application/json`, or it g
 | `ETHROUNDTRIP_FX_REFRESH_MS` | how often the server re-asks for missing and stand-in rates (default an hour) |
 
 Every interval read from the environment (`ETHROUNDTRIP_FX_REFRESH_MS`, `ETHROUNDTRIP_ALERT_POLL_MS`,
-`ETHROUNDTRIP_ETH_POLL_MS`, and the bot's `ETHROUNDTRIP_BOT_LEASE_MS`, `ETHROUNDTRIP_BOT_LEASE_RETRY_MS`,
+`ETHROUNDTRIP_ETH_POLL_MS`, `ETHROUNDTRIP_CLOSE_SPACING_MS` (between year-end history calls), and the bot's `ETHROUNDTRIP_BOT_LEASE_MS`, `ETHROUNDTRIP_BOT_LEASE_RETRY_MS`,
 `ETHROUNDTRIP_WATCH_MS`) goes through `intervalMs` in `lib/calc.js`: below a second it is
 the default, above 2^31 − 1 ms it is capped. Node turns an out-of-range timer into 1 ms,
 so a huge value meant to switch something off made it fire continuously.
@@ -546,7 +546,12 @@ the year bar is not shown. A past year's open positions are valued at the close
 of 31 Dec: `GET /api/year-end` (prices from CoinGecko's history of 1 Jan 00:00
 UTC, kept for good in `market_close`; rates through `resolveRate`), fetched once
 per year by `loadYearEnd`. A missing price is said ("No ETH price for 31 Dec
-2025"), never replaced by today's.
+2025"), never replaced by today's. The history calls go out 1.5 s apart, and a
+429 on them sleeps the history alone (`closeSleepUntil`), never the live prices
+the ticker and the alert sweep read; a 4xx is remembered for a day. Only a past
+year is cut at 31 Dec: the current one is read as it is (`yearView`'s `past`),
+and `activeInYear` bounds a year by its calendar end, not today, because the
+server takes its own tomorrow from a reader ahead of it.
 
 ### Long or short
 

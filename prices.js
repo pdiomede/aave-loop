@@ -23,7 +23,7 @@
  * second cooldown and no second share of the rate limit.
  */
 import { db, prepare } from './db.js';
-import { parseAmount, MARKETS } from './lib/calc.js';
+import { parseAmount, MARKETS, intervalMs } from './lib/calc.js';
 import { setting, settingName } from './env.js';
 
 // The variables keep the names they had when this priced ETH alone, so an
@@ -460,10 +460,22 @@ async function fetchPrices() {
 
 // A failed day is not asked for again for this long: the Trades tab asks when
 // a past year is first shown, and a service that has no answer will not have
-// one a second later.
+// one a second later. A definite no - a coin it does not know, a date before
+// the history it will serve - is not asked again for a day.
 const CLOSE_RETRY_MS = 600_000;
+const CLOSE_REFUSED_MS = 86_400_000;
 const closeFailedAt = {};
 const closeInFlight = {};
+
+// Between one history call and the next. Keyless CoinGecko allows a handful of
+// calls a minute, and the five for a year went out within 14 ms of each other.
+const CLOSE_SPACING_MS = intervalMs(setting('CLOSE_SPACING_MS'), 1500);
+
+// The history's own rate-limit sleep, apart from the live prices': a 429 here
+// parked the whole module for ten minutes, the header's ticker and the alert
+// sweep with it, for want of a year-end figure nobody needed that minute.
+let closeSleepUntil = 0;
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const selectClose = () => prepare('SELECT price FROM market_close WHERE market = ? AND day = ?');
 const insertClose = () =>
@@ -498,6 +510,7 @@ export async function closingPrices(day) {
 async function fetchClosing(day) {
   const prices = {};
   const problems = {};
+  let asked = 0;
   for (const market of MARKETS) {
     if (FIXED[market] !== null) {
       prices[market] = FIXED[market];
@@ -519,35 +532,52 @@ async function fetchClosing(day) {
       problems[market] = 'Price lookups are switched off.';
       continue;
     }
-    if (networkIsOut() || monoNow() - (closeFailedAt[key] ?? -Infinity) < CLOSE_RETRY_MS) {
-      problems[market] = state.lastError || `The ${market} price for ${day} could not be fetched; it is asked for again later.`;
+    const failed = closeFailedAt[key];
+    const limited = monoNow() < closeSleepUntil;
+    if (networkIsOut() || limited || (failed && monoNow() < failed.until)) {
+      problems[market] = limited
+        ? 'The price service is rate limiting us. Waiting before asking again.'
+        : failed?.reason || state.lastError || `The ${market} price for ${day} could not be fetched; it is asked for again later.`;
       continue;
     }
+    if (asked > 0) await pause(CLOSE_SPACING_MS);
+    asked += 1;
     try {
       const res = await fetch(
         `${PRICE_URL}/coins/${COIN_ID[market]}/history?date=${historyDate(day)}&localization=false`,
         { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT_MS) },
       );
       if (res.status === 429) {
-        recordFailure('The price service is rate limiting us. Waiting before asking again.', rateLimitWait(res));
-        problems[market] = state.lastError;
+        closeSleepUntil = monoNow() + rateLimitWait(res);
+        problems[market] = 'The price service is rate limiting us. Waiting before asking again.';
         continue;
       }
-      if (!res.ok) throw new Error(`The price service answered ${res.status}.`);
+      if (!res.ok) {
+        const reason = `The price service answered ${res.status}.`;
+        // A 4xx is the service's answer about this coin or day, not a hiccup.
+        if (res.status >= 400 && res.status < 500) {
+          closeFailedAt[key] = { until: monoNow() + CLOSE_REFUSED_MS, reason };
+          problems[market] = reason;
+          continue;
+        }
+        throw new Error(reason);
+      }
       const body = await res.json();
       const price = body?.market_data?.current_price?.usd;
       const problem = validate(price, market);
       if (problem) throw new Error(problem);
       prices[market] = price;
       delete closeFailedAt[key];
+      closeSleepUntil = 0;
       try {
         if (db.open) insertClose().run(market, day, price, new Date().toISOString());
       } catch (err) {
         console.error(`Could not cache the ${market} close of ${day}:`, err.message);
       }
     } catch (err) {
-      closeFailedAt[key] = monoNow();
-      problems[market] = err.name === 'TimeoutError' ? 'The price service did not answer in time.' : err.message;
+      const reason = err.name === 'TimeoutError' ? 'The price service did not answer in time.' : err.message;
+      closeFailedAt[key] = { until: monoNow() + CLOSE_RETRY_MS, reason };
+      problems[market] = reason;
     }
   }
   return { prices, problems };

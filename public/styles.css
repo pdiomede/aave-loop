@@ -547,8 +547,11 @@ a.brand {
 }
 
 /* Inside the tab, not around it: the tab row scrolls, and a ring drawn outside
-   a tab was cut off at its top. */
-.years--folders .years__tab:focus-visible {
+   a tab was cut off at its top. The open tab too, which the pills' own
+   `.years__tab.is-active:focus-visible`, later in the file and as specific,
+   took back to an outer ring. */
+.years--folders .years__tab:focus-visible,
+.years--folders .years__tab.is-active:focus-visible {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
