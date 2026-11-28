@@ -5522,7 +5522,10 @@ function render() {
   // On Trades only, under its year bar, by the user's choice. On Stats it put
   // the Trades year's figures above Stats' own folder and year; on Alerts and
   // Wallets it was not needed, and needed a line to say which year it showed.
-  document.querySelector('.hero').hidden = state.view !== 'trades';
+  // And only once the ledger is read: until then its tiles are emptied, and
+  // the band stood blank above "Reading your trades" - and above "Could not
+  // load" for good - with the folder jumping in under it on load.
+  document.querySelector('.hero').hidden = state.view !== 'trades' || !state.loaded || state.loadFailed;
   if (state.loadFailed) {
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();

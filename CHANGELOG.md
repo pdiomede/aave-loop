@@ -28,6 +28,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- **The Trades tiles no longer leave a blank band while the ledger loads,** or above "Could not load": they show once there are figures to show.
+- **The Long/Short arrow's name opens above it,** not below: on the last row, where the table scrolls sideways, it was cut off.
 - **Logos no longer blink while Get onchain data runs:** each stage searched redrew every wallet group twice, every coin, asset and chain logo made anew; a search now redraws only its own stage card.
 - **The ruled line above Stats' Total rows is drawn, and thicker:** a later rule for a table's last row took it away, so only the row hairline showed.
 - **The new trade's heading wraps a word with its picker:** "from" and "open as" no longer end one line with their picker on the next.

@@ -1315,6 +1315,12 @@ html {
 }
 
 .side-mark[data-tip]::after {
+  /* Above the arrow, not below: where the table scrolls sideways (761px to
+     1240px in the Trades folder) its box clips what hangs out of it, and the
+     last row's "Long" was cut off at the bottom. Above, even the first row's
+     has the header row's height to open into. */
+  top: auto;
+  bottom: calc(100% + 6px);
   left: 0;
   width: max-content;
   /* The base rule caps a bubble at its anchor's width, and this anchor is the
