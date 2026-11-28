@@ -39,11 +39,11 @@ Fees are in dollars, and swap costs are required. A blank optional fee reads *no
 
 ## The views
 
-- **Trades:** the history table, each trade's side marked by a green up (Long) or red down (Short) arrow before its coin. Expand a row to edit its stages. The chips beside History (All, Closed, Open, Holding) filter it; Open includes trades sold but not yet repaid.
+- **Trades:** a tab per year (every year a trade was active in, then All) above the history table, each trade's side marked by a green up (Long) or red down (Short) arrow before its coin. Expand a row to edit its stages. The chips beside History (All, Closed, Open, Holding) filter it; Open includes trades sold but not yet repaid.
 - **Stats:** performance overall and per platform, split by platform, asset, wallet, currency, month and long or short, with a tab per year. **Export CSV** and a one-page **Statement** PDF of the year's closed trades.
 - **Alerts:** every price alert and when it fired.
 - **Wallets:** your addresses on Ethereum, Base, Arbitrum, Optimism or Solana. **Onchain Data** groups trades by wallet and finds each stage's transaction (see below).
-- **Open positions** (header): what open trades would make if closed today. The table shows the same figure tagged `est`.
+- **The header's four tiles** follow the Trades year on every view: a past year as it stood on 31 Dec, its gains counted in the year they were repaid and its open positions valued at that day's prices. **Open positions** is what open trades would make if closed today (or on 31 Dec, for a past year). The table shows the same figure tagged `est`.
 
 ## The math
 

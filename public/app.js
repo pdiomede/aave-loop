@@ -5,6 +5,10 @@ import {
   breakdownTotal,
   statsYears,
   statsYear,
+  yearView,
+  tradeYears,
+  activeInYear,
+  stages,
   accruedInterest,
   daysBetween,
   todayISO,
@@ -622,7 +626,35 @@ function showTrade(id) {
     state.filter = [];
     saveFilter();
   }
+  // And to a year it was active in, when the one shown would hide it: a new
+  // trade dated in a past year and repaid then, or a repayment moved back. The
+  // latest such year - this one while it is open, else the one it was repaid in.
+  const today = todayISO();
+  if (t && state.tradesYear !== 'all' && !activeInYear(t, state.tradesYear, today)) {
+    const current = today.slice(0, 4);
+    state.tradesYear =
+      activeInYear(t, current, today) || !stages(t).repaid ? current : String(t.repay_date).slice(0, 4);
+  }
 }
+
+/**
+ * The Trades tab's year, from `yearView` in lib/calc.js: `rows`, the trades
+ * active in it, as they are now (the table, the chips, the pager); `snapshot`,
+ * the same trades as they stood at `end` (the hero's tiles). Every part of the
+ * tab reads it, so the table and the tiles cannot describe different years. A
+ * year no longer in the ledger (its last trade deleted) falls back to the
+ * current one, which is always there.
+ */
+function tradesView() {
+  const today = todayISO();
+  if (state.tradesYear !== 'all' && !tradeYears(state.trades, today).includes(state.tradesYear)) {
+    state.tradesYear = today.slice(0, 4);
+  }
+  return yearView(state.trades, state.tradesYear, today);
+}
+
+/** The year shown, in words: "2025", or "the ledger" on All. */
+const tradesYearWords = () => (state.tradesYear === 'all' ? 'the ledger' : state.tradesYear);
 
 /**
  * The trades in the order the table should show them.
@@ -668,7 +700,10 @@ function sortedTrades() {
 
 /** The History table's rows: sorted, then narrowed to the status filter. The
  *  pager counts these, so its pages and "1-10 of N" are the filter's. */
-const tableTrades = () => sortedTrades().filter((t) => inFilter(t));
+const tableTrades = () => {
+  const ids = new Set(tradesView().rows.map((t) => t.id));
+  return sortedTrades().filter((t) => ids.has(t.id) && inFilter(t));
+};
 
 const pageCount = (total) => Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -855,6 +890,13 @@ const state = {
   // year. Kept for the session only, like the page number, and checked against
   // the ledger on every render because a delete can take a year's last trade.
   statsYear: null,
+  // The Trades tab's year: '2026', or 'all'. The current year on every load,
+  // as the brief asks, and the hero's tiles follow it on every view.
+  tradesYear: todayISO().slice(0, 4),
+  // Each past year's close, from /api/year-end: `{ prices, fx, problems }`,
+  // `{ loading }` while asked for, or `{ failed, at }`. The tiles value that
+  // year's open positions at these, never at today's prices.
+  yearEnd: {},
   // The day the Stats view was last drawn for, which Export CSV reuses.
   statsAsOf: null,
   // The addresses kept on the Wallets tab. Null until they are first read,
@@ -2953,7 +2995,9 @@ function renderFilterBar() {
     mount.innerHTML = '';
     return;
   }
-  const count = (f) => state.trades.filter((t) => inFilter(t, f)).length;
+  // Within the year shown, each trade by its status now, as its row shows it.
+  const rows = tradesView().rows;
+  const count = (f) => rows.filter((t) => inFilter(t, f)).length;
   // Named in words, not by its content: label and count ran together as
   // "Closed12" for a screen reader.
   mount.innerHTML = `<div class="filterbar" role="group" aria-label="Show trades">${TRADE_FILTERS.map((f) => {
@@ -2980,11 +3024,21 @@ function renderTable() {
     return;
   }
 
+  if (tradesView().rows.length === 0) {
+    mount.innerHTML = `<div class="empty">
+      <h3>No trades in ${esc(state.tradesYear)} yet</h3>
+      <p>No loan was open in ${esc(state.tradesYear)}. Start one with New trade, or look at another year.</p>
+      <button class="btn btn--sm" type="button" data-trades-year="all">Show all years</button>
+    </div>`;
+    state.draft = null;
+    return;
+  }
+
   const rows = tableTrades();
   if (rows.length === 0) {
     mount.innerHTML = `<div class="empty">
       <h3>No ${state.filter.map((f) => FILTER_LABELS[f].toLowerCase()).join(' or ')} trades</h3>
-      <p>Nothing in the ledger has ${state.filter.length > 1 ? 'any of those statuses' : 'that status'} right now.</p>
+      <p>Nothing in ${esc(tradesYearWords())} has ${state.filter.length > 1 ? 'any of those statuses' : 'that status'} right now.</p>
       <button class="btn btn--sm" type="button" data-trade-filter="all">Show all trades</button>
     </div>`;
     state.draft = null;
@@ -3641,10 +3695,10 @@ function downloadBlob(blob, name) {
  * promises arrow-key navigation between tabs, and a row of toggle buttons
  * promises only what a button does, which is all this is.
  */
-function yearTabs(years, selected) {
+function yearTabs(years, selected, attr = 'stats-year') {
   const tab = (value, label) => `<button class="years__tab${
     value === selected ? ' is-active' : ''
-  }" type="button" data-stats-year="${value}" aria-pressed="${value === selected}">${label}</button>`;
+  }" type="button" data-${attr}="${value}" aria-pressed="${value === selected}">${label}</button>`;
   return `<div class="years" role="group" aria-label="Year">
     ${years.map((y) => tab(y, y)).join('')}${tab('all', 'All')}
   </div>`;
@@ -3938,40 +3992,56 @@ function statTiles(s, { open = true, estimate = false } = {}) {
  * and blaming the exchange rate would name the wrong absence.
  */
 function openGainLines() {
-  const g = openGainsUsd(state.trades, priceMap(), state.fxNow);
+  // The year's open positions as they stood at its end: a past year's at the
+  // prices and rates of its 31 Dec (`state.yearEnd`), the current year and
+  // All at today's.
+  const v = tradesView();
+  const year = state.tradesYear;
+  const ye = v.past ? state.yearEnd[year] : null;
+  const prices = v.past ? (ye?.prices ?? {}) : priceMap();
+  const fx = v.past ? (ye?.fx ?? {}) : state.fxNow;
+  const derived = (t) => t.derived ?? derive(t, v.end);
+  const priceOf = (t) => {
+    const p = prices[marketOf(t)];
+    return isNum(p) ? p : null;
+  };
+  const g = openGainsUsd(v.snapshot, prices, fx, v.end);
   if (!g.rows.length) return [];
-  const priced = state.trades.every((t) => {
-    const d = derive(t);
-    return !estimateNeedsPrice(d) || priceNow(t) !== null;
-  });
+  const priced = v.snapshot.every((t) => !estimateNeedsPrice(derived(t)) || priceOf(t) !== null);
   const fig = (v) => (isNum(v) ? `<span class="${gainClass(v)}">${signedUsd(v)}</span>` : '-');
   const lines = [
-    `Est. gain ${fig(g.total)}${g.missing && priced ? ` ${RATE_MISSING}` : ''}`,
+    `${v.past ? 'Est. gain at 31 Dec' : 'Est. gain'} ${fig(g.total)}${g.missing && priced ? ` ${RATE_MISSING}` : ''}`,
   ];
   // Which market's price is missing or old, and for how many positions: the
   // reason the total above is a dash or rough. Said here because WBTC and
   // PSOL, unlike BTC, ETH and SOL, have no ticker row to show it.
   const byMarket = new Map();
-  for (const t of state.trades) {
-    const d = derive(t);
-    if (!estimateNeedsPrice(d)) continue;
+  for (const t of v.snapshot) {
+    if (!estimateNeedsPrice(derived(t))) continue;
     const market = marketOf(t);
     const q = state.prices[market];
-    const kind = !isNum(q?.price) ? 'none' : q.stale ? 'old' : null;
+    const kind = v.past ? (priceOf(t) === null ? 'none' : null) : !isNum(q?.price) ? 'none' : q.stale ? 'old' : null;
     if (!kind) continue;
     const entry = byMarket.get(market) ?? { kind, n: 0, fetchedAt: q?.fetchedAt };
     entry.n += 1;
     byMarket.set(market, entry);
   }
-  for (const [market, { kind, n, fetchedAt }] of byMarket) {
-    const what = `${n} position${n === 1 ? '' : 's'}`;
-    lines.push({
-      cls: 'stat__note',
-      html:
-        kind === 'none'
-          ? `No ${esc(market)} price right now: ${what} not estimated.`
-          : `${esc(market)} price from ${esc(fetchedAgo(fetchedAt))}: ${what} estimated on it.`,
-    });
+  if (v.past && (!ye || ye.loading)) {
+    lines.push({ cls: 'stat__note', html: `Fetching the prices at 31 Dec ${esc(year)}.` });
+  } else if (v.past && ye.failed) {
+    lines.push({ cls: 'stat__note', html: `No prices for 31 Dec ${esc(year)}: ${esc(ye.failed)}` });
+  } else {
+    for (const [market, { kind, n, fetchedAt }] of byMarket) {
+      const what = `${n} position${n === 1 ? '' : 's'}`;
+      lines.push({
+        cls: 'stat__note',
+        html: v.past
+          ? `No ${esc(market)} price for 31 Dec ${esc(year)}: ${what} not estimated.`
+          : kind === 'none'
+            ? `No ${esc(market)} price right now: ${what} not estimated.`
+            : `${esc(market)} price from ${esc(fetchedAgo(fetchedAt))}: ${what} estimated on it.`,
+      });
+    }
   }
   // One position would only repeat the total above it. Two to a row, id and
   // figure in columns of their own: a flowing line wrapped after its separator
@@ -3986,9 +4056,71 @@ function openGainLines() {
   return lines;
 }
 
+/**
+ * A past year's close, asked for once when its tab is first shown and kept
+ * for the session; the hero is redrawn when it lands. A failure is asked
+ * again a minute later at the earliest, so a redraw cannot become a loop.
+ */
+function loadYearEnd(year) {
+  const have = state.yearEnd[year];
+  if (have && !have.failed) return;
+  if (have?.failed && Date.now() - have.at < 60_000) return;
+  const token = {};
+  state.yearEnd[year] = { loading: true, token };
+  api(`/api/year-end?year=${encodeURIComponent(year)}`)
+    .then((r) => {
+      if (state.yearEnd[year]?.token === token) state.yearEnd[year] = { prices: r.prices ?? {}, fx: r.fx ?? {}, problems: r.problems ?? {} };
+    })
+    .catch((err) => {
+      if (state.yearEnd[year]?.token === token) state.yearEnd[year] = { failed: err.message, at: Date.now() };
+    })
+    .finally(() => {
+      if (state.tradesYear === year) renderHeroStats();
+    });
+}
+
+/**
+ * The Trades tab's year bar, under the header: every year a trade was active
+ * in, newest first, the current one always, then All. Shown on Trades only;
+ * the hero below follows it on every view and says which year it is showing
+ * there (`renderHeroScope`).
+ */
+function renderTradesYears() {
+  const bar = document.getElementById('trades-years');
+  const mount = document.getElementById('trades-years-mount');
+  if (!bar || !mount) return;
+  const show = state.view === 'trades' && state.loaded && !state.loadFailed;
+  bar.hidden = !show;
+  if (!show) return;
+  tradesView();
+  setKeepingFocus(mount, yearTabs(tradeYears(state.trades, todayISO()), state.tradesYear, 'trades-year'));
+}
+
+/** Which year the hero's tiles are for, said on the views without the year bar. */
+function renderHeroScope(v = tradesView()) {
+  const el = document.getElementById('hero-scope');
+  if (!el) return;
+  el.hidden = state.view === 'trades' || !state.loaded || state.loadFailed;
+  el.textContent =
+    state.tradesYear === 'all'
+      ? 'All years'
+      : v.past
+        ? `${state.tradesYear}, as of 31 Dec ${state.tradesYear}`
+        : `${state.tradesYear} to date`;
+}
+
+/**
+ * The hero's tiles, for the Trades tab's year: `summarize` over the year's
+ * trades as they stood at its end, so a gain counts once, in the year it was
+ * repaid, and a loan still open on 31 Dec is one of that year's open
+ * positions. All is the whole ledger, live, as before years.
+ */
 function renderHeroStats() {
   if (state.loadFailed || !state.loaded) return;
-  setKeepingFocus(document.getElementById('hero-stats'), statTiles(summarize(state.trades), { estimate: true }));
+  const v = tradesView();
+  if (v.past) loadYearEnd(state.tradesYear);
+  setKeepingFocus(document.getElementById('hero-stats'), statTiles(summarize(v.snapshot, v.end), { estimate: true }));
+  renderHeroScope(v);
 }
 
 /* ------------------------------------------------------------ alerts view */
@@ -5285,7 +5417,9 @@ function render() {
   // The New trade card sits above every view's mount and outlives a change of
   // view, so its wallet picker follows the list from here.
   syncNewTradeWallet();
+  renderTradesYears();
   if (state.loadFailed) {
+    renderHeroScope();
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
     else if (state.view === 'wallets') renderWalletsView();
@@ -5293,6 +5427,7 @@ function render() {
     return;
   }
   if (!state.loaded) {
+    renderHeroScope();
     document.getElementById('hero-stats').innerHTML = '';
     if (state.view === 'alerts') renderAlerts();
     else if (state.view === 'wallets') renderWalletsView();
@@ -6545,6 +6680,22 @@ function wire() {
     const fold = e.target.closest('[data-collapse]');
     if (fold) {
       toggleCollapse(fold);
+      return;
+    }
+
+    // A Trades year, from the bar or the empty year's Show all years: the
+    // tiles, chips and table all follow it, on page 1, and an editor whose row
+    // may have left the table closes, as a filter change does.
+    const tradesYearTab = e.target.closest('[data-trades-year]');
+    if (tradesYearTab) {
+      const hadFocus = document.activeElement === tradesYearTab;
+      state.tradesYear = tradesYearTab.dataset.tradesYear;
+      state.page = 1;
+      state.editing = null;
+      render();
+      if (hadFocus || !tradesYearTab.isConnected) {
+        document.querySelector(`#trades-years [data-trades-year="${state.tradesYear}"]`)?.focus();
+      }
       return;
     }
 

@@ -141,6 +141,17 @@ db.exec(`
     change_30d REAL
   ) WITHOUT ROWID;
 
+  -- A market's price at the close of a past day (the Trades tab values a past
+  -- year's open positions at 31 Dec's), kept for good once fetched: a closed
+  -- day's price does not change. Created if missing, so no migration.
+  CREATE TABLE IF NOT EXISTS market_close (
+    market     TEXT NOT NULL,
+    day        TEXT NOT NULL,
+    price      REAL NOT NULL,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (market, day)
+  ) WITHOUT ROWID;
+
   CREATE TABLE IF NOT EXISTS bot_state (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     holder        TEXT,

@@ -529,6 +529,25 @@ ledger read-only; `--apply` forgets the WRONG *searched* hashes in a conditional
 and reports pasted ones only. A PATCH that undoes a stage deletes its hash, pasted too. It exists because hashes stored before
 a matching rule was tightened are never looked at again. `scripts/check-server.mjs` mocks Etherscan on loopback.
 
+### The Trades tab's years
+
+The Trades tab has its own year tabs (`state.tradesYear`, the current year on
+every load, then All), **not Stats'**: Stats files a trade under the one year
+it was repaid in (`statsYear`) so its tabs add up to All; Trades lists a trade
+in every year it was active in (`activeInYear`, `tradeYears`). Everything it
+draws reads one helper, `tradesView()` over `yearView` in `lib/calc.js`: `rows`,
+the trades active in the year as they are now (the table, chips, pager,
+`pageOfTrade`), and `snapshot`, each of them as it stood at `end` (31 Dec, or
+today for the current year) through `tradeAt`, which blanks every stage dated
+after that day. The hero's tiles are `summarize(snapshot, end)`, so a gain
+counts once, in its repayment's year, and a Dec->Jan loan is open on 31 Dec;
+they follow the year on every view, with a scope line (`renderHeroScope`) where
+the year bar is not shown. A past year's open positions are valued at the close
+of 31 Dec: `GET /api/year-end` (prices from CoinGecko's history of 1 Jan 00:00
+UTC, kept for good in `market_close`; rates through `resolveRate`), fetched once
+per year by `loadYearEnd`. A missing price is said ("No ETH price for 31 Dec
+2025"), never replaced by today's.
+
 ### Long or short
 
 `SIDES` / `SIDE_META` in `lib/calc.js` are the side a trade was opened as (`long`,

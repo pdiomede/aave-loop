@@ -49,11 +49,17 @@
       </div>
     </header>
 
+    <!-- The Trades tab's years (renderTradesYears); hidden on the other views. -->
+    <nav class="trades-years" id="trades-years" aria-label="Trades by year" hidden>
+      <div class="shell" id="trades-years-mount"></div>
+    </nav>
+
     <section class="hero">
       <div class="shell hero__inner">
         <!-- The page's heading, for a screen reader's outline: the visible
              title and its description went, the figures speak for it. -->
         <h1 class="sr-only">ETH Roundtrip</h1>
+        <p class="hero__scope" id="hero-scope" hidden></p>
         <div class="stats" id="hero-stats"></div>
       </div>
     </section>

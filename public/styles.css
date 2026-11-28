@@ -503,6 +503,26 @@ a.brand {
   padding: 30px 0 32px;
 }
 
+/* The Trades tab's years, under the header and on the hero's own surface, so
+   the tabs read as what the tiles below them are for. The hero closes up under
+   it rather than leaving its full top padding between the two. */
+.trades-years {
+  background: var(--surface);
+  padding-top: 22px;
+}
+
+.trades-years:not([hidden]) + .hero {
+  padding-top: 20px;
+}
+
+/* Which year the tiles are for, on the views without the year bar. */
+.hero__scope {
+  flex-basis: 100%;
+  margin: 0 0 -14px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .hero__inner {
   display: flex;
   align-items: flex-end;

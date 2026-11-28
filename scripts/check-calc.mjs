@@ -36,6 +36,10 @@ import {
   assetOf,
   priceFor,
   ethHeldNow,
+  yearView,
+  tradeYears,
+  activeInYear,
+  tradeAt,
 } from '../lib/calc.js';
 import { tradesCsv, csvFileName } from '../lib/csv.js';
 
@@ -807,6 +811,65 @@ check('Stats: By Platform splits the tab by platform, unrecorded last, and its r
   assert.equal(r.byPlatform.reduce((s, b) => s + b.netGain, 0), r.netGain);
   assert.equal(r.byPlatform.reduce((s, b) => s + b.borrowed, 0), r.totalBorrowed);
   assert.ok(!('borrowedNative' in aave), 'no native sum across coins');
+});
+
+// --- the Trades tab's years. A dollar loan of 7,000 at 0% from 12 Dec 2025,
+// 2.5 ETH bought that day and sold on 13 Jan 2026 for 7,500, no gas: +500 in
+// 2026, and an open position of $7,000 at the end of 2025.
+const decJan = {
+  id: 2, borrow_currency: 'USDC', borrow_date: '2025-12-12', borrow_amount: 7000, borrow_apr: 0, borrow_gas_usd: 0,
+  buy_date: '2025-12-12', buy_amount: 7000, buy_eth: 2.5, buy_gas_usd: 0,
+  sell_date: '2026-01-13', sell_amount: 7500, sell_eth: 2.5, sell_gas_usd: 0,
+  repay_date: '2026-01-13', repay_amount: 7000, repay_gas_usd: 0,
+};
+// Repaid within 2025 (+100), open since 2024 and never repaid, and repaid in
+// 2024 (+50): in no year after it.
+const in2025 = { ...decJan, id: 1, borrow_date: '2025-03-01', buy_date: '2025-03-01', sell_date: '2025-03-05', sell_amount: 7100, repay_date: '2025-03-05' };
+const since2024 = { id: 3, borrow_currency: 'USDC', borrow_date: '2024-06-01', borrow_amount: 2000, borrow_apr: 0, borrow_gas_usd: 0 };
+const in2024 = { ...decJan, id: 4, borrow_date: '2024-02-01', buy_date: '2024-02-01', sell_date: '2024-02-03', sell_amount: 7050, repay_date: '2024-02-03' };
+
+check('Trades years: a trade is in every year it was active in, and the current year is always there', () => {
+  assert.deepEqual(tradeYears([], AS_OF), ['2026']);
+  assert.deepEqual(tradeYears([decJan], AS_OF), ['2026', '2025']);
+  // 2025 holds only a position opened in 2024 and still open, and still has its tab.
+  assert.deepEqual(tradeYears([since2024], AS_OF), ['2026', '2025', '2024']);
+  assert.deepEqual([2024, 2025, 2026].map((y) => activeInYear(decJan, String(y), AS_OF)), [false, true, true]);
+  assert.deepEqual([2023, 2024, 2025, 2026].map((y) => activeInYear(in2024, String(y), AS_OF)), [false, true, false, false]);
+  assert.deepEqual([2023, 2024, 2025, 2026].map((y) => activeInYear(since2024, String(y), AS_OF)), [false, true, true, true]);
+  // A repayment date without its amount is not a repayment.
+  assert.equal(activeInYear({ ...in2024, repay_amount: null }, '2026', AS_OF), true);
+});
+
+check('Trades years: tradeAt blanks the stages after its day, and only those', () => {
+  const at = tradeAt({ ...decJan, derived: { stale: true } }, '2025-12-31');
+  for (const f of ['sell_date', 'sell_amount', 'sell_eth', 'sell_gas_usd', 'repay_date', 'repay_amount', 'repay_gas_usd']) {
+    assert.equal(at[f], null, f);
+  }
+  assert.deepEqual([at.borrow_amount, at.buy_date, at.buy_eth], [7000, '2025-12-12', 2.5]);
+  assert.ok(!('derived' in at), 'a cached derive of the whole trade is not carried over');
+  assert.equal(derive(at, '2025-12-31').status, 'HOLDING');
+  assert.deepEqual(tradeAt(decJan, '2026-01-13'), decJan, 'a stage on the day itself stays');
+  // A sale cannot stand once its purchase is blanked.
+  const late = tradeAt({ ...decJan, buy_date: '2026-01-02' }, '2025-12-31');
+  assert.deepEqual([late.buy_date, late.sell_date, late.repay_date], [null, null, null]);
+});
+
+check('Trades years: a gain counts once, in its closing year; a Dec->Jan loan is open on 31 Dec', () => {
+  const trades = [decJan, in2025, since2024, in2024];
+  const tiles = (year) => {
+    const v = yearView(trades, year, AS_OF);
+    const s = summarize(v.snapshot, v.end);
+    return { rows: v.rows.map((t) => t.id).sort(), end: v.end, closed: s.closedCount, open: s.openCount, gain: s.netGain, out: s.deployed };
+  };
+  assert.deepEqual(tiles('2024'), { rows: [3, 4], end: '2024-12-31', closed: 1, open: 1, gain: 50, out: 2000 });
+  assert.deepEqual(tiles('2025'), { rows: [1, 2, 3], end: '2025-12-31', closed: 1, open: 2, gain: 100, out: 9000 });
+  assert.deepEqual(tiles('2026'), { rows: [2, 3], end: AS_OF, closed: 1, open: 1, gain: 500, out: 2000 });
+  // The years add up to All, each gain counted once.
+  const all = tiles('all');
+  assert.equal(all.gain, 50 + 100 + 500);
+  assert.equal(all.closed, 3);
+  // An empty year: no rows, nothing closed or open, no gain.
+  assert.deepEqual(tiles('2023'), { rows: [], end: '2023-12-31', closed: 0, open: 0, gain: null, out: null });
 });
 
 check('Stats: By Long/Short splits closed trades by side, Long, Short, unrecorded last, and adds up', () => {

@@ -24,6 +24,7 @@ import {
   cents,
   asPrinted,
   CURRENCIES,
+  isUsdPegged,
   PLATFORMS,
   SIDES,
   ASSETS,
@@ -45,7 +46,7 @@ import {
   stopFxRefresher,
 } from './fx.js';
 import { telegramConfig, reportConfig, configPath } from './config.js';
-import { marketPrices, marketPrice, cachedMarketPrice, cachedMarketPrices, priceStatus } from './prices.js';
+import { marketPrices, marketPrice, cachedMarketPrice, cachedMarketPrices, priceStatus, closingPrices } from './prices.js';
 import { sendTelegramMessage } from './telegram.js';
 import {
   armedAlerts,
@@ -975,6 +976,36 @@ app.get('/api/prices', async (_req, res, next) => {
     // `pollMs` is served rather than written into the page, so the cadence the
     // browser polls at and the freshness this endpoint enforces are one number.
     res.json({ pollMs: PRICE_TICKER_MS, prices: pricesView(quotes) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * A past year's close, for the Trades tab's year: every market's price at the
+ * close of 31 Dec and each non-dollar coin's rate for that day, so the year's
+ * open positions are valued as they stood then rather than at today's prices.
+ * Only a year already over: the current one is valued live. A price or rate
+ * nobody could get is null, never a guess, and the reason is in `problems`.
+ * The rates are the ECB's for the day, or the last business day before it.
+ */
+app.get('/api/year-end', async (req, res, next) => {
+  try {
+    const raw = typeof req.query.year === 'string' ? req.query.year.trim() : '';
+    const current = Number(todayISO().slice(0, 4));
+    const year = /^\d{4}$/.test(raw) ? Number(raw) : NaN;
+    if (!(year >= 2015 && year < current)) {
+      return res.status(400).json({ error: 'Ask for a year that is already over.', field: 'year' });
+    }
+    const day = `${year}-12-31`;
+    const { prices, problems } = await closingPrices(day);
+    const fx = {};
+    for (const currency of CURRENCIES.filter((c) => !isUsdPegged(c))) {
+      const hit = await resolveRate(currency, day);
+      fx[currency] = hit?.rate ?? null;
+      if (!hit) problems[currency] = fxStatus().lastError || `No ${currency} rate for ${day}.`;
+    }
+    res.json({ year: String(year), day, prices, fx, problems });
   } catch (err) {
     next(err);
   }

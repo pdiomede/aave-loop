@@ -46,6 +46,17 @@ Left from 20 Nov: nothing. The backup check was confirmed on 24 Nov:
 `/home/paolo/backup/aaveloop` holds one `myaave-...db` from 03:00 every night, 11 to
 24 Nov, fourteen in all as `--keep 14` asks.
 
+## Unreleased (28 Nov): Year tabs on Trades
+
+Not released or deployed yet. The new `market_close` table is created by itself on
+the first start (no migration). The first time a past year's tab is opened, the
+server asks CoinGecko for that year's 31 Dec close once per market (five requests)
+and keeps them; a coin CoinGecko has no history for then (PSOL may not) reads
+"No PSOL price for 31 Dec" under the estimate. No new setting, no inline script,
+so nginx is untouched. Check after the deploy: Trades opens on 2026 with 2025 and
+All beside it; 2025 shows its closed trades and the loans still open on 31 Dec;
+All matches what the header showed before.
+
 ## 3.0.0 (28 Nov): Long or short on a trade
 
 Not deployed yet. The `side` column is added by itself on the first

@@ -52,6 +52,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // `updates` is what the next getUpdates hands the bot; `sentTo` the chat
 // each sent message went to, beside its text in `sent`.
 const mock = { price: 3000, btc: 90000, wbtc: 89900, sol: 150, psol: 165, asked: 0, tg: [], sent: [], sentTo: [], updates: [], fx: { rate: 1.1 } };
+mock.history = { ethereum: 3330.5, bitcoin: 93500, 'wrapped-bitcoin': 93400, solana: 124.2 };
+mock.historyCalls = 0;
+mock.historyDates = [];
 // Etherscan's V2 API: a block per twelve seconds, the transfers in `rows`,
 // or `error` as its refusal. `calls` counts every request, `keys` every key.
 mock.es = { calls: 0, keys: new Set(), rows: [], error: null };
@@ -159,6 +162,20 @@ const mockServer = http.createServer((req, res) => {
       return res.end(
         JSON.stringify(rows.length ? { status: '1', message: 'OK', result: rows } : { status: '0', message: 'No transactions found', result: [] }),
       );
+    }
+    // A past day's price: each coin's close at the price in `mock.history`
+    // (by CoinGecko id), the date asked for kept in `mock.historyDates`; a coin
+    // with no entry answers 404, as an id CoinGecko does not know does.
+    if (req.url.startsWith('/coins/') && req.url.includes('/history?')) {
+      const id = req.url.split('/')[2];
+      mock.historyCalls += 1;
+      mock.historyDates.push(new URL(req.url, MOCK).searchParams.get('date'));
+      const usd = mock.history[id];
+      if (usd == null) {
+        res.statusCode = 404;
+        return res.end('{"error":"coin not found"}');
+      }
+      return res.end(JSON.stringify({ id, market_data: { current_price: { usd } } }));
     }
     if (req.url.startsWith('/coins/markets')) {
       mock.asked += 1;
@@ -388,6 +405,63 @@ await check('a new trade must say whether it was opened long or short, by id in 
   assert.equal(moved.status, 200);
   assert.equal(moved.data.side, 'long');
   await api('DELETE', `/api/trades/${upper.data.id}`);
+});
+
+await check('/api/year-end answers only a year that is over, with fixed prices, nulls offline and the year-end rate', async () => {
+  const current = new Date().getFullYear();
+  const last = current - 1;
+  for (const year of [String(current), String(current + 1), 'abc', '2014', '']) {
+    const r = await api('GET', `/api/year-end?year=${year}`);
+    assert.equal(r.status, 400, year);
+    assert.equal(r.data.field, 'year');
+  }
+  // The year-end rate from the cache, as the rate service is off here.
+  const file = new Database(path.join(tmp, 'api.db'));
+  file.prepare("INSERT OR REPLACE INTO fx_rates (base, quote, date, rate, rate_date, source, fetched_at) VALUES ('EUR', 'USD', ?, 1.04, ?, 'ecb', ?)")
+    .run(`${last}-12-31`, `${last}-12-31`, new Date().toISOString());
+  file.close();
+  const before = mock.historyCalls;
+  const r = await api('GET', `/api/year-end?year=${last}`);
+  assert.equal(r.status, 200);
+  assert.equal(r.data.day, `${last}-12-31`);
+  // This server's ETH, BTC and WBTC are fixed, and it is offline: the others are unknown, not guessed.
+  assert.deepEqual(r.data.prices, { ETH: 3000, BTC: 90000, WBTC: 89000, SOL: null, PSOL: null });
+  assert.match(r.data.problems.SOL, /switched off/);
+  assert.equal(r.data.fx.EURC, 1.04);
+  assert.equal(mock.historyCalls, before, 'offline asks nothing');
+});
+
+await check('closingPrices: 31 Dec from CoinGecko\'s 1 Jan history, kept for good, a coin it lacks null and not asked again at once', async () => {
+  const file = path.join(tmp, 'close.db');
+  const run = (code) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ['--input-type=module', '-e', `
+        const { closingPrices } = await import('./prices.js');
+        ${code}
+      `], { cwd: root, env: { ...process.env, ...isolated, ETHROUNDTRIP_DB: file }, stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '';
+      let err = '';
+      child.stdout.on('data', (c) => (out += c));
+      child.stderr.on('data', (c) => (err += c));
+      child.on('close', (status) => (status === 0 ? resolve(JSON.parse(out.trim().split('\n').at(-1))) : reject(new Error(err))));
+    });
+  const before = mock.historyCalls;
+  const r = await run(`
+    const a = await closingPrices('2025-12-31');
+    const b = await closingPrices('2025-12-31');
+    console.log(JSON.stringify({ a, b }));
+  `);
+  assert.deepEqual(r.a.prices, { ETH: 3330.5, BTC: 93500, WBTC: 93400, SOL: 124.2, PSOL: null });
+  assert.match(r.a.problems.PSOL, /404/);
+  assert.deepEqual(r.b.prices, r.a.prices);
+  assert.equal(mock.historyCalls - before, 5, 'five on the first call, none on the second');
+  assert.ok(mock.historyDates.slice(-5).every((d) => d === '01-01-2026'), mock.historyDates.slice(-5).join());
+  // A new process reads the four from the table without asking, and asks for the missing one.
+  mock.history.ethereum = 1;
+  const again = await run(`console.log(JSON.stringify(await closingPrices('2025-12-31')));`);
+  assert.equal(again.prices.ETH, 3330.5, 'a closed day is kept, not fetched again');
+  assert.equal(mock.historyCalls - before, 6);
+  mock.history.ethereum = 3330.5;
 });
 
 await check('a platform can be changed but not cleared, and a trade without one still edits', async () => {
