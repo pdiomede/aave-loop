@@ -53,16 +53,22 @@ Deployed on 28 Nov at 11:24 for Long/Short: every existing trade marked Long
 `og8.png` 200, `og7.png` 404). Still to do for Long/Short: ask @WebpageBot
 (Telegram) and LinkedIn's Post Inspector to fetch `https://ethroundtrip.com/` again.
 
-**The year tabs went into 3.0.0 later the same day** (one release a day), so the
-footer still reads v3.0.0 after they are deployed. Pull and restart as usual;
-nothing to run. The new `market_close` table is created by itself on the first
+**The year tabs, the folder layout and the day's fixes went into 3.0.0 later the
+same day** (one release a day, no second bump), so the footer still reads v3.0.0
+after they are deployed. Pull and restart as usual; nothing to run. The new `market_close` table is created by itself on the first
 start (no migration). The first time a past year's tab is opened, the server asks
 CoinGecko for that year's 31 Dec close once per market (five requests) and keeps
 them; a coin CoinGecko has no history for then (PSOL may not) reads "No PSOL price
 for 31 Dec" under the estimate. No new setting, no inline script, so nginx is
-untouched. Check after the deploy: Trades opens on 2026 with 2025 and All beside
-it; 2025 shows its closed trades and the loans still open on 31 Dec; All matches
-what the header showed before.
+untouched. Check after the deploy:
+
+- Trades opens on 2026 with 2025 and All beside it, as folder tabs; one border
+  runs from the tabs round the tiles, a divider, and History down to the table.
+- 2025 shows its closed trades and the loans still open on 31 Dec ("Est. gain at
+  31 Dec"); All matches what the header showed before.
+- The tiles show on Trades only; Stats opens on its own folder tabs, and its
+  overview's Open positions carries the Est. gain line.
+- Wallets > Get onchain data runs without the logos blinking.
 
 ## 2.3.0 (27 Nov): History filters by status
 
